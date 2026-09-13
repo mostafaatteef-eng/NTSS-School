@@ -49,6 +49,7 @@ import {
   SystemSettings,
   Term,
   User,
+  normalizeStaffRole,
 } from '../types';
 import {
   DEFAULT_ACADEMIC_YEARS,
@@ -127,6 +128,21 @@ const STORAGE_KEYS = {
 
 const DEFAULT_BACKEND_URL =
   'https://script.google.com/macros/s/AKfycbyw4O2Y6X5B6yN8U1M3Q4R5T6Y7U8I9O0P1A2S3D4F5G6H7J8K9/exec';
+
+// Universal localStorage fallback for Node.js / test environments
+if (typeof globalThis !== 'undefined' && typeof (globalThis as any).localStorage === 'undefined') {
+  const memoryStore = new Map<string, string>();
+  (globalThis as any).localStorage = {
+    getItem: (k: string) => memoryStore.get(k) ?? null,
+    setItem: (k: string, v: string) => memoryStore.set(k, String(v)),
+    removeItem: (k: string) => memoryStore.delete(k),
+    clear: () => memoryStore.clear(),
+    key: (i: number) => Array.from(memoryStore.keys())[i] ?? null,
+    get length() {
+      return memoryStore.size;
+    },
+  };
+}
 
 class StorageService {
   private subscribers: Array<() => void> = [];
@@ -244,7 +260,7 @@ class StorageService {
     this.notifyChange();
   }
 
-  public async login(username: string, password: string): Promise<{ success: boolean; message?: string; user?: User }> {
+  public async login(username: string, password: string): Promise<{ success: boolean; message?: string; user?: User; code?: string }> {
     const cleanUsername = (username || '').trim().toLowerCase();
     const cleanPassword = (password || '').trim();
 
@@ -252,111 +268,104 @@ class StorageService {
       return { success: false, message: 'يرجى إدخال اسم المستخدم وكلمة المرور' };
     }
 
-    const inputHashed = await hashPasswordSHA256(cleanPassword);
     const settings = this.getSettings();
     const scriptUrl = settings.googleAppsScriptUrl || DEFAULT_BACKEND_URL;
 
-    // 1. Try Backend Online Login First (POST ONLY)
-    if (scriptUrl && scriptUrl.length > 15 && navigator.onLine) {
-      try {
-        const response = await fetch(scriptUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({
-            action: 'login',
-            username: cleanUsername,
-            password: cleanPassword,
-          }),
-        });
-
-        if (response.ok) {
-          const result = await response.json();
-          if (result.status === 'success' && result.user) {
-            const userWithToken: User = {
-              ...result.user,
-              sessionToken: result.token || generateClientSessionToken(result.user.id, result.user.role),
-            };
-            this.setCurrentUser(userWithToken);
-            return { success: true, user: userWithToken };
-          } else if (result.status === 'error') {
-            return { success: false, message: result.message || 'بيانات الدخول غير صحيحة' };
-          }
-        }
-      } catch (err) {
-        console.warn('Backend login request error, checking local users cache...', err);
-      }
-    }
-
-    // 2. Fallback to Local Cached Users
-    const users = this.getUsers();
-    
-    // Default Admin First Login initialization if database is completely empty
-    if (users.length === 0 && (cleanUsername === 'admin' || cleanUsername === '001') && (cleanPassword === 'admin123' || cleanPassword === 'admin')) {
-      const defaultAdmin: User = {
-        id: '001',
-        username: 'admin',
-        password: inputHashed,
-        fullName: 'مدير النظام',
-        role: 'Admin',
-        status: 'Active',
-        department: 'الإدارة العامة والتوجيه',
-        email: 'admin@ntss-schools.edu.eg',
-        mustChangePassword: true,
-        sessionToken: generateClientSessionToken('001', 'Admin'),
-        createdAt: getCairoNowISO(),
-        lastLogin: getCairoNowISO(),
+    // Strict Security Policy: Fail-Closed. Backend Authoritative Login ONLY.
+    if (!scriptUrl || scriptUrl.length < 15) {
+      return {
+        success: false,
+        message: 'النظام يعمل بوضع الأمان الصارم (Fail-Closed). لم يتم ضبط رابط خادم Google Apps Script المعتمد. يرجى تهيئة رابط الخادم لتسجيل الدخول.'
       };
-      this.saveUser(defaultAdmin);
-      this.setCurrentUser(defaultAdmin);
-      return { success: true, user: defaultAdmin };
     }
 
-    const found = users.find(
-      u =>
-        u.username.toLowerCase() === cleanUsername ||
-        (u.id && u.id.toLowerCase() === cleanUsername)
-    );
-
-    if (!found) {
-      return { success: false, message: 'اسم المستخدم غير موجود بالنظام' };
+    if (!navigator.onLine) {
+      return {
+        success: false,
+        message: 'لا يوجد اتصال بالإنترنت. النظام لا يسمح بتسجيل الدخول المحلي بدون التحقق من الخادم الخلفي المعتمد.'
+      };
     }
 
-    if (found.status === 'Inactive' || found.isActive === false) {
-      return { success: false, message: 'هذا الحساب معطل حالياً، يرجى مراجعة إدارة المدرسة' };
-    }
+    try {
+      const response = await fetch(scriptUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'login',
+          username: cleanUsername,
+          password: cleanPassword,
+        }),
+      });
 
-    // Enforce Staff-Only Scope: Student, Parent, and Teacher standalone logins
-    if ((found.role as string) === 'Student') {
-      return { success: false, message: 'لا توجد حسابات دخول للطلاب، النظام مخصص للطاقم المدرسي والإدارة فقط' };
-    }
-    if ((found.role as string) === 'Parent' && !settings.parentAccountsEnabled) {
-      return { success: false, message: 'بوابة أولياء الأمور غير مفعلة، النظام مخصص للإدارة المدرسية وفريق العمل فقط' };
-    }
-    if ((found.role as string) === 'Teacher' && !settings.teacherAccountsEnabled) {
-      return { success: false, message: 'حسابات المعلمين المستقلة غير مفعلة، يتم إدارة المعلمين عبر شئون المعلمين والعاملين' };
-    }
-
-    // Check password if stored locally (supports plain text migration or hashed match)
-    if (found.password) {
-      const isPlainMatch = (found.password === cleanPassword);
-      const isHashMatch = (found.password === inputHashed);
-      if (!isPlainMatch && !isHashMatch) {
-        return { success: false, message: 'كلمة المرور غير صحيحة' };
+      if (!response.ok) {
+        return { success: false, message: `خطأ اتصال بخادم المصادقة (${response.status}). تعذر التحقق من الهوية.` };
       }
-      // Auto-migrate to hash if stored as plain text
-      if (isPlainMatch && !isHashMatch) {
-        found.password = inputHashed;
+
+      const result = await response.json();
+      if (result.status === 'success' && result.user) {
+        const canonicalRole = normalizeStaffRole(result.user.role);
+        const userWithToken: User = {
+          ...result.user,
+          role: canonicalRole,
+          sessionToken: result.sessionToken || result.token,
+        };
+        delete userWithToken.password;
+        this.setCurrentUser(userWithToken);
+        return { success: true, user: userWithToken };
+      } else if (result.status === 'error') {
+        if (result.code === 'DATABASE_EMPTY') {
+          return {
+            success: false,
+            code: 'DATABASE_EMPTY',
+            message: result.message || 'قاعدة بيانات المستخدمين فارغة، يلزم تهيئة حساب مدير النظام الأول.'
+          };
+        }
+        return { success: false, message: result.message || 'بيانات الدخول غير صحيحة' };
       }
+      return { success: false, message: 'استجابة غير متوقعة من خادم المصادقة' };
+    } catch (err: any) {
+      return {
+        success: false,
+        message: `تعذر الاتصال بخادم المصادقة المعتمد: ${err?.message || 'خطأ في الشبكة'}. تم إغلاق مسار الدخول أمنياً (Fail-Closed).`
+      };
+    }
+  }
+
+  public async bootstrapFirstAdmin(
+    username: string,
+    password: string,
+    fullName: string
+  ): Promise<{ success: boolean; message?: string; user?: any }> {
+    const settings = this.getSettings();
+    const scriptUrl = settings.googleAppsScriptUrl || DEFAULT_BACKEND_URL;
+    if (!scriptUrl || scriptUrl.length < 15) {
+      return { success: false, message: 'رابط الخادم المعتمد غير مهيأ' };
     }
 
-    const isDefaultAdmin = (cleanUsername === 'admin' && cleanPassword === 'admin123');
-    found.mustChangePassword = found.mustChangePassword || isDefaultAdmin;
-    found.sessionToken = generateClientSessionToken(found.id, found.role);
-    found.lastLogin = getCairoNowISO();
-    
-    this.saveUser(found);
-    this.setCurrentUser(found);
-    return { success: true, user: found };
+    try {
+      const response = await fetch(scriptUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'bootstrapFirstAdmin',
+          username: username.trim().toLowerCase(),
+          password: password.trim(),
+          fullName: fullName.trim()
+        }),
+      });
+
+      if (!response.ok) {
+        return { success: false, message: `خطأ في الاتصال بالخادم (${response.status})` };
+      }
+
+      const result = await response.json();
+      if (result.status === 'success') {
+        return { success: true, message: result.message, user: result.user };
+      }
+      return { success: false, message: result.message || 'فشلت عملية تهيئة المدير الأول' };
+    } catch (err: any) {
+      return { success: false, message: `خطأ اتصال: ${err?.message || 'تعذر الاتصال'}` };
+    }
   }
 
   // ---------------- Role Permissions ----------------
@@ -3311,6 +3320,87 @@ class StorageService {
         message: res.message || (res.status === 'success' ? 'Synced' : 'Failed to sync')
       };
     });
+  }
+
+  public async pushPostDirect(action: string, payload: any): Promise<{ success: boolean; message?: string; [key: string]: any }> {
+    const settings = this.getSettings();
+    const scriptUrl = settings.googleAppsScriptUrl || DEFAULT_BACKEND_URL;
+    if (!scriptUrl || scriptUrl.length < 15) {
+      return { success: false, message: 'Google Apps Script URL غير مهيأ' };
+    }
+    const currentUser = this.getCurrentUser();
+
+    try {
+      const response = await fetch(scriptUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action,
+          data: payload,
+          userRole: currentUser?.role || '',
+          userId: currentUser?.id || '',
+          sessionToken: currentUser?.sessionToken || '',
+        }),
+      });
+
+      if (!response.ok) {
+        return { success: false, message: `HTTP Error: ${response.status}` };
+      }
+
+      const res = await response.json();
+      return {
+        ...res,
+        success: res.status === 'success',
+        message: res.message || (res.status === 'success' ? 'تمت العملية بنجاح' : 'فشلت العملية')
+      };
+    } catch (err: any) {
+      return { success: false, message: `خطأ اتصال: ${err?.message || 'فشل الاتصال بالخادم'}` };
+    }
+  }
+
+  public async saveUserSecure(user: User, rawPassword?: string): Promise<{ success: boolean; message?: string; user?: User }> {
+    const caller = this.getCurrentUser();
+    const isCallerAdmin = !caller || caller.role === 'Admin';
+    if (!isCallerAdmin) {
+      return { success: false, message: 'غير مصرح بإنشاء أو تعديل حسابات المستخدمين. خاص بمدير النظام.' };
+    }
+
+    const canonicalRole = normalizeStaffRole(user.role);
+    const sanitizedUser: User = {
+      ...user,
+      role: canonicalRole,
+      username: user.username.trim().toLowerCase(),
+      fullName: user.fullName.trim(),
+    };
+    delete sanitizedUser.password;
+
+    const list = this.getUsers();
+    const idx = list.findIndex(u => u.id === sanitizedUser.id || u.username.toLowerCase() === sanitizedUser.username.toLowerCase());
+    if (idx >= 0) {
+      list[idx] = { ...list[idx], ...sanitizedUser };
+      this.logAudit('UPDATE', 'USER', `تعديل مستخدم: ${sanitizedUser.fullName} (@${sanitizedUser.username})`);
+    } else {
+      list.push(sanitizedUser);
+      this.logAudit('CREATE', 'USER', `إضافة مستخدم جديد: ${sanitizedUser.fullName} (@${sanitizedUser.username})`);
+    }
+
+    localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(list));
+    this.notifyChange();
+
+    // Call backend authoritative saveUser
+    return this.pushPostDirect('saveUser', {
+      ...sanitizedUser,
+      password: rawPassword && rawPassword.trim() ? rawPassword.trim() : undefined
+    });
+  }
+
+  public async resetUserPassword(userId: string, newPassword: string): Promise<{ success: boolean; message?: string }> {
+    const caller = this.getCurrentUser();
+    if (caller && caller.role !== 'Admin') {
+      return { success: false, message: 'غير مصرح بإعادة تعيين كلمة المرور. خاص بمدير النظام فقط.' };
+    }
+
+    return this.pushPostDirect('resetUserPassword', { userId, newPassword });
   }
 
   private async pushPost(action: string, data: any): Promise<void> {

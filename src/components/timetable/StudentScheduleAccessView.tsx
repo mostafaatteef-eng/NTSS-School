@@ -67,16 +67,48 @@ export const StudentScheduleAccessView: React.FC = () => {
     setResources(res);
   };
 
-  const handleVerifyManualToken = () => {
-    const verified = timetableService.verifyStudentAccessToken(manualToken.trim());
-    if (verified) {
-      setActiveToken(verified);
-      const matched = students.find(s => s.id === verified.studentId);
-      if (matched) {
-        loadStudentSchedule(matched);
-      }
+  const handleVerifyManualToken = async () => {
+    if (!manualToken.trim()) return;
+    const res = await timetableService.getStudentPublicPortalData(manualToken.trim());
+    if (res.success && res.student) {
+      setActiveToken({
+        id: `SAT-${Date.now()}`,
+        studentId: res.student.id,
+        studentCode: res.student.studentCode,
+        token: manualToken.trim(),
+        isActive: true,
+        createdAt: new Date().toISOString(),
+      });
+      setSelectedStudentId(res.student.id);
+      setScheduleItems(res.schedule || []);
+      setHomeworkList(res.homeworks || []);
+      setExams(res.exams || []);
+      setResources(res.resources || []);
     } else {
-      alert('رمز الوصول غير صحيح أو منتهي الصلاحية');
+      alert(res.message || 'رمز الوصول غير صحيح أو منتهي الصلاحية');
+    }
+  };
+
+  const handleIssueNewToken = async () => {
+    if (!selectedStudentId) return;
+    const res = await timetableService.issueStudentAccessTokenAuthoritative(selectedStudentId);
+    if (res.success && res.token) {
+      const student = students.find(s => s.id === selectedStudentId);
+      if (student) loadStudentSchedule(student);
+      alert('تم إصدار وتشفير رمز وصول جديد للطالب بنجاح');
+    } else {
+      alert(res.message || 'فشل إصدار الرمز');
+    }
+  };
+
+  const handleRevokeToken = async () => {
+    if (!activeToken) return;
+    if (window.confirm('هل أنت متأكد من إلغاء تنشيط رمز وصول هذا الطالب؟ لن يتمكن من فتح البوابة بهذا الرمز مجدداً.')) {
+      const res = await timetableService.revokeStudentAccessToken(activeToken.token);
+      if (res.success) {
+        setActiveToken(null);
+        alert('تم إيقاف صلاحية رمز الوصول بنجاح');
+      }
     }
   };
 
@@ -188,11 +220,25 @@ export const StudentScheduleAccessView: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex items-center gap-3 self-end sm:self-center text-xs">
+          <div className="flex flex-wrap items-center gap-2 self-end sm:self-center text-xs">
             <span className="font-mono text-indigo-700 bg-white px-2.5 py-1 rounded-lg border border-indigo-200 font-bold flex items-center gap-1.5">
               <QrCode className="w-4 h-4 text-indigo-600" />
               رمز الوصول: {activeToken.token}
             </span>
+            <button
+              onClick={handleIssueNewToken}
+              className="px-2.5 py-1 bg-white hover:bg-slate-50 text-indigo-700 border border-indigo-200 rounded-lg font-bold transition cursor-pointer"
+              title="إصدار وتشفير رمز وصول جديد في الخادم"
+            >
+              إصدار رمز جديد
+            </button>
+            <button
+              onClick={handleRevokeToken}
+              className="px-2.5 py-1 bg-white hover:bg-rose-50 text-rose-600 border border-rose-200 rounded-lg font-bold transition cursor-pointer"
+              title="إلغاء تنشيط الرمز الحالي"
+            >
+              إلغاء التنشيط
+            </button>
           </div>
         </div>
       )}

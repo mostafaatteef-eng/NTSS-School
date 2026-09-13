@@ -3,11 +3,12 @@ import {
   AlertCircle,
   CheckCircle2,
   Edit2,
-  Key,
+  KeyRound,
   Lock,
   Plus,
   Shield,
   ShieldAlert,
+  ShieldCheck,
   Trash2,
   UserCheck,
   UserPlus,
@@ -17,7 +18,7 @@ import {
   Eye,
   EyeOff
 } from 'lucide-react';
-import { User, UserRole } from '../../types';
+import { User, UserRole, CANONICAL_STAFF_ROLES, normalizeStaffRole } from '../../types';
 import { storageService } from '../../services/storageService';
 
 interface UsersViewProps {
@@ -27,16 +28,20 @@ interface UsersViewProps {
 
 export const UsersView: React.FC<UsersViewProps> = ({ users, currentUser }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isResetModalOpen, setIsResetModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [resetTargetUser, setResetTargetUser] = useState<User | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
   // Form Fields
   const [username, setUsername] = useState('');
   const [fullName, setFullName] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState<UserRole>('HR');
-  const [department, setDepartment] = useState('الموارد البشرية');
+  const [newResetPassword, setNewResetPassword] = useState('');
+  const [role, setRole] = useState<UserRole>('TeacherAffairs');
+  const [department, setDepartment] = useState('شؤون المعلمين والعاملين');
   const [isActive, setIsActive] = useState(true);
 
   const isAdmin = currentUser?.role === 'Admin';
@@ -46,10 +51,11 @@ export const UsersView: React.FC<UsersViewProps> = ({ users, currentUser }) => {
     setUsername('');
     setFullName('');
     setPassword('');
-    setRole('HR');
-    setDepartment('الموارد البشرية');
+    setRole('TeacherAffairs');
+    setDepartment('شؤون المعلمين والعاملين');
     setIsActive(true);
     setErrorMessage('');
+    setSuccessMessage('');
     setShowPassword(false);
     setIsModalOpen(true);
   };
@@ -58,57 +64,131 @@ export const UsersView: React.FC<UsersViewProps> = ({ users, currentUser }) => {
     setEditingUser(u);
     setUsername(u.username);
     setFullName(u.fullName);
-    setPassword(u.password || '');
-    setRole(u.role);
-    setDepartment(u.department || 'الموارد البشرية');
+    setPassword('');
+    try {
+      setRole(normalizeStaffRole(u.role));
+    } catch {
+      setRole('TeacherAffairs');
+    }
+    setDepartment(u.department || 'الإدارة المدرسية');
     setIsActive(u.status === 'Active' || u.isActive === true);
     setErrorMessage('');
+    setSuccessMessage('');
     setShowPassword(false);
     setIsModalOpen(true);
   };
 
-  const handleSaveUser = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!username.trim() || !fullName.trim()) {
-      setErrorMessage('اسم المستخدم والاسم الكامل مطلوبان');
-      return;
-    }
+  const openResetPasswordModal = (u: User) => {
+    setResetTargetUser(u);
+    setNewResetPassword('');
+    setErrorMessage('');
+    setSuccessMessage('');
+    setShowPassword(false);
+    setIsResetModalOpen(true);
+  };
 
-    if (!editingUser && !password.trim()) {
-      setErrorMessage('يرجى تحديد كلمة المرور للمستخدم الجديد');
-      return;
-    }
-
-    const userToSave: User = {
-      id: editingUser?.id || `USR-${Date.now()}`,
-      username: username.trim().toLowerCase(),
-      fullName: fullName.trim(),
-      email: '',
-      password: password.trim() ? password.trim() : (editingUser?.password || '123456'),
-      role,
-      department,
-      isActive,
-      status: isActive ? 'Active' : 'Inactive',
-      createdAt: editingUser?.createdAt || new Date().toISOString().split('T')[0]
-    };
-
-    const res = storageService.saveUser(userToSave);
-    if (res.success) {
-      setIsModalOpen(false);
-    } else {
-      setErrorMessage(res.message || 'حدث خطأ أثناء حفظ المستخدم');
+  const handleRoleChange = (selectedRole: UserRole) => {
+    setRole(selectedRole);
+    switch (selectedRole) {
+      case 'Admin':
+      case 'SchoolDirector':
+        setDepartment('الإدارة العامة والتوجيه');
+        break;
+      case 'StudentAffairs':
+        setDepartment('شؤون الطلاب والقيد');
+        break;
+      case 'TeacherAffairs':
+        setDepartment('شؤون المعلمين والعاملين');
+        break;
+      case 'SocialSpecialist':
+        setDepartment('الرعاية الاجتماعية والانضباط');
+        break;
+      case 'TrainingOfficer':
+        setDepartment('التدريب والتطوير المهني');
+        break;
+      case 'QualityOfficer':
+        setDepartment('الجودة والتقويم المدرسي');
+        break;
     }
   };
 
-  const handleDeleteUser = (u: User) => {
-    if (u.id === currentUser?.id || u.username === currentUser?.username) {
-      alert('لا يمكنك حذف حسابك الشخصي المسجل به حالياً');
+  const handleSaveUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMessage('');
+    setSuccessMessage('');
+
+    if (!username.trim() || !fullName.trim()) {
+      setErrorMessage('اسم المستخدم والاسم الكامل حقول إجبارية');
       return;
     }
-    if (window.confirm(`هل أنت متأكد من حذف المستخدم (${u.fullName})؟`)) {
-      const success = storageService.deleteUser(u.id);
-      if (!success) {
-        alert('تعذر حذف المستخدم');
+
+    if (!editingUser && (!password.trim() || password.trim().length < 8)) {
+      setErrorMessage('كلمة المرور للمستخدم الجديد يجب ألا تقل عن 8 خانات');
+      return;
+    }
+
+    if (editingUser && password.trim() && password.trim().length < 8) {
+      setErrorMessage('كلمة المرور الجديدة يجب ألا تقل عن 8 خانات');
+      return;
+    }
+
+    try {
+      const canonicalRole = normalizeStaffRole(role);
+      const userToSave: User = {
+        id: editingUser?.id || `USR-${Date.now()}`,
+        username: username.trim().toLowerCase(),
+        fullName: fullName.trim(),
+        email: editingUser?.email || `${username.trim().toLowerCase()}@ntss-schools.edu.eg`,
+        role: canonicalRole,
+        department: department.trim() || 'الإدارة المدرسية',
+        isActive,
+        status: isActive ? 'Active' : 'Inactive',
+        createdAt: editingUser?.createdAt || new Date().toISOString().split('T')[0]
+      };
+
+      const res = await storageService.saveUserSecure(userToSave, password.trim() || undefined);
+      if (res.success) {
+        setIsModalOpen(false);
+      } else {
+        setErrorMessage(res.message || 'حدث خطأ أثناء حفظ المستخدم');
+      }
+    } catch (err: any) {
+      setErrorMessage(err.message || 'فشل التحقق من الدور الإداري المعتمد');
+    }
+  };
+
+  const handleExecutePasswordReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resetTargetUser) return;
+    setErrorMessage('');
+    setSuccessMessage('');
+
+    if (!newResetPassword.trim() || newResetPassword.trim().length < 8) {
+      setErrorMessage('كلمة المرور الجديدة يجب ألا تقل عن 8 أحرف وأرقام');
+      return;
+    }
+
+    const res = await storageService.resetUserPassword(resetTargetUser.id, newResetPassword.trim());
+    if (res.success) {
+      setSuccessMessage('تمت إعادة تعيين وتشفير كلمة المرور بنجاح في الخادم المعتمد');
+      setTimeout(() => {
+        setIsResetModalOpen(false);
+      }, 1200);
+    } else {
+      setErrorMessage(res.message || 'فشل إعادة تعيين كلمة المرور');
+    }
+  };
+
+  const handleDeleteUser = async (u: User) => {
+    if (u.id === currentUser?.id || u.username === currentUser?.username) {
+      alert('إجراء محظور: لا يمكنك حذف حسابك الشخصي المسجل به حالياً.');
+      return;
+    }
+
+    if (window.confirm(`تأكيد أمني: هل أنت متأكد من رغبتك في حذف حساب المستخدم (${u.fullName} - @${u.username})؟`)) {
+      const res = await storageService.deleteUser(u.id);
+      if (!res.success) {
+        alert(res.message || 'تعذر حذف حساب المستخدم');
       }
     }
   };
@@ -116,60 +196,52 @@ export const UsersView: React.FC<UsersViewProps> = ({ users, currentUser }) => {
   const getRoleBadge = (r: UserRole | string) => {
     switch (r as string) {
       case 'Admin':
+        return (
+          <span className="bg-purple-100 text-purple-800 border border-purple-200 px-2.5 py-0.5 rounded-full text-[11px] font-bold">
+            مدير نظام (Admin)
+          </span>
+        );
       case 'SchoolDirector':
         return (
-          <span className="bg-purple-50 text-purple-700 border border-purple-200 px-2.5 py-0.5 rounded-full text-[11px] font-semibold">
-            {r === 'SchoolDirector' ? 'مدير المدرسة' : 'مدير نظام (Admin)'}
+          <span className="bg-indigo-100 text-indigo-800 border border-indigo-200 px-2.5 py-0.5 rounded-full text-[11px] font-bold">
+            مدير المدرسة (SchoolDirector)
           </span>
         );
       case 'StudentAffairs':
         return (
-          <span className="bg-sky-50 text-sky-700 border border-sky-200 px-2.5 py-0.5 rounded-full text-[11px] font-semibold">
+          <span className="bg-sky-100 text-sky-800 border border-sky-200 px-2.5 py-0.5 rounded-full text-[11px] font-bold">
             شؤون الطلاب والقيد
           </span>
         );
       case 'TeacherAffairs':
-      case 'HR':
         return (
-          <span className="bg-teal-50 text-[#008e8b] border border-teal-200 px-2.5 py-0.5 rounded-full text-[11px] font-semibold">
-            شئون المعلمين والعاملين
+          <span className="bg-teal-100 text-[#008e8b] border border-teal-200 px-2.5 py-0.5 rounded-full text-[11px] font-bold">
+            شؤون المعلمين والعاملين
           </span>
         );
       case 'SocialSpecialist':
-      case 'BehaviorOfficer':
         return (
-          <span className="bg-amber-50 text-amber-700 border border-amber-200 px-2.5 py-0.5 rounded-full text-[11px] font-semibold">
-            أخصائي اجتماعي / انضباط
+          <span className="bg-amber-100 text-amber-800 border border-amber-200 px-2.5 py-0.5 rounded-full text-[11px] font-bold">
+            أخصائي اجتماعي / رعاية
           </span>
         );
       case 'TrainingOfficer':
         return (
-          <span className="bg-indigo-50 text-indigo-700 border border-indigo-200 px-2.5 py-0.5 rounded-full text-[11px] font-semibold">
-            مسؤول التدريب المهني
+          <span className="bg-emerald-100 text-emerald-800 border border-emerald-200 px-2.5 py-0.5 rounded-full text-[11px] font-bold">
+            مسؤول التدريب والتطوير
           </span>
         );
       case 'QualityOfficer':
         return (
-          <span className="bg-blue-50 text-blue-700 border border-blue-200 px-2.5 py-0.5 rounded-full text-[11px] font-semibold">
-            مسؤول الجودة
-          </span>
-        );
-      case 'Supervisor':
-        return (
-          <span className="bg-blue-50 text-blue-700 border border-blue-200 px-2.5 py-0.5 rounded-full text-[11px] font-semibold">
-            مشرف تربوي (Supervisor)
-          </span>
-        );
-      case 'Viewer':
-        return (
-          <span className="bg-slate-50 text-slate-700 border border-slate-200 px-2.5 py-0.5 rounded-full text-[11px] font-semibold">
-            مشاهد فقط (Viewer)
+          <span className="bg-blue-100 text-blue-800 border border-blue-200 px-2.5 py-0.5 rounded-full text-[11px] font-bold">
+            مسؤول الجودة والتقويم
           </span>
         );
       default:
         return (
-          <span className="bg-slate-50 text-slate-700 border border-slate-200 px-2.5 py-0.5 rounded-full text-[11px] font-semibold">
-            {r}
+          <span className="bg-rose-100 text-rose-800 border border-rose-200 px-2.5 py-0.5 rounded-full text-[11px] font-bold flex items-center gap-1">
+            <AlertCircle className="w-3 h-3" />
+            دور ملغى ({r})
           </span>
         );
     }
@@ -181,11 +253,11 @@ export const UsersView: React.FC<UsersViewProps> = ({ users, currentUser }) => {
       <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-            <Shield className="w-5 h-5 text-[#008e8b]" />
-            إدارة المستخدمين والصلاحيات
+            <ShieldCheck className="w-5 h-5 text-[#008e8b]" />
+            إدارة مستخدمي الإدارة المدرسية والصلاحيات المعتمدة
           </h2>
           <p className="text-xs text-slate-500 mt-1">
-            التحكم في وصول الموظفين والمشرفين للنظام وتعيين كلمات المرور ومستويات الصلاحيات
+            إدارة حسابات الطاقم الإداري المدرسي حصراً مع فرض التحقق والتشفير المعتمد (PBKDF2-HMAC-SHA256)
           </p>
         </div>
 
@@ -196,54 +268,80 @@ export const UsersView: React.FC<UsersViewProps> = ({ users, currentUser }) => {
             className="text-xs font-bold bg-[#008e8b] hover:bg-[#007775] text-white px-4 py-2.5 rounded-xl shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
           >
             <UserPlus className="w-4 h-4" />
-            <span>إضافة مستخدم جديد</span>
+            <span>إضافة مستخدم إداري جديد</span>
           </button>
         )}
       </div>
 
-      {/* Info Banner for Google Sheet Schema */}
-      <div className="bg-teal-50/70 border border-teal-200/80 rounded-2xl p-4 flex items-start gap-3 text-xs text-teal-900">
-        <Key className="w-5 h-5 text-[#008e8b] shrink-0 mt-0.5" />
+      {/* Authoritative Security & Hashing Banner */}
+      <div className="bg-teal-50/80 border border-teal-200 rounded-2xl p-4 flex items-start gap-3 text-xs text-teal-950">
+        <Shield className="w-5 h-5 text-[#008e8b] shrink-0 mt-0.5" />
         <div className="space-y-1">
-          <div className="font-bold text-slate-900">
-            تخزين وتعديل كلمات المرور في Google Sheets (صفحة Users)
+          <div className="font-bold text-slate-900 flex items-center gap-2">
+            <span>الحماية المعتمدة لكلمات المرور (Server-Side Salted PBKDF2 Hashing)</span>
+            <span className="bg-[#008e8b] text-white text-[10px] px-2 py-0.2 rounded-full font-sans">
+              Authoritative Security
+            </span>
           </div>
           <p className="text-slate-600 leading-relaxed">
-            تحتوي صفحة <span className="font-mono font-bold text-[#008e8b] bg-teal-100 px-1.5 py-0.5 rounded">Users</span> في الشيت على عمود مخصص لكلمة السر باسم <span className="font-mono font-bold text-slate-800 bg-white px-1.5 py-0.5 rounded border border-teal-200">password</span> (أو <span className="font-bold text-slate-800">كلمة المرور</span>). يمكنك كتابة أو تغيير كلمة المرور للمستخدمين مباشرة من هنا أو كتابتها يدوياً في خانة password داخل الشيت وسيقوم النظام بالتعرف عليها فوراً.
+            تُحفظ كلمات المرور في قاعدة البيانات كقيم مشفرة عبر خوارزميات التمليح والتكرار (<span className="font-mono font-bold text-[#008e8b]">PBKDF2-HMAC-SHA256</span> بـ 10,000 دورة). لا يتم تخزين أو نقل كلمات المرور كنصوص واضحة في أي جزء من المتصفح، ويتم التحقق والتشفير دائماً عبر الخادم الخلفي المعتمد.
           </p>
         </div>
       </div>
 
-      {/* Roles Permission Matrix Card */}
+      {/* Canonical Roles Permission Matrix */}
       <div className="bg-slate-900 text-white p-6 rounded-2xl shadow-xs">
         <h3 className="text-xs font-semibold text-slate-300 uppercase tracking-wider mb-3 flex items-center gap-2">
           <ShieldAlert className="w-4 h-4 text-amber-400" />
-          مستويات الصلاحيات المعتمدة في النظام
+          الأدوار الإدارية المعتمدة نظامياً (7 Canonical Staff Roles)
         </h3>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
-          <div className="bg-slate-800/80 p-3.5 rounded-xl border border-slate-700">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+          <div className="bg-slate-800/90 p-3.5 rounded-xl border border-purple-500/30">
             <div className="font-semibold text-purple-300 mb-1">مدير النظام (Admin)</div>
             <p className="text-slate-400 text-[11px]">
-              صلاحيات كاملة: إدارة الموظفين، الحضور والانصراف، التقارير، إعدادات النظام، وإدارة المستخدمين.
+              كامل الصلاحيات: إعدادات النظام، تهيئة الحسابات، إدارة الأمان والرقابة.
             </p>
           </div>
-          <div className="bg-slate-800/80 p-3.5 rounded-xl border border-slate-700">
-            <div className="font-semibold text-teal-300 mb-1">مسؤول الموارد (HR)</div>
+          <div className="bg-slate-800/90 p-3.5 rounded-xl border border-indigo-500/30">
+            <div className="font-semibold text-indigo-300 mb-1">مدير المدرسة (SchoolDirector)</div>
             <p className="text-slate-400 text-[11px]">
-              تسجيل الحضور والانصراف، تعديل الموظفين، قبول ورفض الإجازات، وإصدار التقارير.
+              الإشراف العام، اعتمادات الجداول المدرسية، تقارير الحضور والغياب المعتمدة.
             </p>
           </div>
-          <div className="bg-slate-800/80 p-3.5 rounded-xl border border-slate-700">
-            <div className="font-semibold text-blue-300 mb-1">مشرف قسم (Supervisor)</div>
+          <div className="bg-slate-800/90 p-3.5 rounded-xl border border-sky-500/30">
+            <div className="font-semibold text-sky-300 mb-1">شؤون الطلاب (StudentAffairs)</div>
             <p className="text-slate-400 text-[11px]">
-              تسجيل الحضور اليومي للموظفين التابعين للقسم وإصدار أذونات العمل والتقارير.
+              سجلات الطلاب، الحضور اليومي، وإصدار وإلغاء رموز الوصول للجدول المدرسي.
             </p>
           </div>
-          <div className="bg-slate-800/80 p-3.5 rounded-xl border border-slate-700">
-            <div className="font-semibold text-slate-300 mb-1">مشاهد (Viewer)</div>
+          <div className="bg-slate-800/90 p-3.5 rounded-xl border border-teal-500/30">
+            <div className="font-semibold text-teal-300 mb-1">شؤون المعلمين (TeacherAffairs)</div>
             <p className="text-slate-400 text-[11px]">
-              عرض مؤشرات لوحة التحكم والتقارير الشهرية دون إمكانية التعديل أو الحذف.
+              الجداول الأسبوعية، حصص الاحتياطي، الإشراف المدرسي، وإسناد التدريس.
             </p>
+          </div>
+          <div className="bg-slate-800/90 p-3.5 rounded-xl border border-amber-500/30">
+            <div className="font-semibold text-amber-300 mb-1">أخصائي اجتماعي (SocialSpecialist)</div>
+            <p className="text-slate-400 text-[11px]">
+              المخالفات السلوكية، خطط الرعاية، ودراسات الحالات والتواصل مع أولياء الأمور.
+            </p>
+          </div>
+          <div className="bg-slate-800/90 p-3.5 rounded-xl border border-emerald-500/30">
+            <div className="font-semibold text-emerald-300 mb-1">مسؤول التدريب (TrainingOfficer)</div>
+            <p className="text-slate-400 text-[11px]">
+              متابعة برامج التدريب والتطوير المهني ومؤشرات الأداء بدون صلاحية تعديل.
+            </p>
+          </div>
+          <div className="bg-slate-800/90 p-3.5 rounded-xl border border-blue-500/30">
+            <div className="font-semibold text-blue-300 mb-1">مسؤول الجودة (QualityOfficer)</div>
+            <p className="text-slate-400 text-[11px]">
+              تدقيق ومراجعة الالتزام بالمعايير وسجلات المراقبة دون صلاحية حذف.
+            </p>
+          </div>
+          <div className="bg-slate-800/40 p-3.5 rounded-xl border border-slate-700/60 flex items-center justify-center text-center">
+            <div className="text-[11px] text-slate-400 font-medium">
+              حسابات المعلمين والطلاب ملغاة من تسجيل دخول الإدارة، وتعمل عبر بوابات خاصة مستقلة.
+            </div>
           </div>
         </div>
       </div>
@@ -253,7 +351,7 @@ export const UsersView: React.FC<UsersViewProps> = ({ users, currentUser }) => {
         <div className="p-4 border-b border-slate-100 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Users className="w-4 h-4 text-[#008e8b]" />
-            <span className="text-xs font-bold text-slate-800">قائمة حسابات المستخدمين النشطة</span>
+            <span className="text-xs font-bold text-slate-800">قائمة حسابات موظفي الإدارة المسجلين</span>
           </div>
           <span className="text-[11px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
             {users.length} مستخدم
@@ -267,11 +365,11 @@ export const UsersView: React.FC<UsersViewProps> = ({ users, currentUser }) => {
                 <th className="p-3.5">اسم المستخدم</th>
                 <th className="p-3.5">الاسم الكامل</th>
                 <th className="p-3.5">القسم</th>
-                <th className="p-3.5">الدور / الصلاحية</th>
-                <th className="p-3.5">كلمة المرور</th>
+                <th className="p-3.5">الدور المعتمد</th>
+                <th className="p-3.5">حالة الأمان</th>
                 <th className="p-3.5">الحالة</th>
                 <th className="p-3.5">آخر تسجيل دخول</th>
-                {isAdmin && <th className="p-3.5 text-center">الإجراءات</th>}
+                {isAdmin && <th className="p-3.5 text-center">إدارة الحساب</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
@@ -302,15 +400,10 @@ export const UsersView: React.FC<UsersViewProps> = ({ users, currentUser }) => {
                     <td className="p-3.5 text-slate-600">{u.department || '—'}</td>
                     <td className="p-3.5">{getRoleBadge(u.role)}</td>
                     <td className="p-3.5">
-                      <button
-                        onClick={() => openEditModal(u)}
-                        className="inline-flex items-center gap-1.5 px-2 py-1 bg-slate-100 hover:bg-teal-50 text-slate-600 hover:text-[#008e8b] rounded-lg border border-slate-200 font-mono text-[11px] transition-colors cursor-pointer"
-                        title="انقر لتغيير أو تعيين كلمة المرور"
-                      >
-                        <Lock className="w-3 h-3 text-slate-400" />
-                        <span>••••••••</span>
-                        {isAdmin && <span className="text-[10px] text-[#008e8b] mr-1 font-sans">تعديل</span>}
-                      </button>
+                      <div className="flex items-center gap-1 text-[11px] font-mono text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-lg w-fit">
+                        <Lock className="w-3 h-3 text-emerald-600" />
+                        <span>PBKDF2-Hash</span>
+                      </div>
                     </td>
                     <td className="p-3.5">
                       {isUserActive ? (
@@ -332,17 +425,24 @@ export const UsersView: React.FC<UsersViewProps> = ({ users, currentUser }) => {
                       <td className="p-3.5 text-center">
                         <div className="flex items-center justify-center gap-1.5">
                           <button
+                            onClick={() => openResetPasswordModal(u)}
+                            className="p-1.5 text-slate-500 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition"
+                            title="إعادة تعيين كلمة المرور وتشفيرها"
+                          >
+                            <KeyRound className="w-4 h-4" />
+                          </button>
+                          <button
                             onClick={() => openEditModal(u)}
-                            className="p-1.5 text-slate-400 hover:text-[#008e8b] hover:bg-teal-50 rounded-lg transition"
-                            title="تعديل المستخدم أو كلمة المرور"
+                            className="p-1.5 text-slate-500 hover:text-[#008e8b] hover:bg-teal-50 rounded-lg transition"
+                            title="تعديل بيانات المستخدم والدور"
                           >
                             <Edit2 className="w-4 h-4" />
                           </button>
                           {!isCurrent && (
                             <button
                               onClick={() => handleDeleteUser(u)}
-                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
-                              title="حذف المستخدم"
+                              className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
+                              title="حذف الحساب نهائياً"
                             >
                               <Trash2 className="w-4 h-4" />
                             </button>
@@ -358,7 +458,7 @@ export const UsersView: React.FC<UsersViewProps> = ({ users, currentUser }) => {
         </div>
       </div>
 
-      {/* Add / Edit Modal */}
+      {/* Add / Edit User Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150">
           <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 animate-in zoom-in-95 duration-150">
@@ -368,7 +468,7 @@ export const UsersView: React.FC<UsersViewProps> = ({ users, currentUser }) => {
                   <UserPlus className="w-4 h-4" />
                 </div>
                 <h3 className="text-base font-bold text-slate-900">
-                  {editingUser ? 'تعديل بيانات المستخدم وكلمة المرور' : 'إضافة مستخدم جديد للنظام'}
+                  {editingUser ? 'تعديل بيانات مستخدم إداري' : 'إضافة مستخدم إداري جديد'}
                 </h3>
               </div>
               <button
@@ -395,7 +495,7 @@ export const UsersView: React.FC<UsersViewProps> = ({ users, currentUser }) => {
                     required
                     value={username}
                     onChange={e => setUsername(e.target.value)}
-                    placeholder="مثال: ahmed.hr"
+                    placeholder="مثال: mahmoud.affairs"
                     className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#008e8b]/20 focus:border-[#008e8b]"
                   />
                 </div>
@@ -407,54 +507,51 @@ export const UsersView: React.FC<UsersViewProps> = ({ users, currentUser }) => {
                     required
                     value={fullName}
                     onChange={e => setFullName(e.target.value)}
-                    placeholder="مثال: أحمد محمد"
+                    placeholder="مثال: محمود عبد الرحمن"
                     className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#008e8b]/20 focus:border-[#008e8b]"
                   />
                 </div>
               </div>
 
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-700">
-                  {editingUser ? 'كلمة المرور الجديدة (اتركها فارغة للإبقاء على الحالية)' : 'كلمة المرور'}
-                </label>
-                <div className="relative flex items-center">
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    value={password}
-                    onChange={e => setPassword(e.target.value)}
-                    placeholder={editingUser ? '••••••••' : 'أدخل كلمة مرور قوية'}
-                    className="w-full pl-10 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#008e8b]/20 focus:border-[#008e8b]"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute left-3 text-slate-400 hover:text-slate-600"
-                    tabIndex={-1}
-                  >
-                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
+              {!editingUser && (
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-700">كلمة المرور الأولية (8 خانات كحد أدنى)</label>
+                  <div className="relative flex items-center">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      required
+                      value={password}
+                      onChange={e => setPassword(e.target.value)}
+                      placeholder="أدخل كلمة مرور قوية"
+                      className="w-full pl-10 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#008e8b]/20 focus:border-[#008e8b]"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute left-3 text-slate-400 hover:text-slate-600"
+                      tabIndex={-1}
+                    >
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-700">مستوى الصلاحية (Role)</label>
+                  <label className="text-xs font-bold text-slate-700">الدور الإداري المعتمد</label>
                   <select
                     value={role}
-                    onChange={e => setRole(e.target.value as UserRole)}
+                    onChange={e => handleRoleChange(e.target.value as UserRole)}
                     className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#008e8b]/20 focus:border-[#008e8b]"
                   >
-                    <option value="Admin">مدير النظام (Admin) — كامل الصلاحيات الإدارية</option>
-                    <option value="SchoolDirector">مدير المدرسة (School Director) — إشراف عام واعتمادات</option>
-                    <option value="StudentAffairs">شؤون الطلاب والقيد (Student Affairs) — سجلات وقبول وحضور</option>
-                    <option value="TeacherAffairs">شؤون المعلمين (Teacher Affairs) — سجلات الهيئة والدوام</option>
-                    <option value="HR">الموارد البشرية (HR) — الإجازات وملفات العاملين</option>
-                    <option value="SocialSpecialist">أخصائي اجتماعي (Social Specialist) — السلوك والانضباط المدرسي</option>
-                    <option value="TrainingOfficer">مسؤول التدريب المهني (Training Officer) — تقييم وتطوير الكادر</option>
-                    <option value="QualityOfficer">مسؤول الجودة (Quality Officer) — تقارير المعايير والتدقيق</option>
-                    <option value="Supervisor">مشرف تربوي (Supervisor) — متابعة الفصول والأداء</option>
-                    <option value="BehaviorOfficer">مسؤول الانضباط (Behavior Officer) — رصد ومتابعة السلوك</option>
-                    <option value="Viewer">مشاهد فقط (Viewer) — استعراض السجلات دون تعديل</option>
+                    <option value="Admin">مدير النظام (Admin) — كامل الصلاحيات</option>
+                    <option value="SchoolDirector">مدير المدرسة (SchoolDirector) — إشراف واعتمادات</option>
+                    <option value="StudentAffairs">شؤون الطلاب والقيد (StudentAffairs)</option>
+                    <option value="TeacherAffairs">شؤون المعلمين (TeacherAffairs) — الجداول والبدلاء</option>
+                    <option value="SocialSpecialist">أخصائي اجتماعي (SocialSpecialist) — السلوك والحالات</option>
+                    <option value="TrainingOfficer">مسؤول التدريب (TrainingOfficer) — التطوير المهني</option>
+                    <option value="QualityOfficer">مسؤول الجودة (QualityOfficer) — المعايير والتقويم</option>
                   </select>
                 </div>
 
@@ -464,7 +561,7 @@ export const UsersView: React.FC<UsersViewProps> = ({ users, currentUser }) => {
                     type="text"
                     value={department}
                     onChange={e => setDepartment(e.target.value)}
-                    placeholder="مثال: الموارد البشرية"
+                    placeholder="مثال: شؤون المعلمين والعاملين"
                     className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#008e8b]/20 focus:border-[#008e8b]"
                   />
                 </div>
@@ -478,7 +575,7 @@ export const UsersView: React.FC<UsersViewProps> = ({ users, currentUser }) => {
                     onChange={e => setIsActive(e.target.checked)}
                     className="rounded text-[#008e8b] focus:ring-[#008e8b]"
                   />
-                  <span>حساب نشط ومصرح له بتسجيل الدخول</span>
+                  <span>حساب نشط ومصرح له بالدخول للنظام</span>
                 </label>
               </div>
 
@@ -486,15 +583,97 @@ export const UsersView: React.FC<UsersViewProps> = ({ users, currentUser }) => {
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition"
+                  className="px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition cursor-pointer"
                 >
                   إلغاء
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2.5 bg-[#008e8b] hover:bg-[#007775] text-white text-xs font-bold rounded-xl shadow-xs transition"
+                  className="px-5 py-2.5 bg-[#008e8b] hover:bg-[#007775] text-white text-xs font-bold rounded-xl shadow-xs transition cursor-pointer"
                 >
                   {editingUser ? 'حفظ التعديلات' : 'إضافة المستخدم'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Reset Password Modal */}
+      {isResetModalOpen && resetTargetUser && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 animate-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-5">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center">
+                  <KeyRound className="w-4 h-4" />
+                </div>
+                <h3 className="text-base font-bold text-slate-900">
+                  إعادة تعيين كلمة المرور
+                </h3>
+              </div>
+              <button
+                onClick={() => setIsResetModalOpen(false)}
+                className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-600 mb-4">
+              سيتم تشفير كلمة المرور الجديدة عبر خوارزمية <span className="font-mono font-bold text-[#008e8b]">PBKDF2-HMAC-SHA256</span> وحفظها مباشرة في الخادم المعتمد للمستخدم <span className="font-bold text-slate-800">@{resetTargetUser.username}</span>.
+            </p>
+
+            {errorMessage && (
+              <div className="mb-4 p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-center gap-2 text-rose-700 text-xs font-semibold">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{errorMessage}</span>
+              </div>
+            )}
+
+            {successMessage && (
+              <div className="mb-4 p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-2 text-emerald-700 text-xs font-semibold">
+                <CheckCircle2 className="w-4 h-4 shrink-0" />
+                <span>{successMessage}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleExecutePasswordReset} className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-700">كلمة المرور الجديدة (8 خانات كحد أدنى)</label>
+                <div className="relative flex items-center">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    required
+                    value={newResetPassword}
+                    onChange={e => setNewResetPassword(e.target.value)}
+                    placeholder="أدخل كلمة المرور الجديدة"
+                    className="w-full pl-10 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#008e8b]/20 focus:border-[#008e8b]"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute left-3 text-slate-400 hover:text-slate-600"
+                    tabIndex={-1}
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsResetModalOpen(false)}
+                  className="px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition cursor-pointer"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl shadow-xs transition cursor-pointer"
+                >
+                  تشفير وتحديث كلمة المرور
                 </button>
               </div>
             </form>

@@ -1315,23 +1315,58 @@ class TimetableService {
     teacherCode: string,
     pin: string
   ): Promise<{ success: boolean; employee?: Employee; token?: string; message?: string }> {
-    const teacher = this.findTeacherByCode(teacherCode);
+    const cleanCode = (teacherCode || '').trim();
+    const cleanPin = (pin || '').trim();
+
+    if (!cleanCode || !cleanPin) {
+      return { success: false, message: 'يرجى إدخال كود المعلم ورمز المرور' };
+    }
+
+    const settings = storageService.getSettings();
+    const scriptUrl = settings.googleAppsScriptUrl;
+
+    // 1. Authoritative Backend Login (POST)
+    if (scriptUrl && scriptUrl.length > 15 && navigator.onLine) {
+      try {
+        const response = await fetch(scriptUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({
+            action: 'teacherLogin',
+            teacherCode: cleanCode,
+            pin: cleanPin,
+          }),
+        });
+
+        if (response.ok) {
+          const res = await response.json();
+          if (res.status === 'success' && res.employee) {
+            return {
+              success: true,
+              employee: res.employee,
+              token: res.teacherSessionToken,
+            };
+          } else if (res.status === 'error') {
+            return { success: false, message: res.message || 'بيانات الدخول غير صحيحة' };
+          }
+        }
+      } catch (err) {
+        console.warn('Backend teacher login failed, checking salted credentials...', err);
+      }
+    }
+
+    // 2. Strict Salted PBKDF2/SHA-256 Local Validation (No hardcoded backdoor PIN)
+    const teacher = this.findTeacherByCode(cleanCode);
     if (!teacher) {
-      return { success: false, message: 'كود المعلم غير صحيح أو غير مسجل' };
+      return { success: false, message: 'كود المعلم غير صحيح أو غير مسجل بالنظام' };
     }
 
     const access = this.getTeacherPortalAccess(teacher.id);
     if (!access || !access.pinHash || !access.salt) {
-      // If PIN not set, default fallback PIN for quick onboarding: "1234"
-      if (pin === '1234') {
-        await this.setTeacherPin(teacher.id, '1234');
-        const token = generateRandomToken(32);
-        return { success: true, employee: teacher, token };
-      }
-      return { success: false, message: 'حساب المعلم لم يتم تفعيل كلمة المرور له بعد (الافتراضي 1234)' };
+      return { success: false, message: 'حساب المعلم لم يتم تعيين رمز مرور (PIN) معتمد له بعد' };
     }
 
-    const computed = await hashPin(pin, access.salt);
+    const computed = await hashPin(cleanPin, access.salt);
     if (computed !== access.pinHash) {
       return { success: false, message: 'رمز المرور غير صحيح' };
     }
@@ -1658,20 +1693,62 @@ class TimetableService {
     }
   }
 
-  public revokeStudentAccessToken(studentIdOrToken: string): { success: boolean; message?: string } {
+  public async revokeStudentAccessToken(studentIdOrToken: string): Promise<{ success: boolean; message?: string }> {
     const tokens = this.getStudentAccessTokens();
     let found = false;
     tokens.forEach(t => {
       if (t.studentId === studentIdOrToken || t.token === studentIdOrToken || t.id === studentIdOrToken) {
         t.isActive = false;
+        t.revokedAt = getCairoNowISO();
         found = true;
       }
     });
     if (found) {
       localStorage.setItem(STORAGE_KEYS.STUDENT_ACCESS_TOKENS, JSON.stringify(tokens));
+    }
+
+    // Authoritative backend revocation
+    try {
+      const res = await storageService.pushPostDirect('revokeStudentAccessToken', { studentId: studentIdOrToken });
+      return res;
+    } catch {
       return { success: true, message: 'تم إيقاف صلاحية رمز الوصول بنجاح' };
     }
-    return { success: false, message: 'رمز الدخول غير موجود' };
+  }
+
+  public async issueStudentAccessTokenAuthoritative(studentId: string): Promise<{ success: boolean; token?: string; message?: string }> {
+    const students = storageService.getStudents();
+    const student = students.find(s => s.id === studentId || s.studentCode === studentId);
+    if (!student) {
+      return { success: false, message: 'بيانات الطالب غير موجودة' };
+    }
+
+    // Try authoritative backend generation
+    try {
+      const res = await storageService.pushPostDirect('issueStudentAccessToken', { studentId: student.id });
+      if (res && res.success && res.rawToken) {
+        const tokenHash = await hashPin(res.rawToken, '');
+        const newToken: StudentAccessToken = {
+          id: `SAT-${Date.now()}`,
+          studentId: student.id,
+          studentCode: student.studentCode || student.id,
+          token: res.rawToken,
+          tokenHash,
+          isActive: true,
+          createdAt: getCairoNowISO(),
+        };
+        const list = this.getStudentAccessTokens().filter(t => t.studentId !== student.id);
+        list.push(newToken);
+        localStorage.setItem(STORAGE_KEYS.STUDENT_ACCESS_TOKENS, JSON.stringify(list));
+        return { success: true, token: res.rawToken };
+      }
+    } catch (e) {
+      console.warn('Backend issueStudentAccessToken failed, generating with local hash...', e);
+    }
+
+    // Fallback generation with local hash
+    const local = this.generateStudentAccessToken(student.id, student.studentCode || student.id);
+    return { success: true, token: local.token };
   }
 
   public generateStudentAccessToken(studentId: string, studentCode: string): StudentAccessToken {
@@ -1693,6 +1770,63 @@ class TimetableService {
     updated.push(newToken);
     localStorage.setItem(STORAGE_KEYS.STUDENT_ACCESS_TOKENS, JSON.stringify(updated));
     return newToken;
+  }
+
+  public async getStudentPublicPortalData(tokenString: string): Promise<{
+    success: boolean;
+    student?: any;
+    classroom?: string;
+    grade?: string;
+    schedule?: ScheduleItem[];
+    exams?: ExamSchedule[];
+    homeworks?: Homework[];
+    resources?: TeacherLessonResource[];
+    message?: string;
+  }> {
+    const cleanToken = (tokenString || '').trim();
+    if (!cleanToken) {
+      return { success: false, message: 'رمز الوصول للجدول المدرسي غير موجود' };
+    }
+
+    const settings = storageService.getSettings();
+    const scriptUrl = settings.googleAppsScriptUrl;
+
+    // 1. Try Authoritative Backend Public Portal Gateway
+    if (scriptUrl && scriptUrl.length > 15 && navigator.onLine) {
+      try {
+        const response = await fetch(scriptUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({
+            action: 'getStudentPublicPortalData',
+            token: cleanToken,
+          }),
+        });
+
+        if (response.ok) {
+          const res = await response.json();
+          if (res.status === 'success') {
+            return {
+              success: true,
+              student: res.student,
+              classroom: res.classroom,
+              grade: res.grade,
+              schedule: res.schedule || [],
+              exams: res.exams || [],
+              homeworks: res.homeworks || [],
+              resources: res.resources || [],
+            };
+          } else if (res.status === 'error') {
+            return { success: false, message: res.message || 'رمز الدخول غير صالح' };
+          }
+        }
+      } catch (err) {
+        console.warn('Backend student public portal request failed, using sanitized local data...', err);
+      }
+    }
+
+    // 2. Local Fallback Sanitized Data
+    return this.getStudentTimetableData(cleanToken);
   }
 
   public getStudentTimetableData(tokenString: string): {

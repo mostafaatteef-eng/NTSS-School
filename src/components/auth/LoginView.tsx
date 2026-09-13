@@ -7,7 +7,9 @@ import {
   LogIn,
   AlertCircle,
   ShieldCheck,
-  CheckCircle2
+  CheckCircle2,
+  KeyRound,
+  X
 } from 'lucide-react';
 import { User } from '../../types';
 import { storageService } from '../../services/storageService';
@@ -23,10 +25,21 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [isDatabaseEmpty, setIsDatabaseEmpty] = useState(false);
+
+  // Setup / Bootstrap Admin State
+  const [isSetupOpen, setIsSetupOpen] = useState(false);
+  const [setupUsername, setSetupUsername] = useState('admin');
+  const [setupFullName, setSetupFullName] = useState('مدير النظام الرئيسي');
+  const [setupPassword, setSetupPassword] = useState('');
+  const [setupLoading, setSetupLoading] = useState(false);
+  const [setupError, setSetupError] = useState('');
+  const [setupSuccess, setSetupSuccess] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
+    setIsDatabaseEmpty(false);
 
     if (!username.trim()) {
       setErrorMessage('يرجى إدخال اسم المستخدم');
@@ -46,12 +59,58 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
       if (result.success && result.user) {
         onLoginSuccess(result.user);
       } else {
-        setErrorMessage(result.message || 'اسم المستخدم أو كلمة المرور غير صحيحة.');
+        if (result.code === 'DATABASE_EMPTY') {
+          setIsDatabaseEmpty(true);
+        }
+        setErrorMessage(result.message || 'بيانات الدخول غير صحيحة.');
       }
     } catch (err: any) {
       setErrorMessage('حدث خطأ أثناء الاتصال بالخادم. يرجى المحاولة مرة أخرى.');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleBootstrapAdmin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSetupError('');
+    setSetupSuccess('');
+
+    if (!setupUsername.trim() || !setupFullName.trim()) {
+      setSetupError('اسم المستخدم والاسم الكامل مطلوبان');
+      return;
+    }
+
+    if (!setupPassword.trim() || setupPassword.trim().length < 8) {
+      setSetupError('كلمة المرور يجب ألا تقل عن 8 خانات');
+      return;
+    }
+
+    setSetupLoading(true);
+
+    try {
+      const res = await storageService.bootstrapFirstAdmin(
+        setupUsername.trim(),
+        setupPassword.trim(),
+        setupFullName.trim()
+      );
+
+      if (res.success) {
+        setSetupSuccess('تم إنشاء مدير النظام وتشفير كلمة المرور بنجاح في قاعدة البيانات!');
+        setTimeout(async () => {
+          setIsSetupOpen(false);
+          const loginRes = await storageService.login(setupUsername.trim(), setupPassword.trim());
+          if (loginRes.success && loginRes.user) {
+            onLoginSuccess(loginRes.user);
+          }
+        }, 1200);
+      } else {
+        setSetupError(res.message || 'فشلت عملية تهيئة المدير الأول');
+      }
+    } catch (err: any) {
+      setSetupError(err?.message || 'خطأ في عملية التهيئة');
+    } finally {
+      setSetupLoading(false);
     }
   };
 
@@ -80,9 +139,21 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
 
           {/* Error Banner */}
           {errorMessage && (
-            <div className="mb-6 p-3.5 bg-rose-50 border border-rose-200 rounded-2xl flex items-start gap-3 text-rose-700 text-xs font-semibold animate-in fade-in duration-200">
-              <AlertCircle className="w-4 h-4 shrink-0 text-rose-500 mt-0.5" />
-              <div className="flex-1 leading-relaxed">{errorMessage}</div>
+            <div className="mb-6 p-3.5 bg-rose-50 border border-rose-200 rounded-2xl flex flex-col gap-2 text-rose-700 text-xs font-semibold animate-in fade-in duration-200">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-500 mt-0.5" />
+                <div className="flex-1 leading-relaxed">{errorMessage}</div>
+              </div>
+              {isDatabaseEmpty && (
+                <button
+                  type="button"
+                  onClick={() => setIsSetupOpen(true)}
+                  className="mt-1 w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <KeyRound className="w-3.5 h-3.5" />
+                  <span>تهيئة حساب مدير النظام الأول (First Admin Setup)</span>
+                </button>
+              )}
             </div>
           )}
 
@@ -139,7 +210,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute left-3 p-1 text-slate-400 hover:text-slate-600 rounded-lg transition-colors"
+                  className="absolute left-3 p-1 text-slate-400 hover:text-slate-600 rounded-lg transition-colors cursor-pointer"
                   title={showPassword ? 'إخفاء كلمة المرور' : 'إظهار كلمة المرور'}
                   tabIndex={-1}
                 >
@@ -182,6 +253,101 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
           </div>
         </div>
       </div>
+
+      {/* Setup First Admin Modal */}
+      {isSetupOpen && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 animate-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center">
+                  <KeyRound className="w-4 h-4" />
+                </div>
+                <h3 className="text-sm font-bold text-slate-900">
+                  تهيئة حساب مدير النظام الأول
+                </h3>
+              </div>
+              <button
+                onClick={() => setIsSetupOpen(false)}
+                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-600 mb-4 leading-relaxed">
+              هذا الإجراء متاح لمرة واحدة فقط عند تهيئة قاعدة البيانات لأول مرة. يتم تشفير كلمة المرور بـ Salted PBKDF2 وحفظها في الخادم ثم يُغلق هذا المسار نهائياً.
+            </p>
+
+            {setupError && (
+              <div className="mb-4 p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-center gap-2 text-rose-700 text-xs font-semibold">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{setupError}</span>
+              </div>
+            )}
+
+            {setupSuccess && (
+              <div className="mb-4 p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-2 text-emerald-700 text-xs font-semibold">
+                <CheckCircle2 className="w-4 h-4 shrink-0" />
+                <span>{setupSuccess}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleBootstrapAdmin} className="space-y-3">
+              <div className="space-y-1 text-right">
+                <label className="text-xs font-bold text-slate-700">اسم المستخدم</label>
+                <input
+                  type="text"
+                  required
+                  value={setupUsername}
+                  onChange={e => setSetupUsername(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium"
+                />
+              </div>
+
+              <div className="space-y-1 text-right">
+                <label className="text-xs font-bold text-slate-700">الاسم الكامل</label>
+                <input
+                  type="text"
+                  required
+                  value={setupFullName}
+                  onChange={e => setSetupFullName(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium"
+                />
+              </div>
+
+              <div className="space-y-1 text-right">
+                <label className="text-xs font-bold text-slate-700">كلمة المرور (8 خانات كحد أدنى)</label>
+                <input
+                  type="password"
+                  required
+                  value={setupPassword}
+                  onChange={e => setSetupPassword(e.target.value)}
+                  placeholder="أدخل كلمة مرور قوية"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsSetupOpen(false)}
+                  className="px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  disabled={setupLoading}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer disabled:opacity-70"
+                >
+                  {setupLoading ? 'جارٍ الإنشاء والتشفير...' : 'إنشاء وتشفير الحساب'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Bottom Footer */}
       <footer className="w-full max-w-md pb-4 text-center text-xs text-slate-400 font-medium">

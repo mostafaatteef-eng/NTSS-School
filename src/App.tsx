@@ -39,6 +39,7 @@ import { LoginView } from './components/auth/LoginView';
 import { ForceChangePasswordModal } from './components/auth/ForceChangePasswordModal';
 import { runMigrationScope008RemoveSamatPayroll } from './services/migrationScope008RemoveSamatPayroll';
 import { runMigrationScope009SecurityAndFinalRetirement } from './services/migrationScope009SecurityAndFinalRetirement';
+import { runMigrationScope010TimetableSecureBackend } from './services/migrationScope010TimetableSecureBackend';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(() => storageService.getCurrentUser());
@@ -57,10 +58,11 @@ export default function App() {
   const [selectedReportKey, setSelectedReportKey] = useState<string | undefined>();
   const [selectedReportFilters, setSelectedReportFilters] = useState<Record<string, any> | undefined>();
 
-  // Run scope reduction and final retirement migration on boot
+  // Run scope reduction, retirement, and timetable security migrations on boot
   useEffect(() => {
     runMigrationScope008RemoveSamatPayroll();
     runMigrationScope009SecurityAndFinalRetirement();
+    runMigrationScope010TimetableSecureBackend();
   }, []);
 
   // Subscribe to storage changes

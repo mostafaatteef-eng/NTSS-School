@@ -55,11 +55,15 @@ export function runMigrationScope009SecurityAndFinalRetirement(): {
   archivedKeysCount: number;
   message: string;
 } {
-  if (typeof window === 'undefined' || !window.localStorage) {
-    return { alreadyApplied: false, archivedKeysCount: 0, message: 'SSR environment' };
+  const storage = typeof globalThis !== 'undefined' && (globalThis as any).localStorage
+    ? (globalThis as any).localStorage
+    : (typeof window !== 'undefined' ? window.localStorage : null);
+
+  if (!storage) {
+    return { alreadyApplied: false, archivedKeysCount: 0, message: 'Storage unavailable' };
   }
 
-  const alreadyApplied = localStorage.getItem(MIGRATION_FLAG_KEY) === 'true';
+  const alreadyApplied = storage.getItem(MIGRATION_FLAG_KEY) === 'true';
   if (alreadyApplied) {
     return {
       alreadyApplied: true,

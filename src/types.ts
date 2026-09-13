@@ -7,6 +7,16 @@ export type StaffRole =
   | 'TrainingOfficer'
   | 'QualityOfficer';
 
+export const CANONICAL_STAFF_ROLES: StaffRole[] = [
+  'Admin',
+  'SchoolDirector',
+  'StudentAffairs',
+  'TeacherAffairs',
+  'SocialSpecialist',
+  'TrainingOfficer',
+  'QualityOfficer',
+];
+
 export type UserRole = StaffRole;
 
 // Legacy and Historical Roles for Audit, Archive, and Migration
@@ -37,7 +47,7 @@ export function normalizeStaffRole(role: string): StaffRole {
   if (r === 'SocialSpecialist' || r === 'BehaviorOfficer') return 'SocialSpecialist';
   if (r === 'TrainingOfficer') return 'TrainingOfficer';
   if (r === 'QualityOfficer' || r === 'Viewer') return 'QualityOfficer';
-  return 'Admin';
+  throw new Error('INVALID_OR_UNSUPPORTED_ROLE');
 }
 
 export type PermissionKey =
@@ -56,11 +66,6 @@ export type PermissionKey =
   | 'schoolAttendance.approve'
   | 'schoolAttendance.lock'
   | 'schoolAttendance.overrideLocked'
-  | 'classAttendance.view'
-  | 'classAttendance.create'
-  | 'classAttendance.edit'
-  | 'classAttendance.delete'
-  | 'classAttendance.manageOwnLessons'
   | 'teacherPortal.access'
   | 'teacherSchedule.viewOwn'
   | 'schedule.view'
@@ -817,7 +822,7 @@ export interface TeacherSubject {
   createdAt?: string;
 }
 
-export type ScheduleItemStatus = 'Active' | 'Draft' | 'Suspended' | 'Archived' | 'Published';
+export type ScheduleItemStatus = 'Draft' | 'UnderReview' | 'Approved' | 'Published';
 
 export interface ScheduleItem {
   id: string;
@@ -865,7 +870,7 @@ export interface ScheduleItem {
 
 export type ClassPeriodSchedule = ScheduleItem;
 
-export type SubstitutionStatus = 'Pending' | 'Approved' | 'Active' | 'Completed' | 'Cancelled';
+export type SubstitutionStatus = 'Suggested' | 'Assigned' | 'Completed' | 'Cancelled';
 
 export interface ScheduleSubstitution {
   id: string; // "SUB-2026-10-13-SCH01"
@@ -911,12 +916,17 @@ export interface ScheduleSubstitution {
 export interface TeacherLoadPolicy {
   weeklyMinutesLimit: number; // 1500 (25h * 60)
   defaultPeriodMinutes: number; // 50
-  weeklyPeriodLimit: number; // 30
+  weeklyPeriodLimit: number; // 30 (computed: floor(weeklyMinutesLimit / defaultPeriodMinutes))
   weekStartsOn: number; // 0 = Sunday
   reserveCountsTowardLoad: boolean; // true
   supervisionCountsTowardLoad: boolean; // false
   reserveResetMode: 'WEEKLY_QUERY';
   allowOverloadWithWarning: boolean; // true
+}
+
+export function computeWeeklyPeriodLimit(policy: { weeklyMinutesLimit: number; defaultPeriodMinutes: number }): number {
+  if (!policy.defaultPeriodMinutes || policy.defaultPeriodMinutes <= 0) return 30;
+  return Math.floor(policy.weeklyMinutesLimit / policy.defaultPeriodMinutes);
 }
 
 export const DEFAULT_TEACHER_LOAD_POLICY: TeacherLoadPolicy = {
@@ -1046,7 +1056,24 @@ export interface TeacherLessonResource {
   updatedAt?: string;
 }
 
-export type ExamScheduleStatus = 'Draft' | 'Approved' | 'Published' | 'Cancelled' | 'DRAFT' | 'APPROVED' | 'PUBLISHED' | 'CANCELLED';
+export type ExamScheduleStatus = 'DRAFT' | 'APPROVED' | 'PUBLISHED' | 'CANCELLED';
+
+export interface TeacherAuthResult {
+  success: boolean;
+  teacherSessionToken?: string;
+  expiresAt?: string;
+  message?: string;
+  code?: string;
+  teacher?: {
+    teacherId: string;
+    employeeId: string;
+    teacherCode: string;
+    teacherName: string;
+    department?: string;
+    teachingSubjects?: string[];
+    weeklyPeriodLimit?: number;
+  };
+}
 
 export interface ExamSchedule {
   id: string;
@@ -1080,11 +1107,31 @@ export interface StudentAccessToken {
   id: string;
   studentId: string;
   studentCode: string;
-  token: string; // Random, unpredictable, revocable token
+  token?: string; // Raw random token, returned ONCE upon generation for link/QR
+  tokenHash?: string; // Cryptographic SHA-256 hash stored on server
   expiresAt?: string;
+  revokedAt?: string;
   isActive: boolean;
   createdAt: string;
   lastAccessedAt?: string;
+}
+
+export interface SafeStudentProfile {
+  id: string;
+  studentCode: string;
+  fullName: string;
+  grade: string;
+  classroom: string;
+}
+
+export interface TeacherSession {
+  token: string;
+  teacherId: string;
+  employeeId: string;
+  teacherCode: string;
+  teacherName: string;
+  createdAt: string;
+  expiresAt: string;
 }
 
 export interface TeacherPortalAccess {

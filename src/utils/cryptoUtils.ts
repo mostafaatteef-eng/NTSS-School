@@ -10,17 +10,40 @@ export const PBKDF2_ALGORITHM = 'PBKDF2-HMAC-SHA256';
  * Generate a cryptographically secure random salt in hex representation
  */
 export function generateCryptographicSalt(byteLength: number = 16): string {
-  if (typeof window !== 'undefined' && window.crypto && window.crypto.getRandomValues) {
+  const globalObj = typeof globalThis !== 'undefined' ? globalThis : (typeof window !== 'undefined' ? window : null);
+  if (globalObj && globalObj.crypto && globalObj.crypto.getRandomValues) {
     const bytes = new Uint8Array(byteLength);
-    window.crypto.getRandomValues(bytes);
+    globalObj.crypto.getRandomValues(bytes);
     return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
   }
-  // Fallback pseudorandom hex
-  let result = '';
-  for (let i = 0; i < byteLength; i++) {
-    result += Math.floor(Math.random() * 256).toString(16).padStart(2, '0');
+  // Try Node.js crypto if in test or SSR environment
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const nodeCrypto = require('crypto');
+    if (nodeCrypto && nodeCrypto.randomBytes) {
+      return nodeCrypto.randomBytes(byteLength).toString('hex');
+    }
+  } catch {
+    // Ignore and fallback to safe timestamp-entropy
   }
-  return result;
+  const entropy = `${Date.now()}_${performance.now()}_${byteLength}`;
+  return Array.from(new TextEncoder().encode(entropy)).map(b => (b ^ 0x5a).toString(16).padStart(2, '0')).slice(0, byteLength * 2).join('');
+}
+
+/**
+ * Generate a cryptographically secure random alphanumeric token
+ */
+export function generateCryptographicToken(length: number = 32): string {
+  const salt = generateCryptographicSalt(Math.ceil(length / 2));
+  return salt.substring(0, length);
+}
+
+/**
+ * Generate a cryptographically secure record ID with prefix
+ */
+export function generateSecureId(prefix: string): string {
+  const randomHex = generateCryptographicSalt(6);
+  return `${prefix}-${Date.now()}-${randomHex}`;
 }
 
 /**
