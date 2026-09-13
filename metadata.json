@@ -1,0 +1,8 @@
+{
+  "name": "ادارة مدارس ابدأ",
+  "description": "نظام ادارة مدارس ابدأ للعلوم و التقنية ",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
