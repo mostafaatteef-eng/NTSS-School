@@ -186,9 +186,11 @@ export function validateStaffPasswordStrength(password: string): {
 export async function hashPlainSHA256(text: string): Promise<string> {
   if (!text) return '';
   try {
-    if (typeof window !== 'undefined' && window.crypto && window.crypto.subtle) {
+    const cryptoSubtle = (typeof globalThis !== 'undefined' && globalThis.crypto?.subtle) ||
+                         (typeof window !== 'undefined' && window.crypto?.subtle);
+    if (cryptoSubtle) {
       const msgBuffer = new TextEncoder().encode(text);
-      const hashBuffer = await window.crypto.subtle.digest('SHA-256', msgBuffer);
+      const hashBuffer = await cryptoSubtle.digest('SHA-256', msgBuffer);
       const hashArray = Array.from(new Uint8Array(hashBuffer));
       return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
     }

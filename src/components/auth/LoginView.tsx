@@ -9,23 +9,31 @@ import {
   ShieldCheck,
   CheckCircle2,
   KeyRound,
-  X
+  X,
+  Sparkles,
+  CalendarDays
 } from 'lucide-react';
 import { User } from '../../types';
 import { storageService } from '../../services/storageService';
 import { NTSSLogo } from '../common/NTSSLogo';
+import { FirstLoginSetupModal } from './FirstLoginSetupModal';
 
 interface LoginViewProps {
   onLoginSuccess: (user: User) => void;
+  onOpenPublicSchedule?: () => void;
 }
 
-export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
+export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess, onOpenPublicSchedule }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [isDatabaseEmpty, setIsDatabaseEmpty] = useState(false);
+
+  // First Login Setup State
+  const [isFirstLoginOpen, setIsFirstLoginOpen] = useState(false);
+  const [firstLoginNumber, setFirstLoginNumber] = useState('');
 
   // Setup / Bootstrap Admin State
   const [isSetupOpen, setIsSetupOpen] = useState(false);
@@ -42,7 +50,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
     setIsDatabaseEmpty(false);
 
     if (!username.trim()) {
-      setErrorMessage('يرجى إدخال اسم المستخدم');
+      setErrorMessage('يرجى إدخال اسم المستخدم أو رقم الدخول');
       return;
     }
 
@@ -61,6 +69,11 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
       } else {
         if (result.code === 'DATABASE_EMPTY') {
           setIsDatabaseEmpty(true);
+        } else if (result.code === 'PASSWORD_SETUP_REQUIRED') {
+          setFirstLoginNumber(String(result.loginNumber || username.trim()));
+          setIsFirstLoginOpen(true);
+          setErrorMessage('يتطلب هذا الحساب تفعيل كلمة المرور لأول مرة. تم فتح نافذة التفعيل.');
+          return;
         }
         setErrorMessage(result.message || 'بيانات الدخول غير صحيحة.');
       }
@@ -244,6 +257,31 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                 )}
               </button>
             </div>
+            {/* Action Links: First Login & Public Student Schedule */}
+            <div className="pt-3 flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setFirstLoginNumber(username.trim());
+                  setIsFirstLoginOpen(true);
+                }}
+                className="w-full py-2.5 px-3 bg-teal-50 hover:bg-teal-100/80 text-[#008e8b] font-bold text-xs rounded-xl border border-teal-200 transition flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>أول دخول للنظام؟ تفعيل الحساب وإنشاء كلمة المرور</span>
+              </button>
+
+              {onOpenPublicSchedule && (
+                <button
+                  type="button"
+                  onClick={onOpenPublicSchedule}
+                  className="w-full py-2 px-3 bg-slate-50 hover:bg-slate-100 text-slate-600 font-bold text-xs rounded-xl border border-slate-200 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <CalendarDays className="w-3.5 h-3.5 text-slate-500" />
+                  <span>بوابة جدول الطلاب والفصول (بدون تسجيل دخول)</span>
+                </button>
+              )}
+            </div>
           </form>
 
           {/* Clean Security Note */}
@@ -253,6 +291,17 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
           </div>
         </div>
       </div>
+
+      {/* First Login Password Setup Modal */}
+      <FirstLoginSetupModal
+        isOpen={isFirstLoginOpen}
+        initialLoginNumber={firstLoginNumber}
+        onClose={() => setIsFirstLoginOpen(false)}
+        onSuccess={user => {
+          setIsFirstLoginOpen(false);
+          onLoginSuccess(user);
+        }}
+      />
 
       {/* Setup First Admin Modal */}
       {isSetupOpen && (

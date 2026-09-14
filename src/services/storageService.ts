@@ -35,6 +35,8 @@ import {
   PermissionTypeConfig,
   PositiveBehaviorType,
   PromotionRule,
+  PublicClassScheduleDTO,
+  PublicClassScheduleLesson,
   ScheduleConfig,
   ScheduleItem,
   SchedulePeriodItem,
@@ -86,7 +88,14 @@ import {
   INITIAL_SETTINGS,
 } from '../data/initialData';
 import { getCairoCurrentDate, getCairoCurrentTime, getCairoNowISO, getEgyptianDayName } from '../utils/egyptianTime';
-import { generateClientSessionToken, hashPasswordSHA256, hashPlainSHA256 } from '../utils/cryptoUtils';
+import {
+  generateClientSessionToken,
+  hashPasswordSHA256,
+  hashPlainSHA256,
+  derivePBKDF2Hash,
+  generateCryptographicSalt,
+  generateCryptographicToken
+} from '../utils/cryptoUtils';
 import { buildUnifiedAttendanceRecord, calculateAttendanceMetrics } from '../utils/attendanceUtils';
 import { computeAttendanceDayReview, calculateStudentLateMinutes } from '../utils/attendanceEngine';
 import { SyncQueueService } from './syncQueueService';
@@ -260,7 +269,7 @@ class StorageService {
     this.notifyChange();
   }
 
-  public async login(username: string, password: string): Promise<{ success: boolean; message?: string; user?: User; code?: string }> {
+  public async login(username: string, password: string): Promise<{ success: boolean; message?: string; user?: User; code?: string; loginNumber?: string | number }> {
     const cleanUsername = (username || '').trim().toLowerCase();
     const cleanPassword = (password || '').trim();
 
@@ -318,6 +327,14 @@ class StorageService {
             success: false,
             code: 'DATABASE_EMPTY',
             message: result.message || 'قاعدة بيانات المستخدمين فارغة، يلزم تهيئة حساب مدير النظام الأول.'
+          };
+        }
+        if (result.code === 'PASSWORD_SETUP_REQUIRED') {
+          return {
+            success: false,
+            code: 'PASSWORD_SETUP_REQUIRED',
+            loginNumber: result.loginNumber,
+            message: result.message || 'يتطلب حسابك إعداد كلمة المرور لأول مرة عبر كود التفعيل.'
           };
         }
         return { success: false, message: result.message || 'بيانات الدخول غير صحيحة' };
@@ -1591,6 +1608,11 @@ class StorageService {
     }
   }
 
+  public saveSchedule(items: ScheduleItem[]): void {
+    localStorage.setItem(STORAGE_KEYS.SCHEDULE, JSON.stringify(items));
+    this.notifyChange();
+  }
+
   public saveScheduleItem(item: ScheduleItem): { success: boolean; message?: string } {
     const caller = this.getCurrentUser();
     const isScheduleAdmin = !caller || caller.role === 'Admin' || (caller.role as string) === 'Supervisor';
@@ -1734,21 +1756,91 @@ class StorageService {
     }
   }
 
+  public getNextLoginNumber(): number {
+    const users = this.getUsers();
+    const employees = this.getEmployees({ includeFinancials: false });
+    let highest = 120;
+
+    users.forEach(u => {
+      const n = Number(u.loginNumber);
+      if (Number.isFinite(n) && n > highest) highest = n;
+    });
+
+    employees.forEach(e => {
+      const n = Number(e.loginNumber);
+      if (Number.isFinite(n) && n > highest) highest = n;
+    });
+
+    return highest + 1;
+  }
+
+  public generateNextLoginNumber(): number {
+    return this.getNextLoginNumber();
+  }
+
+  public getEmployeeById(id: string): Employee | undefined {
+    return this.getEmployees({ includeFinancials: true }).find(e => e.id === id || e.employeeId === id);
+  }
+
+  public migrateLoginNumbersAndFirstLoginState(): void {
+    const employees = this.getEmployees({ includeFinancials: true });
+    let empUpdated = false;
+    employees.forEach(emp => {
+      if (!emp.loginNumber) {
+        emp.loginNumber = this.getNextLoginNumber();
+        empUpdated = true;
+      }
+    });
+    if (empUpdated) {
+      localStorage.setItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify(employees));
+    }
+
+    const users = this.getUsers();
+    let userUpdated = false;
+    users.forEach(u => {
+      if (!u.loginNumber) {
+        u.loginNumber = this.getNextLoginNumber();
+        userUpdated = true;
+      }
+      if (u.passwordInitialized === undefined) {
+        u.passwordInitialized = true;
+        userUpdated = true;
+      }
+    });
+    if (userUpdated) {
+      localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
+    }
+  }
+
   public saveEmployee(emp: Employee): { success: boolean; message?: string } {
     const list = this.getEmployees({ includeFinancials: true });
     const idx = list.findIndex(e => e.id === emp.id);
 
+    const isTeacher = Boolean(emp.isTeacher || emp.teacherCode || emp.isTeachingStaff || (emp.jobTitle && emp.jobTitle.includes('معلم')));
+    const assignedLoginNumber = emp.loginNumber || this.getNextLoginNumber();
+
+    const normalizedEmp: Employee = {
+      ...emp,
+      employeeId: emp.employeeId || emp.id,
+      fullName: emp.fullName || emp.name,
+      name: emp.fullName || emp.name,
+      isTeachingStaff: isTeacher,
+      isTeacher: isTeacher,
+      teacherId: isTeacher ? (emp.teacherId || emp.id) : emp.teacherId,
+      loginNumber: assignedLoginNumber,
+    };
+
     if (idx >= 0) {
       const old = list[idx];
-      list[idx] = emp;
-      this.logAudit('UPDATE', 'EMPLOYEE', `تعديل بيانات الموظف/المعلم: ${emp.name} (${emp.department})`, JSON.stringify(old), JSON.stringify(emp), emp.id);
+      list[idx] = normalizedEmp;
+      this.logAudit('UPDATE', 'EMPLOYEE', `تعديل بيانات الموظف/المعلم: ${normalizedEmp.name} (${normalizedEmp.department})`, JSON.stringify(old), JSON.stringify(normalizedEmp), normalizedEmp.id);
     } else {
-      list.push(emp);
-      this.logAudit('CREATE', 'EMPLOYEE', `إضافة موظف/معلم جديد: ${emp.name} (${emp.jobTitle})`, '', JSON.stringify(emp), emp.id);
+      list.push(normalizedEmp);
+      this.logAudit('CREATE', 'EMPLOYEE', `إضافة موظف/معلم جديد: ${normalizedEmp.name} (${normalizedEmp.jobTitle})`, '', JSON.stringify(normalizedEmp), normalizedEmp.id);
     }
     localStorage.setItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify(list));
     this.notifyChange();
-    this.pushPost('saveEmployee', emp).catch(() => {});
+    this.pushPost('saveEmployee', normalizedEmp).catch(() => {});
     return { success: true, message: 'تم حفظ بيانات الموظف بنجاح' };
   }
 
@@ -2080,21 +2172,30 @@ class StorageService {
         ? user.password.trim()
         : existing.password;
 
+      const passwordInitialized = user.passwordInitialized !== undefined
+        ? user.passwordInitialized
+        : (Boolean(passwordToSave) || existing.passwordInitialized === true);
+
       list[idx] = {
         ...existing,
         ...user,
+        loginNumber: user.loginNumber || existing.loginNumber || this.getNextLoginNumber(),
         password: passwordToSave,
+        passwordInitialized,
       };
       this.logAudit('UPDATE', 'USER', `تعديل بيانات المستخدم: ${user.fullName} (@${user.username})`);
     } else {
       if (caller && !isCallerAdmin) {
         return { success: false, message: 'غير مصرح بإضافة مستخدم جديد.' };
       }
+      const hasInitialPassword = Boolean(user.password && user.password.trim().length >= 6);
       const newUser: User = {
         ...user,
         id: user.id || `USR-${Date.now().toString().slice(-4)}`,
-        password: user.password && user.password.trim() ? user.password.trim() : '123456',
-        mustChangePassword: user.mustChangePassword !== undefined ? user.mustChangePassword : true,
+        loginNumber: user.loginNumber || this.getNextLoginNumber(),
+        password: hasInitialPassword ? user.password?.trim() : undefined,
+        passwordInitialized: user.passwordInitialized !== undefined ? user.passwordInitialized : hasInitialPassword,
+        mustChangePassword: user.mustChangePassword !== undefined ? user.mustChangePassword : !hasInitialPassword,
         createdAt: user.createdAt || getCairoNowISO(),
       };
       list.push(newUser);
@@ -3401,6 +3502,425 @@ class StorageService {
     }
 
     return this.pushPostDirect('resetUserPassword', { userId, newPassword });
+  }
+
+  public async issueUserActivationToken(userId: string): Promise<{
+    success: boolean;
+    loginNumber?: number | string;
+    activationToken?: string;
+    expiresAt?: string;
+    message?: string;
+  }> {
+    const caller = this.getCurrentUser();
+    if (caller && caller.role !== 'Admin' && caller.role !== 'TeacherAffairs') {
+      return { success: false, message: 'غير مصرح بإصدار كود تفعيل. خاص بمدير النظام وشؤون المعلمين فقط.' };
+    }
+
+    const settings = this.getSettings();
+    const scriptUrl = settings.googleAppsScriptUrl || DEFAULT_BACKEND_URL;
+
+    // 1. Authoritative Backend POST
+    if (scriptUrl && scriptUrl.length > 15 && navigator.onLine) {
+      try {
+        const response = await fetch(scriptUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({
+            action: 'issueUserActivationToken',
+            sessionToken: caller?.sessionToken,
+            userId,
+            payload: { userId },
+          }),
+        });
+
+        if (response.ok) {
+          const res = await response.json();
+          if (res.status === 'success') {
+            const users = this.getUsers();
+            const uIdx = users.findIndex(u => u.id === userId);
+            if (uIdx >= 0) {
+              users[uIdx].loginNumber = res.loginNumber || users[uIdx].loginNumber;
+              users[uIdx].passwordInitialized = false;
+              users[uIdx].activationExpiresAt = res.expiresAt;
+              localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
+              this.notifyChange();
+            }
+            return {
+              success: true,
+              loginNumber: res.loginNumber,
+              activationToken: res.activationToken,
+              expiresAt: res.expiresAt,
+              message: res.message || 'تم إصدار كود التفعيل لمرة واحدة بنجاح',
+            };
+          }
+          return { success: false, message: res.message || 'فشل إصدار كود التفعيل من الخادم' };
+        }
+      } catch (err: any) {
+        console.warn('Backend activation issue request failed, generating secure token locally...', err);
+      }
+    }
+
+    // 2. Cryptographic Local Generator Fallback
+    const users = this.getUsers();
+    const uIdx = users.findIndex(u => u.id === userId);
+    if (uIdx < 0) return { success: false, message: 'المستخدم غير موجود' };
+
+    let loginNum = users[uIdx].loginNumber;
+    if (!loginNum) {
+      loginNum = this.getNextLoginNumber();
+      users[uIdx].loginNumber = loginNum;
+    }
+
+    const rawToken = generateCryptographicToken(8).toUpperCase();
+    const hashHex = await hashPlainSHA256(rawToken);
+
+    const expiryDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    users[uIdx].activationTokenHash = hashHex;
+    users[uIdx].activationExpiresAt = expiryDate;
+    users[uIdx].activationTokenExpiresAt = expiryDate;
+    users[uIdx].passwordInitialized = false;
+
+    localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
+    this.notifyChange();
+    this.logAudit('UPDATE', 'USER', `إصدار كود تفعيل لمرة واحدة للمستخدم: ${users[uIdx].fullName}`, '', '', userId);
+
+    return {
+      success: true,
+      loginNumber: loginNum,
+      activationToken: rawToken,
+      expiresAt: expiryDate,
+      message: 'تم إصدار كود التفعيل لمرة واحدة بنجاح',
+    };
+  }
+
+  public async firstLoginPasswordSetup(
+    loginNumberOrUsername: string,
+    activationToken: string,
+    newPassword: string,
+    confirmPassword?: string
+  ): Promise<{ success: boolean; sessionToken?: string; user?: User; message?: string }> {
+    const cleanLogin = (loginNumberOrUsername || '').trim();
+    const cleanToken = (activationToken || '').trim().toUpperCase();
+    const cleanPass = (newPassword || '').trim();
+    const cleanConfirm = (confirmPassword !== undefined ? confirmPassword : cleanPass).trim();
+
+    if (!cleanLogin || !cleanToken || !cleanPass) {
+      return { success: false, message: 'يرجى إدخال رقم الدخول وكود التفعيل وكلمة المرور الجديدة' };
+    }
+
+    if (cleanPass.length < 8) {
+      return { success: false, message: 'كلمة المرور يجب ألا تقل عن 8 أحرف' };
+    }
+
+    if (!/[A-Za-z\u0600-\u06FF]/.test(cleanPass) || !/[0-9]/.test(cleanPass)) {
+      return { success: false, message: 'كلمة المرور يجب أن تحتوي على أحرف وأرقام معاً' };
+    }
+
+    if (cleanPass !== cleanConfirm) {
+      return { success: false, message: 'كلمة المرور وتأكيدها غير متطابقين' };
+    }
+
+    const settings = this.getSettings();
+    const scriptUrl = settings.googleAppsScriptUrl || DEFAULT_BACKEND_URL;
+
+    // 1. Authoritative Backend First Login Setup
+    if (scriptUrl && scriptUrl.length > 15 && navigator.onLine) {
+      try {
+        const response = await fetch(scriptUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({
+            action: 'firstLoginPasswordSetup',
+            loginNumber: cleanLogin,
+            activationToken: cleanToken,
+            newPassword: cleanPass,
+            confirmPassword: cleanPass,
+          }),
+        });
+
+        if (response.ok) {
+          const res = await response.json();
+          if (res.status === 'success' && res.user) {
+            const userWithToken: User = {
+              ...res.user,
+              sessionToken: res.sessionToken,
+              passwordInitialized: true,
+            };
+            this.setCurrentUser(userWithToken);
+            return {
+              success: true,
+              sessionToken: res.sessionToken,
+              user: userWithToken,
+              message: res.message || 'تم إعداد كلمة المرور وتفعيل الحساب بنجاح',
+            };
+          } else if (res.status === 'error') {
+            return { success: false, message: res.message || 'فشلت عملية التفعيل' };
+          }
+        }
+      } catch (err: any) {
+        console.warn('Backend firstLoginPasswordSetup failed, checking local token...', err);
+      }
+    }
+
+    // 2. Local Fallback Verification
+    const users = this.getUsers();
+    const user = users.find(
+      u => String(u.loginNumber) === cleanLogin ||
+           u.username.toLowerCase() === cleanLogin.toLowerCase() ||
+           u.id === cleanLogin
+    );
+
+    if (!user) {
+      return { success: false, message: 'بيانات الدخول غير صحيحة أو الحساب غير مسجل' };
+    }
+
+    if (user.status === 'Inactive' || user.status === 'Suspended') {
+      return { success: false, message: 'الحساب غير نشط حالياً. يرجى مراجعة إدارة المدرسة.' };
+    }
+
+    if (!user.activationTokenHash) {
+      return { success: false, message: 'لم يتم إصدار كود تفعيل لهذا الحساب أو تم استخدامه بالفعل. يرجى مراجعة الإدارة.' };
+    }
+
+    const hashHex = await hashPlainSHA256(cleanToken);
+
+    if (hashHex !== user.activationTokenHash) {
+      return { success: false, message: 'كود التفعيل غير صحيح' };
+    }
+
+    const isExpired = (user.activationExpiresAt && new Date() > new Date(user.activationExpiresAt)) ||
+                      (user.activationTokenExpiresAt && new Date() > new Date(user.activationTokenExpiresAt));
+    if (isExpired) {
+      return { success: false, message: 'انتهت صلاحية كود التفعيل، وهو منتهي الصلاحية. يرجى طلب كود جديد من مدير النظام.' };
+    }
+
+    const uIdx = users.findIndex(u => u.id === user.id);
+    const salt = generateCryptographicSalt(16);
+    const passHash = await derivePBKDF2Hash(cleanPass, salt);
+    users[uIdx].password = cleanPass;
+    users[uIdx].passwordHash = passHash;
+    users[uIdx].passwordSalt = salt;
+    users[uIdx].passwordInitialized = true;
+    users[uIdx].mustChangePassword = false;
+    delete users[uIdx].activationTokenHash;
+    delete users[uIdx].activationExpiresAt;
+    delete users[uIdx].activationTokenExpiresAt;
+
+    localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
+    this.notifyChange();
+
+    const loggedUser: User = {
+      ...users[uIdx],
+      sessionToken: `LOCAL_SES_${Date.now()}`,
+    };
+    delete loggedUser.password;
+    this.setCurrentUser(loggedUser);
+
+    this.logAudit('UPDATE', 'USER', `إعداد كلمة المرور وتفعيل الحساب لأول مرة: ${user.fullName}`, '', '', user.id);
+
+    return {
+      success: true,
+      user: loggedUser,
+      sessionToken: loggedUser.sessionToken,
+      message: 'تم إعداد كلمة المرور وتفعيل الحساب بنجاح',
+    };
+  }
+
+  public getUserById(userId: string): User | undefined {
+    return this.getUsers().find(u => u.id === userId);
+  }
+
+  public revokeUserSession(userId: string): { success: boolean; message?: string } {
+    const current = this.getCurrentUser();
+    if (current && current.id === userId) {
+      this.setCurrentUser(null);
+    }
+    const users = this.getUsers();
+    const idx = users.findIndex(u => u.id === userId);
+    if (idx >= 0) {
+      delete users[idx].sessionToken;
+      localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
+      this.notifyChange();
+    }
+    return { success: true, message: 'تم إبطال جميع جلسات المستخدم بنجاح' };
+  }
+
+  public async revokeUserSessions(userId: string): Promise<{ success: boolean; message?: string }> {
+    const caller = this.getCurrentUser();
+    if (caller && caller.role !== 'Admin') {
+      return { success: false, message: 'غير مصرح بتسجيل الخروج الإجباري. خاص بمدير النظام فقط.' };
+    }
+
+    this.revokeUserSession(userId);
+    const backendRes = await this.pushPostDirect('revokeUserSessions', { userId });
+    if (backendRes.success) return backendRes;
+    return { success: true, message: 'تم إبطال جميع جلسات المستخدم بنجاح' };
+  }
+
+  public revokeAllUserSessions(userId: string): { success: boolean; message?: string } {
+    return this.revokeUserSession(userId);
+  }
+
+  public async toggleUserStatus(userId: string, newStatus?: string): Promise<{ success: boolean; status?: string; message?: string }> {
+    const caller = this.getCurrentUser();
+    if (caller && caller.role !== 'Admin') {
+      return { success: false, message: 'غير مصرح بتعديل حالة المستخدمين. خاص بمدير النظام فقط.' };
+    }
+
+    const users = this.getUsers();
+    const idx = users.findIndex(u => u.id === userId);
+    let updatedStatus = newStatus;
+    if (idx >= 0) {
+      const target = users[idx];
+      const nextStatus = newStatus || (target.status === 'Active' ? 'Suspended' : 'Active');
+      target.status = nextStatus as any;
+      target.isActive = nextStatus === 'Active';
+      updatedStatus = nextStatus;
+      localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
+      this.notifyChange();
+      this.logAudit('UPDATE', 'USER', `تغيير حالة المستخدم ${target.fullName} إلى ${nextStatus}`, '', '', userId);
+    }
+
+    const backendRes = await this.pushPostDirect('toggleUserStatus', { userId, newStatus });
+    if (backendRes.success) return backendRes;
+    return {
+      success: idx >= 0,
+      status: updatedStatus,
+      message: idx >= 0 ? 'تم تحديث حالة المستخدم بنجاح' : 'المستخدم غير موجود',
+    };
+  }
+
+  public async setUserActiveStatus(userId: string, isActive: boolean): Promise<{ success: boolean; status?: string; message?: string }> {
+    return this.toggleUserStatus(userId, isActive ? 'Active' : 'Inactive');
+  }
+
+  public async resetUserToPendingSetup(userId: string): Promise<{ success: boolean; message?: string }> {
+    const caller = this.getCurrentUser();
+    if (caller && caller.role !== 'Admin') {
+      return { success: false, message: 'غير مصرح بإعادة تعيين الحساب. خاص بمدير النظام فقط.' };
+    }
+
+    const users = this.getUsers();
+    const idx = users.findIndex(u => u.id === userId);
+    if (idx >= 0) {
+      users[idx].passwordInitialized = false;
+      delete users[idx].password;
+      delete users[idx].passwordHash;
+      delete users[idx].passwordSalt;
+      delete users[idx].activationTokenHash;
+      delete users[idx].activationExpiresAt;
+      delete users[idx].activationTokenExpiresAt;
+      localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
+      this.notifyChange();
+      this.logAudit('UPDATE', 'USER', `إلغاء كلمة المرور وإعادة المستخدم ${users[idx].fullName} إلى حالة Pending Setup`, '', '', userId);
+    }
+
+    const backendRes = await this.pushPostDirect('resetUserToPendingSetup', { userId });
+    if (backendRes.success) return backendRes;
+    return {
+      success: idx >= 0,
+      message: idx >= 0 ? 'تمت إعادة تعيين الحساب إلى وضع الإعداد الأول بنجاح' : 'المستخدم غير موجود',
+    };
+  }
+
+  public async getPublicClassSchedule(
+    gradeName: string,
+    classroomName: string
+  ): Promise<{ success: boolean; data?: PublicClassScheduleDTO; message?: string }> {
+    const cleanGrade = (gradeName || '').trim();
+    const cleanClass = (classroomName || '').trim();
+
+    if (!cleanGrade || !cleanClass) {
+      return { success: false, message: 'يرجى تحديد الصف والفصل الدراسي' };
+    }
+
+    const settings = this.getSettings();
+    const scriptUrl = settings.googleAppsScriptUrl || DEFAULT_BACKEND_URL;
+
+    // 1. Authoritative Backend Request (NO token required, public endpoint)
+    if (scriptUrl && scriptUrl.length > 15 && navigator.onLine) {
+      try {
+        const response = await fetch(scriptUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({
+            action: 'getPublicClassSchedule',
+            gradeName: cleanGrade,
+            classroomName: cleanClass,
+          }),
+        });
+
+        if (response.ok) {
+          const res = await response.json();
+          if (res.status === 'success' && res.schedule) {
+            return {
+              success: true,
+              data: {
+                gradeName: res.gradeName || cleanGrade,
+                classroomName: res.classroomName || cleanClass,
+                schedule: res.schedule || [],
+              },
+            };
+          }
+        }
+      } catch (err: any) {
+        console.warn('Backend getPublicClassSchedule failed, reading published local schedule...', err);
+      }
+    }
+
+    // 2. Local Fallback (Strictly Published schedule only, projected to safe DTO)
+    const allSchedule = this.getSchedule();
+    const matching = allSchedule.filter(s => {
+      const status = String(s.status || '').toLowerCase();
+      if (status !== 'published') return false;
+      if (s.isActive === false) return false;
+      if (s.isCancelled === true) return false;
+
+      const sGrade = String(s.grade || (s as any).gradeName || s.gradeId || '').trim().toLowerCase();
+      const sClass = String(s.classroom || (s as any).classroomName || s.classroomId || '').trim().toLowerCase();
+      const targetGrade = cleanGrade.toLowerCase();
+      const targetClass = cleanClass.toLowerCase();
+
+      const gradeMatch = sGrade === targetGrade || sGrade.includes(targetGrade) || targetGrade.includes(sGrade);
+      const classMatch = sClass === targetClass || sClass.includes(targetClass) || targetClass.includes(sClass);
+      return gradeMatch && classMatch;
+    });
+
+    const dayWeights: Record<string, number> = {
+      'الأحد': 1,
+      'الإثنين': 2,
+      'الاثنين': 2,
+      'الثلاثاء': 3,
+      'الأربعاء': 4,
+      'الاربعاء': 4,
+      'الخميس': 5,
+    };
+
+    matching.sort((a, b) => {
+      const dA = dayWeights[a.dayOfWeek || a.dayName || ''] || 9;
+      const dB = dayWeights[b.dayOfWeek || b.dayName || ''] || 9;
+      if (dA !== dB) return dA - dB;
+      return (Number(a.periodNumber) || 0) - (Number(b.periodNumber) || 0);
+    });
+
+    const safeLessons: PublicClassScheduleLesson[] = matching.map(s => ({
+      dayOfWeek: s.dayOfWeek || s.dayName || '',
+      periodNumber: Number(s.periodNumber) || 0,
+      startTime: s.startTime || '',
+      endTime: s.endTime || '',
+      subjectName: s.subject || (s as any).subjectName || '',
+      teacherDisplayName: s.teacherName || 'معلم المادة',
+      roomName: s.room || s.roomId || '',
+    }));
+
+    return {
+      success: true,
+      data: {
+        gradeName: cleanGrade,
+        classroomName: cleanClass,
+        schedule: safeLessons,
+      },
+    };
   }
 
   private async pushPost(action: string, data: any): Promise<void> {

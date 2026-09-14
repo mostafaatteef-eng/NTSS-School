@@ -17,6 +17,8 @@ import {
   Users,
   Shield,
   Layers,
+  Sparkles,
+  AlertCircle
 } from 'lucide-react';
 import {
   Employee,
@@ -29,6 +31,7 @@ import {
 } from '../../types';
 import { timetableService } from '../../services/timetableService';
 import { storageService } from '../../services/storageService';
+import { FirstLoginSetupModal } from '../auth/FirstLoginSetupModal';
 
 interface TeacherPortalViewProps {
   currentUser?: User | null;
@@ -42,6 +45,8 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ currentUse
   const [loginTeacherCode, setLoginTeacherCode] = useState('');
   const [loginPin, setLoginPin] = useState('');
   const [loginError, setLoginError] = useState<string | null>(null);
+  const [isFirstLoginOpen, setIsFirstLoginOpen] = useState(false);
+  const [firstLoginNumber, setFirstLoginNumber] = useState('');
 
   // Data states
   const [weeklySchedule, setWeeklySchedule] = useState<ScheduleItem[]>([]);
@@ -67,32 +72,35 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ currentUse
   const [resPresUrl, setResPresUrl] = useState('');
   const [resStudentUrl, setResStudentUrl] = useState('');
 
-  // Initial check: if current user is teacher, link them
+  const isSupervisor = currentUser?.role === 'Admin' ||
+    currentUser?.role === 'SchoolDirector' ||
+    currentUser?.role === 'TeacherAffairs';
+
+  // Initial check: if current user is teacher, link them automatically by session
   useEffect(() => {
     const teachers = timetableService.getTeachingStaff();
-    if (currentUser?.role === 'Teacher') {
+    if (currentUser) {
       const match = teachers.find(
-        t => t.teacherCode === (currentUser as any).teacherCode || t.name === currentUser.name || t.email === currentUser.email
+        t => (currentUser.employeeId && t.id === currentUser.employeeId) ||
+             (currentUser.loginNumber && t.loginNumber === currentUser.loginNumber) ||
+             (t.teacherCode && currentUser.username && t.teacherCode.toUpperCase() === currentUser.username.toUpperCase()) ||
+             (t.email && currentUser.email && t.email.toLowerCase() === currentUser.email.toLowerCase())
       );
       if (match) {
         selectTeacher(match);
         return;
       }
-    }
 
-    // Check session storage for teacher portal session
-    const savedCode = sessionStorage.getItem('ntss_teacher_portal_code');
-    if (savedCode) {
-      const match = teachers.find(t => t.teacherCode === savedCode);
-      if (match) {
-        selectTeacher(match);
+      // If user is supervisor and no teacher linked yet, default to first teacher for review
+      if (isSupervisor && !activeTeacher && teachers.length > 0) {
+        selectTeacher(teachers[0]);
+        return;
       }
     }
   }, [currentUser]);
 
   const selectTeacher = (teacher: Employee) => {
     setActiveTeacher(teacher);
-    sessionStorage.setItem('ntss_teacher_portal_code', teacher.teacherCode || '');
 
     // Load teacher specific data
     const schedule = timetableService.getTeacherWeeklySchedule(teacher.id);
@@ -117,8 +125,27 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ currentUse
     e.preventDefault();
     setLoginError(null);
 
-    const verification = await timetableService.verifyTeacherPin(loginTeacherCode.trim(), loginPin.trim());
+    const codeOrNum = loginTeacherCode.trim();
+    const pinOrPass = loginPin.trim();
+
+    if (!codeOrNum) {
+      setLoginError('يرجى إدخال رقم الدخول أو كود المعلم');
+      return;
+    }
+
+    if (!pinOrPass) {
+      setLoginError('يرجى إدخال كلمة المرور');
+      return;
+    }
+
+    const verification = await timetableService.verifyTeacherPin(codeOrNum, pinOrPass);
     if (!verification.success || !verification.employee) {
+      if (verification.code === 'PASSWORD_SETUP_REQUIRED') {
+        setFirstLoginNumber(String(verification.loginNumber || codeOrNum));
+        setIsFirstLoginOpen(true);
+        setLoginError('يتطلب هذا الحساب تفعيل كلمة المرور لأول مرة. تم فتح نافذة التفعيل.');
+        return;
+      }
       setLoginError(verification.message || 'بيانات الدخول غير صحيحة');
       return;
     }
@@ -127,7 +154,6 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ currentUse
   };
 
   const handleLogout = () => {
-    sessionStorage.removeItem('ntss_teacher_portal_code');
     setActiveTeacher(null);
   };
 
@@ -216,11 +242,13 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ currentUse
 
         <form onSubmit={handleLogin} className="space-y-4 text-xs">
           <div>
-            <label className="block font-semibold text-slate-700 mb-1">كود المعلم (Teacher Code)</label>
+            <label className="block font-semibold text-slate-700 mb-1">
+              رقم الدخول أو كود المعلم (Login Number / Teacher Code)
+            </label>
             <input
               type="text"
               required
-              placeholder="مثال: T-001"
+              placeholder="أدخل رقم الدخول (مثال: 125) أو كود المعلم"
               value={loginTeacherCode}
               onChange={e => setLoginTeacherCode(e.target.value)}
               className="w-full border border-slate-300 rounded-xl p-2.5 text-xs font-mono focus:ring-2 focus:ring-indigo-500"
@@ -228,10 +256,13 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ currentUse
           </div>
 
           <div>
-            <label className="block font-semibold text-slate-700 mb-1">الرقم السري (PIN / Password)</label>
+            <label className="block font-semibold text-slate-700 mb-1">
+              كلمة المرور المشفرة (Password)
+            </label>
             <input
               type="password"
-              placeholder="أدخل الـ PIN (افتراضي: 1234)"
+              required
+              placeholder="أدخل كلمة المرور الخاصة بك"
               value={loginPin}
               onChange={e => setLoginPin(e.target.value)}
               className="w-full border border-slate-300 rounded-xl p-2.5 text-xs font-mono focus:ring-2 focus:ring-indigo-500"
@@ -240,32 +271,50 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ currentUse
 
           <button
             type="submit"
-            className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-md transition"
+            className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-md transition cursor-pointer"
           >
-            دخول بوابة المعلم
+            تسجيل دخول بوابة المعلم
           </button>
         </form>
 
-        {/* Quick Demo Switcher for Admins/Testers */}
-        <div className="border-t pt-4 space-y-2">
-          <div className="text-[11px] font-bold text-slate-500 text-center">أو اختر معلماً للتجربة المباشرة:</div>
-          <div className="flex flex-wrap gap-1.5 justify-center">
-            {teachersList.slice(0, 5).map(t => (
-              <button
-                key={t.id}
-                onClick={() => selectTeacher(t)}
-                className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[11px] font-medium transition"
-              >
-                {t.name.split(' ')[0]} ({t.teacherCode})
-              </button>
-            ))}
-          </div>
+        <div className="pt-2">
+          <button
+            type="button"
+            onClick={() => {
+              setFirstLoginNumber(loginTeacherCode.trim());
+              setIsFirstLoginOpen(true);
+            }}
+            className="w-full py-2.5 px-3 bg-teal-50 hover:bg-teal-100 text-[#008e8b] font-bold text-xs rounded-xl border border-teal-200 transition flex items-center justify-center gap-1.5 cursor-pointer"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>أول دخول للمعلم؟ تفعيل الحساب وإنشاء كلمة المرور</span>
+          </button>
         </div>
+
+        <FirstLoginSetupModal
+          isOpen={isFirstLoginOpen}
+          initialLoginNumber={firstLoginNumber}
+          onClose={() => setIsFirstLoginOpen(false)}
+          onSuccess={u => {
+            setIsFirstLoginOpen(false);
+            const teachers = timetableService.getTeachingStaff();
+            const match = teachers.find(
+              t => (u.employeeId && t.id === u.employeeId) ||
+                   (u.loginNumber && t.loginNumber === u.loginNumber) ||
+                   (t.teacherCode && u.username && t.teacherCode.toUpperCase() === u.username.toUpperCase())
+            );
+            if (match) {
+              selectTeacher(match);
+            }
+          }}
+        />
       </div>
     );
   }
 
   // AUTHENTICATED TEACHER PORTAL
+  const allTeachersForSupervisor = isSupervisor ? timetableService.getTeachingStaff() : [];
+
   return (
     <div className="space-y-6" dir="rtl">
       {/* Teacher Profile Banner */}
@@ -277,9 +326,16 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ currentUse
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-lg font-bold text-slate-900">{activeTeacher.name}</h2>
-              <span className="font-mono text-xs font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100">
-                {activeTeacher.teacherCode}
-              </span>
+              {activeTeacher.loginNumber && (
+                <span className="font-mono text-xs font-bold text-[#008e8b] bg-teal-50 px-2 py-0.5 rounded border border-teal-100">
+                  رقم الدخول: {activeTeacher.loginNumber}
+                </span>
+              )}
+              {activeTeacher.teacherCode && (
+                <span className="font-mono text-xs font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100">
+                  {activeTeacher.teacherCode}
+                </span>
+              )}
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
               {activeTeacher.specialization || 'معلم مواد تخصصية'} • مدرسة التكنولوجيا التطبيقية
@@ -287,8 +343,27 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ currentUse
           </div>
         </div>
 
-        {/* Load Summary Pill & Logout */}
-        <div className="flex items-center gap-3">
+        {/* Supervisor Teacher Switcher OR Load Summary */}
+        <div className="flex flex-wrap items-center gap-3">
+          {isSupervisor && allTeachersForSupervisor.length > 1 && (
+            <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl text-xs">
+              <span className="text-slate-500 font-bold">وضع الإشراف:</span>
+              <select
+                value={activeTeacher.id}
+                onChange={e => {
+                  const target = allTeachersForSupervisor.find(t => t.id === e.target.value);
+                  if (target) selectTeacher(target);
+                }}
+                className="bg-white border border-slate-300 rounded-lg px-2 py-1 text-xs font-medium text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#008e8b]"
+              >
+                {allTeachersForSupervisor.map(t => (
+                  <option key={t.id} value={t.id}>
+                    {t.name} ({t.loginNumber ? `#${t.loginNumber}` : t.teacherCode || ''})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           {loadStats && (
             <div className="bg-slate-50 border border-slate-200 px-4 py-2 rounded-xl text-xs flex items-center gap-3">
               <div>

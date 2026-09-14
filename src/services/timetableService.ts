@@ -112,9 +112,14 @@ class TimetableService {
 
   public findTeacherByCode(code: string): Employee | undefined {
     if (!code) return undefined;
-    const cleanCode = code.trim().toUpperCase();
+    const clean = code.trim().toLowerCase();
     this.ensureTeacherCodes();
-    return storageService.getEmployees().find(e => e.teacherCode?.trim().toUpperCase() === cleanCode);
+    return storageService.getEmployees().find(e =>
+      (e.teacherCode && e.teacherCode.trim().toLowerCase() === clean) ||
+      (e.loginNumber && String(e.loginNumber).trim() === clean) ||
+      (e.id && e.id.trim().toLowerCase() === clean) ||
+      (e.employeeId && e.employeeId.trim().toLowerCase() === clean)
+    );
   }
 
   public findTeacherById(id: string): Employee | undefined {
@@ -1315,7 +1320,7 @@ class TimetableService {
   public async verifyTeacherPin(
     teacherCode: string,
     pin: string
-  ): Promise<{ success: boolean; employee?: Employee; token?: string; message?: string }> {
+  ): Promise<{ success: boolean; employee?: Employee; token?: string; message?: string; code?: string; loginNumber?: string | number }> {
     const cleanCode = (teacherCode || '').trim();
     const cleanPin = (pin || '').trim();
 
@@ -1348,7 +1353,12 @@ class TimetableService {
               token: res.teacherSessionToken,
             };
           } else if (res.status === 'error') {
-            return { success: false, message: res.message || 'بيانات الدخول غير صحيحة' };
+            return {
+              success: false,
+              code: res.code,
+              loginNumber: res.loginNumber,
+              message: res.message || 'بيانات الدخول غير صحيحة'
+            } as any;
           }
         }
       } catch (err) {

@@ -173,6 +173,7 @@ export type LeaveStatus = 'معلقة' | 'مقبولة' | 'مرفوضة';
 export interface User {
   id: string;
   username: string;
+  loginNumber?: number | string;
   fullName: string;
   name?: string; // compatibility alias for fullName
   role: UserRole | 'Unknown';
@@ -184,10 +185,14 @@ export interface User {
   passwordAlgorithm?: string;
   passwordIterations?: number;
   passwordChangedAt?: string;
+  passwordInitialized?: boolean;
+  activationTokenHash?: string;
+  activationExpiresAt?: string;
   department?: string;
   isActive?: boolean;
   status: 'Active' | 'Inactive' | 'Suspended';
   createdAt: string;
+  updatedAt?: string;
   lastLogin?: string;
   avatar?: string;
   pin?: string;
@@ -199,8 +204,11 @@ export interface User {
 
 export interface Employee {
   id: string; // EMP001, EMP002, etc.
+  employeeId?: string; // alias for id
+  teacherId?: string; // alias for id if teacher
   employeeNumber?: string;
   name: string;
+  fullName?: string; // alias for name
   nationalId?: string;
   department: string;
   jobTitle: string;
@@ -209,13 +217,15 @@ export interface Employee {
   workStartTime: string; // e.g. "07:30"
   workEndTime: string; // e.g. "15:00"
   daysOff: string[]; // e.g. ["Friday", "Saturday"] or ["الجمعة", "السبت"]
-  status: 'Active' | 'Inactive';
+  status: 'Active' | 'Inactive' | 'Suspended';
   phone?: string;
   email?: string;
   basicSalary?: number;
   allowances?: number;
   isTeacher?: boolean;
+  isTeachingStaff?: boolean;
   teacherCode?: string;
+  loginNumber?: number | string;
   teachingSubjects?: string[];
   assignedGrades?: string[];
 }
@@ -849,8 +859,10 @@ export interface ScheduleItem {
   subject: string; // الرياضيات، اللغة العربية...
   subjectId?: string;
   teacherId: string; // Teacher / Employee ID
+  employeeId?: string; // Registered Employee ID
   teacherName?: string;
   teacherCode?: string;
+  loginNumber?: number | string;
   roomNumber?: string;
   room?: string;
   roomId?: string;
@@ -873,6 +885,23 @@ export interface ScheduleItem {
 }
 
 export type ClassPeriodSchedule = ScheduleItem;
+
+export interface PublicClassScheduleLesson {
+  dayOfWeek: string;
+  periodNumber: number;
+  startTime: string;
+  endTime: string;
+  subjectName: string;
+  teacherDisplayName: string;
+  roomName: string;
+}
+
+export interface PublicClassScheduleDTO {
+  gradeName: string;
+  classroomName: string;
+  schedule: PublicClassScheduleLesson[];
+  lessons?: PublicClassScheduleLesson[];
+}
 
 export type SubstitutionStatus = 'Suggested' | 'Assigned' | 'Completed' | 'Cancelled';
 

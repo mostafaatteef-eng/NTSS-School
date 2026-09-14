@@ -35,11 +35,13 @@ import { ImportCenterView } from './components/import/ImportCenterView';
 import { SystemHealthView } from './components/health/SystemHealthView';
 import { OperationsCenterView } from './components/operations/OperationsCenterView';
 import { TimetableModuleView } from './components/timetable/TimetableModuleView';
+import { PublicStudentScheduleView } from './components/timetable/PublicStudentScheduleView';
 import { LoginView } from './components/auth/LoginView';
 import { ForceChangePasswordModal } from './components/auth/ForceChangePasswordModal';
 import { runMigrationScope008RemoveSamatPayroll } from './services/migrationScope008RemoveSamatPayroll';
 import { runMigrationScope009SecurityAndFinalRetirement } from './services/migrationScope009SecurityAndFinalRetirement';
 import { runMigrationScope010TimetableSecureBackend } from './services/migrationScope010TimetableSecureBackend';
+import { runMigrationScope011LoginNumbersFirstLogin } from './services/migrationScope011LoginNumbersFirstLogin';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(() => storageService.getCurrentUser());
@@ -57,12 +59,14 @@ export default function App() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [selectedReportKey, setSelectedReportKey] = useState<string | undefined>();
   const [selectedReportFilters, setSelectedReportFilters] = useState<Record<string, any> | undefined>();
+  const [isPublicScheduleOpen, setIsPublicScheduleOpen] = useState(false);
 
   // Run scope reduction, retirement, and timetable security migrations on boot
   useEffect(() => {
     runMigrationScope008RemoveSamatPayroll();
     runMigrationScope009SecurityAndFinalRetirement();
     runMigrationScope010TimetableSecureBackend();
+    runMigrationScope011LoginNumbersFirstLogin();
   }, []);
 
   // Subscribe to storage changes
@@ -101,7 +105,15 @@ export default function App() {
 
   // Check login state
   if (!currentUser) {
-    return <LoginView onLoginSuccess={handleLoginSuccess} />;
+    if (isPublicScheduleOpen) {
+      return <PublicStudentScheduleView onBackToLogin={() => setIsPublicScheduleOpen(false)} />;
+    }
+    return (
+      <LoginView
+        onLoginSuccess={handleLoginSuccess}
+        onOpenPublicSchedule={() => setIsPublicScheduleOpen(true)}
+      />
+    );
   }
 
   const handleNavigate = (tab: string, params?: any) => {
