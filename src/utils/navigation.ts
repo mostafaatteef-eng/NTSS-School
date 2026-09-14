@@ -169,8 +169,8 @@ export function canAccessTab(user: User | null, tab: string): boolean {
     return allowed.includes(tab);
   }
 
-  // 11. Supervisor
-  if (user.role === 'Supervisor') {
+  // 11. Supervisor (Legacy alias)
+  if ((user.role as string) === 'Supervisor') {
     const allowed = [
       'dashboard',
       'students',
@@ -191,8 +191,8 @@ export function canAccessTab(user: User | null, tab: string): boolean {
     return allowed.includes(tab);
   }
 
-  // 12. Viewer
-  if (user.role === 'Viewer') {
+  // 12. Viewer (Legacy alias)
+  if ((user.role as string) === 'Viewer') {
     const allowed = ['dashboard', 'reports', 'timetable_weekly'];
     return allowed.includes(tab);
   }

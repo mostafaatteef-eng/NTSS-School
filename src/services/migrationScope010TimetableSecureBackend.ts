@@ -15,7 +15,7 @@
  */
 
 import { STORAGE_KEYS } from './masterDataDefaults';
-import { User, normalizeStaffRole } from '../types';
+import { User, UserRole, normalizeStaffRole } from '../types';
 
 export interface Scope010ArchivePayload {
   migratedAt: string;
@@ -66,7 +66,7 @@ export function runMigrationScope010TimetableSecureBackend(): {
           canonicalRole = normalizeStaffRole(u.role);
         } catch {
           // Security Quarantine: Never assign default privileged or staff roles to unknown users
-          canonicalRole = u.role || 'Unknown';
+          canonicalRole = (u.role || 'Unknown') as UserRole;
           isQuarantined = true;
         }
 

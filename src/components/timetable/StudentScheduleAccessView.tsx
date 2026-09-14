@@ -56,7 +56,7 @@ export const StudentScheduleAccessView: React.FC = () => {
 
     // Published Exams for this classroom/grade
     const ex = timetableService.getExamSchedules().filter(
-      e => e.status === 'Published' && (e.classroomName === classroom || !e.classroomName)
+      e => (e.status === 'PUBLISHED' || (e.status as any) === 'Published') && (e.classroomName === classroom || !e.classroomName)
     );
     setExams(ex);
 

@@ -107,7 +107,9 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ currentUse
     const res = timetableService.getTeacherLessonResources({ teacherId: teacher.id });
     setResources(res);
 
-    const allExams = timetableService.getExamSchedules().filter(e => e.status === 'Published');
+    const allExams = timetableService.getExamSchedules().filter(
+      e => e.status === 'PUBLISHED' || (e.status as any) === 'Published'
+    );
     setExams(allExams);
   };
 

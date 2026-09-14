@@ -41,8 +41,8 @@ describe('Backend Security & Authorization Verification', () => {
     // When backend URL is not configured or fails, it MUST fail closed (NO local backdoor PIN)
     const result = await timetableService.verifyTeacherPin('T-999', '1234');
     expect(result.success).toBe(false);
-    expect(result.teacher).toBeUndefined();
-    expect(result.teacherSessionToken).toBeUndefined();
+    expect(result.employee).toBeUndefined();
+    expect(result.token).toBeUndefined();
   });
 
   it('2. Migration 010 quarantines unknown roles (sets status to Suspended)', () => {

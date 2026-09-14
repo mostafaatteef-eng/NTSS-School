@@ -66,6 +66,10 @@ export type PermissionKey =
   | 'schoolAttendance.approve'
   | 'schoolAttendance.lock'
   | 'schoolAttendance.overrideLocked'
+  | 'classAttendance.view'
+  | 'classAttendance.create'
+  | 'classAttendance.edit'
+  | 'classAttendance.manageOwnLessons'
   | 'teacherPortal.access'
   | 'teacherSchedule.viewOwn'
   | 'schedule.view'
@@ -171,7 +175,7 @@ export interface User {
   username: string;
   fullName: string;
   name?: string; // compatibility alias for fullName
-  role: UserRole;
+  role: UserRole | 'Unknown';
   employeeId?: string;
   email: string;
   password?: string; // write-only when creating/resetting
@@ -182,7 +186,7 @@ export interface User {
   passwordChangedAt?: string;
   department?: string;
   isActive?: boolean;
-  status: 'Active' | 'Inactive';
+  status: 'Active' | 'Inactive' | 'Suspended';
   createdAt: string;
   lastLogin?: string;
   avatar?: string;
@@ -1056,7 +1060,7 @@ export interface TeacherLessonResource {
   updatedAt?: string;
 }
 
-export type ExamScheduleStatus = 'DRAFT' | 'APPROVED' | 'PUBLISHED' | 'CANCELLED';
+export type ExamScheduleStatus = 'DRAFT' | 'APPROVED' | 'PUBLISHED' | 'CANCELLED' | 'Draft' | 'Approved' | 'Published' | 'Cancelled';
 
 export interface TeacherAuthResult {
   success: boolean;
@@ -1064,6 +1068,8 @@ export interface TeacherAuthResult {
   expiresAt?: string;
   message?: string;
   code?: string;
+  token?: string;
+  employee?: Employee;
   teacher?: {
     teacherId: string;
     employeeId: string;

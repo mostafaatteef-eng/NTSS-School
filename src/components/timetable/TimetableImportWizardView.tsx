@@ -16,7 +16,13 @@ import {
   XCircle,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { TimetableImportSummary } from '../../types';
+import {
+  ClassroomItem,
+  Employee,
+  GradeItem,
+  SubjectItem,
+  TimetableImportSummary,
+} from '../../types';
 import { storageService } from '../../services/storageService';
 import { timetableService } from '../../services/timetableService';
 
@@ -141,14 +147,14 @@ export const TimetableImportWizardView: React.FC = () => {
   const [commitResult, setCommitResult] = useState<{ success: boolean; message: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const teachers = useMemo(
+  const teachers = useMemo<Employee[]>(
     () => storageService.getEmployees().filter(e => e.status === 'Active' && !!e.teacherCode),
     [rawRows]
   );
-  const subjects = useMemo(() => storageService.getSubjects().filter(s => s.isActive !== false), [rawRows]);
-  const classrooms = useMemo(() => storageService.getClassrooms().filter(c => c.isActive !== false), [rawRows]);
-  const grades = useMemo(() => storageService.getGrades().filter(g => g.isActive !== false), [rawRows]);
-  const studyDays = useMemo(() => storageService.getScheduleConfig().studyDays || [], [rawRows]);
+  const subjects = useMemo<SubjectItem[]>(() => storageService.getSubjects().filter(s => s.isActive !== false), [rawRows]);
+  const classrooms = useMemo<ClassroomItem[]>(() => storageService.getClassrooms().filter(c => c.isActive !== false), [rawRows]);
+  const grades = useMemo<GradeItem[]>(() => storageService.getGrades().filter(g => g.isActive !== false), [rawRows]);
+  const studyDays = useMemo<string[]>(() => storageService.getScheduleConfig().studyDays || [], [rawRows]);
 
   const catalog = useMemo(() => {
     const teacherCounts = new Map<string, { sourceValue: string; count: number; code: string; name: string }>();
@@ -166,7 +172,7 @@ export const TimetableImportWizardView: React.FC = () => {
 
     const teacherEntries: MappingEntry[] = Array.from(teacherCounts.entries()).map(([key, source]) => {
       if (source.code) {
-        const exact = findUnique(teachers, t => normalize(t.teacherCode || '') === normalize(source.code));
+        const exact = findUnique<Employee>(teachers, t => normalize(t.teacherCode || '') === normalize(source.code));
         return {
           key,
           sourceValue: source.sourceValue,
@@ -176,7 +182,7 @@ export const TimetableImportWizardView: React.FC = () => {
         };
       }
 
-      const exactByName = findUnique(teachers, t => normalize(t.name) === normalize(source.name));
+      const exactByName = findUnique<Employee>(teachers, t => normalize(t.name) === normalize(source.name));
       return {
         key,
         sourceValue: source.sourceValue,
@@ -187,7 +193,7 @@ export const TimetableImportWizardView: React.FC = () => {
     });
 
     const subjectEntries = makeUniqueEntries('subject', rawRows.map(r => readValue(r, FIELD_KEYS.subject))).map(entry => {
-      const exact = findUnique(
+      const exact = findUnique<SubjectItem>(
         subjects,
         subject =>
           normalize(subject.name) === normalize(entry.sourceValue) ||
@@ -198,7 +204,7 @@ export const TimetableImportWizardView: React.FC = () => {
     });
 
     const classroomEntries = makeUniqueEntries('classroom', rawRows.map(r => readValue(r, FIELD_KEYS.classroom))).map(entry => {
-      const exact = findUnique(
+      const exact = findUnique<ClassroomItem>(
         classrooms,
         classroom =>
           normalize(classroom.classroomNumber) === normalize(entry.sourceValue) ||
@@ -209,7 +215,7 @@ export const TimetableImportWizardView: React.FC = () => {
     });
 
     const gradeEntries = makeUniqueEntries('grade', rawRows.map(r => readValue(r, FIELD_KEYS.grade))).map(entry => {
-      const exact = findUnique(
+      const exact = findUnique<GradeItem>(
         grades,
         grade =>
           normalize(grade.name) === normalize(entry.sourceValue) ||

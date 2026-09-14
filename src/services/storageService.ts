@@ -2237,7 +2237,7 @@ class StorageService {
       id: `LOG-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
       timestamp: getCairoNowISO(),
       username: user?.username || 'admin',
-      userRole: user?.role || 'Admin',
+      userRole: (user?.role as any) || 'Admin',
       performedBy: user?.fullName || 'مدير النظام',
       action,
       entity,

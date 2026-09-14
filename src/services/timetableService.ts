@@ -27,6 +27,7 @@ import {
 import { STORAGE_KEYS } from './masterDataDefaults';
 import { storageService } from './storageService';
 import { getCairoCurrentDate, getCairoNowISO } from '../utils/egyptianTime';
+import { generateSecureId } from '../utils/cryptoUtils';
 
 /**
  * Hash PIN using Web Crypto SHA-256 with salt
@@ -1651,14 +1652,14 @@ class TimetableService {
 
     const prepared: ExamSchedule = {
       ...exam,
-      id: exam.id || `EXM-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+      id: exam.id || generateSecureId('EXM'),
       academicYearId: canonicalAcademicYearId,
       termId: canonicalTermId,
       examDate: canonicalExamDate,
       date: canonicalExamDate,
       academicYear: canonicalAcademicYearId,
       term: canonicalTermId,
-      status: exam.status || 'Draft',
+      status: exam.status || 'DRAFT',
       createdAt: exam.createdAt || now,
       updatedAt: now,
     };
