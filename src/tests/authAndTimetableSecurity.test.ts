@@ -197,7 +197,7 @@ describe('NTSS ERP - Security, Login Numbers, First Login & Timetable Integratio
     expect(setupRes.message).toContain('منتهي الصلاحية');
   });
 
-  it('Test 10: Reset user to pending setup clears password and resets passwordInitialized to false', () => {
+  it('Test 10: Reset user to pending setup clears password and resets passwordInitialized to false', async () => {
     const user: User = {
       id: 'USR-RESET-TEST',
       username: 'reset_user',
@@ -211,7 +211,7 @@ describe('NTSS ERP - Security, Login Numbers, First Login & Timetable Integratio
     };
     storageService.saveUser(user);
 
-    const res = storageService.resetUserToPendingSetup(user.id);
+    const res = await storageService.resetUserToPendingSetup(user.id);
     expect(res.success).toBe(true);
 
     const updated = storageService.getUserById(user.id);

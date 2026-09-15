@@ -1736,7 +1736,14 @@ class StorageService {
 
   // ---------------- Employees & Teachers ----------------
   public getEmployees(options?: { includeFinancials?: boolean }): Employee[] {
-    const raw = localStorage.getItem(STORAGE_KEYS.EMPLOYEES);
+    let raw = localStorage.getItem(STORAGE_KEYS.EMPLOYEES);
+    if (!raw) {
+      const legacyRaw = localStorage.getItem('ntss_employees');
+      if (legacyRaw) {
+        raw = legacyRaw;
+        localStorage.setItem(STORAGE_KEYS.EMPLOYEES, legacyRaw);
+      }
+    }
     if (!raw) return [];
     try {
       const list: Employee[] = JSON.parse(raw);
@@ -1771,7 +1778,14 @@ class StorageService {
       if (Number.isFinite(n) && n > highest) highest = n;
     });
 
-    return highest + 1;
+    const storedLast = Number(localStorage.getItem('ntss_last_allocated_login_num'));
+    if (Number.isFinite(storedLast) && storedLast > highest) {
+      highest = storedLast;
+    }
+
+    const next = highest + 1;
+    localStorage.setItem('ntss_last_allocated_login_num', String(next));
+    return next;
   }
 
   public generateNextLoginNumber(): number {
@@ -1818,6 +1832,10 @@ class StorageService {
 
     const isTeacher = Boolean(emp.isTeacher || emp.teacherCode || emp.isTeachingStaff || (emp.jobTitle && emp.jobTitle.includes('معلم')));
     const assignedLoginNumber = emp.loginNumber || this.getNextLoginNumber();
+    let teacherCode = emp.teacherCode;
+    if (isTeacher && !teacherCode) {
+      teacherCode = `T-${String(assignedLoginNumber).padStart(3, '0')}`;
+    }
 
     const normalizedEmp: Employee = {
       ...emp,
@@ -1827,6 +1845,7 @@ class StorageService {
       isTeachingStaff: isTeacher,
       isTeacher: isTeacher,
       teacherId: isTeacher ? (emp.teacherId || emp.id) : emp.teacherId,
+      teacherCode: teacherCode,
       loginNumber: assignedLoginNumber,
     };
 
@@ -2125,7 +2144,14 @@ class StorageService {
 
   // ---------------- Users ----------------
   public getUsers(): User[] {
-    const raw = localStorage.getItem(STORAGE_KEYS.USERS);
+    let raw = localStorage.getItem(STORAGE_KEYS.USERS);
+    if (!raw) {
+      const legacyRaw = localStorage.getItem('ntss_users');
+      if (legacyRaw) {
+        raw = legacyRaw;
+        localStorage.setItem(STORAGE_KEYS.USERS, legacyRaw);
+      }
+    }
     if (!raw) return [];
     try {
       return JSON.parse(raw);
@@ -3432,6 +3458,8 @@ class StorageService {
     const currentUser = this.getCurrentUser();
 
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2000);
       const response = await fetch(scriptUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -3442,7 +3470,9 @@ class StorageService {
           userId: currentUser?.id || '',
           sessionToken: currentUser?.sessionToken || '',
         }),
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
         return { success: false, message: `HTTP Error: ${response.status}` };
@@ -3919,6 +3949,7 @@ class StorageService {
         gradeName: cleanGrade,
         classroomName: cleanClass,
         schedule: safeLessons,
+        lessons: safeLessons,
       },
     };
   }

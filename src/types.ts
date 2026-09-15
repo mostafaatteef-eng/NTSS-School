@@ -176,9 +176,9 @@ export interface User {
   loginNumber?: number | string;
   fullName: string;
   name?: string; // compatibility alias for fullName
-  role: UserRole | 'Unknown';
+  role: UserRole | LegacyUserRole | 'Unknown';
   employeeId?: string;
-  email: string;
+  email?: string;
   password?: string; // write-only when creating/resetting
   passwordHash?: string;
   passwordSalt?: string;
@@ -188,10 +188,11 @@ export interface User {
   passwordInitialized?: boolean;
   activationTokenHash?: string;
   activationExpiresAt?: string;
+  activationTokenExpiresAt?: string;
   department?: string;
   isActive?: boolean;
-  status: 'Active' | 'Inactive' | 'Suspended';
-  createdAt: string;
+  status?: 'Active' | 'Inactive' | 'Suspended';
+  createdAt?: string;
   updatedAt?: string;
   lastLogin?: string;
   avatar?: string;
@@ -212,12 +213,12 @@ export interface Employee {
   nationalId?: string;
   department: string;
   jobTitle: string;
-  hireDate: string;
-  workingHours: number; // e.g. 8
-  workStartTime: string; // e.g. "07:30"
-  workEndTime: string; // e.g. "15:00"
-  daysOff: string[]; // e.g. ["Friday", "Saturday"] or ["الجمعة", "السبت"]
-  status: 'Active' | 'Inactive' | 'Suspended';
+  hireDate?: string;
+  workingHours?: number; // e.g. 8
+  workStartTime?: string; // e.g. "07:30"
+  workEndTime?: string; // e.g. "15:00"
+  daysOff?: string[]; // e.g. ["Friday", "Saturday"] or ["الجمعة", "السبت"]
+  status?: 'Active' | 'Inactive' | 'Suspended';
   phone?: string;
   email?: string;
   basicSalary?: number;
@@ -854,11 +855,11 @@ export interface ScheduleItem {
   dayOfWeek?: string; // 'الأحد' | 'الإثنين' | 'الثلاثاء' | 'الأربعاء' | 'الخميس' | string
   periodNumber: number; // رقم الحصة (1, 2, 3...)
   periodId?: number | string;
-  startTime: string; // "08:00"
-  endTime: string; // "08:45"
+  startTime?: string; // "08:00"
+  endTime?: string; // "08:45"
   subject: string; // الرياضيات، اللغة العربية...
   subjectId?: string;
-  teacherId: string; // Teacher / Employee ID
+  teacherId?: string; // Teacher / Employee ID
   employeeId?: string; // Registered Employee ID
   teacherName?: string;
   teacherCode?: string;
