@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import {
   Activity,
   Award,
@@ -8,6 +8,7 @@ import {
   CalendarDays,
   CalendarRange,
   ChevronLeft,
+  ChevronDown,
   Clock,
   Database,
   Eye,
@@ -29,7 +30,7 @@ import {
 } from 'lucide-react';
 import { PermissionKey, User } from '../../types';
 import { hasPermission } from '../../utils/permissions';
-import { canAccessTab } from '../../utils/navigation';
+import { canAccessTab, normalizeTab } from '../../utils/navigation';
 import { NTSSLogo } from '../common/NTSSLogo';
 
 export type ActiveTab =
@@ -39,8 +40,10 @@ export type ActiveTab =
   | 'behavior'
   | 'daily_attendance'
   | 'monthly_matrix'
+  | 'annual_summary'
   | 'employees'
   | 'leaves'
+  | 'timetable'
   | 'timetable_weekly'
   | 'timetable_import'
   | 'timetable_coverage'
@@ -87,6 +90,7 @@ interface NavItem {
 
 interface NavSection {
   title: string;
+  id: string;
   items: NavItem[];
 }
 
@@ -101,21 +105,61 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onCloseMobile,
 }) => {
   const isMobileOpen = isMobileMenuOpen ?? isOpenMobile ?? false;
+  const navContainerRef = useRef<HTMLDivElement>(null);
+  const lastClickTimeRef = useRef<number>(0);
+
+  // Normalized active tab to ensure highlighting always matches current route
+  const currentTab = normalizeTab(activeTab);
+
+  // Remember collapsed sections in localStorage for user convenience without jitter
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>(() => {
+    try {
+      const saved = localStorage.getItem('ntss_sidebar_collapsed_sections');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  const toggleSection = (sectionId: string) => {
+    setCollapsedSections(prev => {
+      const updated = { ...prev, [sectionId]: !prev[sectionId] };
+      try {
+        localStorage.setItem('ntss_sidebar_collapsed_sections', JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+  };
+
   const handleCloseMobile = () => {
     if (setIsMobileMenuOpen) setIsMobileMenuOpen(false);
     if (onCloseMobile) onCloseMobile();
   };
 
-  const handleSelect = (tab: string) => {
-    if (setActiveTab) setActiveTab(tab);
-    if (onSelectTab) onSelectTab(tab);
-    handleCloseMobile();
+  const handleSelect = (tabId: string) => {
+    const now = Date.now();
+    // Protect against rapid accidental double-clicks on the same active item
+    if (tabId === currentTab && now - lastClickTimeRef.current < 400) {
+      return;
+    }
+    lastClickTimeRef.current = now;
+
+    // Trigger tab change in parent application
+    if (setActiveTab) setActiveTab(tabId);
+    if (onSelectTab) onSelectTab(tabId);
+
+    // On mobile screens: close drawer after selection
+    if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+      handleCloseMobile();
+    }
+    // On desktop: NEVER close the sidebar automatically on navigation
   };
 
   const userRole = currentUser?.role || 'Admin';
 
   const navSections: NavSection[] = [
     {
+      id: 'sec_overview',
       title: 'الرئيسية والمتابعة',
       items: [
         {
@@ -126,6 +170,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       ],
     },
     {
+      id: 'sec_students',
       title: 'شئون الطلاب والمدرسة',
       items: [
         {
@@ -150,6 +195,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       ],
     },
     {
+      id: 'sec_staff',
       title: 'شئون المعلمين والعاملين',
       items: [
         {
@@ -179,6 +225,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       ],
     },
     {
+      id: 'sec_timetable',
       title: 'الجدول المدرسي والأنصبة',
       items: [
         {
@@ -253,6 +300,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       ],
     },
     {
+      id: 'sec_system',
       title: 'التقارير والنظام والرقابة',
       items: [
         {
@@ -321,33 +369,58 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* Mobile Backdrop */}
       {isMobileOpen && (
         <div
-          className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-40 lg:hidden"
+          className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-40 lg:hidden transition-opacity"
           onClick={handleCloseMobile}
+          aria-hidden="true"
         />
       )}
 
       {/* Sidebar Container */}
       <aside
-        className={`fixed top-0 right-0 bottom-0 z-50 w-72 bg-white border-l border-slate-200/80 flex flex-col transition-transform duration-300 ease-in-out lg:static lg:translate-x-0 ${
-          isMobileOpen ? 'translate-x-0' : 'translate-x-full'
+        className={`fixed top-0 right-0 bottom-0 z-50 w-72 bg-white border-l border-slate-200/80 flex flex-col transition-transform duration-300 ease-in-out select-none lg:static lg:translate-x-0 ${
+          isMobileOpen ? 'translate-x-0 shadow-2xl' : 'translate-x-full lg:shadow-none'
         }`}
+        dir="rtl"
       >
-        {/* Brand Header */}
-        <div className="h-16 px-6 border-b border-slate-100 flex items-center justify-between shrink-0">
-          <NTSSLogo />
+        {/* =========================================================================
+            BRAND HEADER:
+            1. Logo/Icon centered at the top
+            2. NTSS word directly below
+           ========================================================================= */}
+        <div className="relative pt-6 pb-5 px-4 border-b border-slate-100 flex flex-col items-center justify-center shrink-0 bg-white">
+          {/* Close button for Mobile Drawer (positioned on top-left of RTL sidebar) */}
           <button
+            type="button"
             onClick={handleCloseMobile}
-            className="lg:hidden p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+            className="lg:hidden absolute top-3.5 left-3.5 p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+            title="إغلاق القائمة"
+            aria-label="إغلاق القائمة"
           >
             <ChevronLeft className="w-5 h-5" />
           </button>
+
+          {/* Centered Brand Hierarchy */}
+          <div className="flex flex-col items-center text-center">
+            {/* 1. Logo / Icon at the top in center */}
+            <div className="mb-2 flex items-center justify-center transition-transform hover:scale-105 duration-200">
+              <NTSSLogo variant="icon" size="lg" />
+            </div>
+
+            {/* 2. NTSS word directly below */}
+            <div className="text-2xl font-black tracking-wider font-mono text-[#008e8b] leading-tight m-0">
+              NTSS
+            </div>
+          </div>
         </div>
 
         {/* Navigation Sections */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-6">
+        <div
+          ref={navContainerRef}
+          className="flex-1 overflow-y-auto custom-scrollbar p-3.5 space-y-5"
+        >
           {navSections.map(section => {
             const visibleItems = section.items.filter(item => {
-              // 1. Strict route guard (enforces role boundaries: Parent, Teacher, StudentAffairs, etc.)
+              // 1. Strict route guard (enforces role boundaries)
               if (!canAccessTab(currentUser, item.id)) return false;
               // 2. Admin-only check
               if (item.adminOnly && userRole !== 'Admin') return false;
@@ -358,54 +431,83 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
             if (visibleItems.length === 0) return null;
 
+            // Check if active tab belongs to this section
+            const hasActiveChild = visibleItems.some(i => i.id === currentTab);
+            const isCollapsed = collapsedSections[section.id] && !hasActiveChild;
+
             return (
-              <div key={section.title} className="space-y-1.5">
-                <div className="px-3 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                  {section.title}
+              <div key={section.id} className="space-y-1">
+                {/* Section Header */}
+                <div
+                  onClick={() => toggleSection(section.id)}
+                  className="px-3 py-1 flex items-center justify-between text-[11px] font-extrabold tracking-wide text-slate-400 hover:text-slate-600 cursor-pointer rounded-lg transition-colors group"
+                  title="طي / فتح القسم"
+                >
+                  <span>{section.title}</span>
+                  <ChevronDown
+                    className={`w-3.5 h-3.5 text-slate-400 group-hover:text-slate-600 transition-transform duration-200 ${
+                      isCollapsed ? 'rotate-90' : ''
+                    }`}
+                  />
                 </div>
-                <div className="space-y-0.5">
-                  {visibleItems.map(item => {
-                    const Icon = item.icon;
-                    const isActive = activeTab === item.id;
 
-                    return (
-                      <button
-                        key={item.id}
-                        onClick={() => handleSelect(item.id)}
-                        className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl font-bold text-xs transition-all cursor-pointer ${
-                          isActive
-                            ? 'bg-[#008e8b] text-white shadow-xs'
-                            : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                        }`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <Icon className={`w-4 h-4 ${isActive ? 'text-white' : 'text-slate-400'}`} />
-                          <span>{item.label}</span>
-                        </div>
+                {/* Section Items */}
+                {!isCollapsed && (
+                  <div className="space-y-0.5">
+                    {visibleItems.map(item => {
+                      const Icon = item.icon;
+                      const isActive =
+                        currentTab === item.id ||
+                        (item.id === 'timetable_weekly' && currentTab === 'timetable');
 
-                        {item.badge && (
-                          <span
-                            className={`text-[9px] px-2 py-0.5 rounded-full font-bold ${
-                              isActive
-                                ? 'bg-white/20 text-white'
-                                : 'bg-teal-50 text-[#008e8b] border border-teal-100'
-                            }`}
-                          >
-                            {item.badge}
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
+                      return (
+                        <button
+                          type="button"
+                          key={item.id}
+                          id={`sidebar-item-${item.id}`}
+                          onClick={() => handleSelect(item.id)}
+                          aria-current={isActive ? 'page' : undefined}
+                          className={`w-full group flex items-center justify-between px-3.5 py-2.5 rounded-2xl font-bold text-xs transition-colors cursor-pointer select-none text-right outline-none focus-visible:ring-2 focus-visible:ring-[#008e8b] ${
+                            isActive
+                              ? 'bg-[#008e8b] text-white shadow-xs font-extrabold'
+                              : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 active:bg-slate-100'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            <Icon
+                              className={`w-4 h-4 shrink-0 transition-colors ${
+                                isActive
+                                  ? 'text-white'
+                                  : 'text-slate-400 group-hover:text-[#008e8b]'
+                              }`}
+                            />
+                            <span className="truncate leading-tight">{item.label}</span>
+                          </div>
+
+                          {item.badge && (
+                            <span
+                              className={`shrink-0 text-[9px] px-2 py-0.5 rounded-full font-bold transition-colors ${
+                                isActive
+                                  ? 'bg-white/20 text-white'
+                                  : 'bg-teal-50 text-[#008e8b] border border-teal-100/80 group-hover:bg-teal-100'
+                              }`}
+                            >
+                              {item.badge}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             );
           })}
         </div>
 
         {/* Sidebar Footer */}
-        <div className="p-4 border-t border-slate-100 bg-slate-50/50">
-          <div className="text-[10px] text-slate-400 text-center font-medium">
+        <div className="p-3.5 border-t border-slate-100 bg-slate-50/70 shrink-0">
+          <div className="text-[10.5px] text-slate-400 text-center font-semibold">
             نظام إدارة المدارس والموارد البشرية © 2026
           </div>
         </div>

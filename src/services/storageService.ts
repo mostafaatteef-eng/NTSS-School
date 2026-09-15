@@ -244,29 +244,168 @@ class StorageService {
     }
   }
 
-  // ---------------- Authentication ----------------
+  // ---------------- Authentication & Enterprise Auth Guard ----------------
+
+  /**
+   * Validates if a session token string is structurally sound and issued by the backend.
+   * Rejects empty, whitespace, or trivial tokens.
+   */
+  public isValidSessionToken(token?: string | null): boolean {
+    if (!token || typeof token !== 'string') return false;
+    const clean = token.trim();
+    // Authoritative backend tokens must be non-empty and of sufficient length (min 10 chars)
+    return clean.length >= 10;
+  }
+
+  /**
+   * Enterprise Session Guard:
+   * Presence in localStorage or sessionStorage is NEVER considered proof of authentication.
+   * A user is strictly authenticated ONLY IF:
+   * 1. Valid user object exists with id and role
+   * 2. Contains a valid authoritative sessionToken from Backend
+   * 3. Account status is not Inactive or Suspended
+   * 4. Session has not expired (checked against sessionExpiresAt)
+   */
+  public isAuthenticated(user?: User | null): boolean {
+    if (!user || typeof user !== 'object') return false;
+    if (!user.id || !user.role) return false;
+    if (user.status === 'Inactive' || user.status === 'Suspended') return false;
+    if (user.isActive === false) return false;
+
+    // Must possess a valid authoritative sessionToken
+    if (!this.isValidSessionToken(user.sessionToken)) {
+      return false;
+    }
+
+    // Expiry check if sessionExpiresAt is set
+    if (user.sessionExpiresAt) {
+      const expTime = new Date(user.sessionExpiresAt).getTime();
+      if (!isNaN(expTime) && expTime <= Date.now()) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  /**
+   * Retrieves the current user from storage cache.
+   * STRICT SECURITY POLICY:
+   * If a user record is found in local storage WITHOUT a valid sessionToken,
+   * it is strictly considered unauthenticated, purged, and returns null.
+   * sessionStorage is NEVER used as a fallback credential.
+   */
   public getCurrentUser(): User | null {
-    const raw = localStorage.getItem(STORAGE_KEYS.CURRENT_USER);
+    const raw = localStorage.getItem(STORAGE_KEYS.CURRENT_USER) || localStorage.getItem('ntss_current_user');
     if (!raw) return null;
+
     try {
-      return JSON.parse(raw);
+      const parsed: User = JSON.parse(raw);
+      if (!this.isAuthenticated(parsed)) {
+        // Purge invalid / unauthenticated user state from local storage
+        localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
+        localStorage.removeItem('ntss_current_user');
+        return null;
+      }
+      return parsed;
     } catch {
+      localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
+      localStorage.removeItem('ntss_current_user');
       return null;
     }
   }
 
+  /**
+   * Sets or clears the authenticated user state.
+   * Does NOT store credentials in sessionStorage (which is reserved for non-sensitive UI state only).
+   */
   public setCurrentUser(user: User | null): void {
-    if (user) {
-      localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(user));
-      this.logAudit('LOGIN', 'AUTH', `تسجيل دخول للمستخدم: ${user.fullName} (@${user.username})`);
+    if (user && this.isAuthenticated(user)) {
+      const sanitizedUser: User = { ...user };
+      delete (sanitizedUser as any).password;
+      localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(sanitizedUser));
+      localStorage.removeItem('ntss_current_user');
+      this.logAudit('LOGIN', 'AUTH', `تسجيل دخول للمستخدم: ${sanitizedUser.fullName} (@${sanitizedUser.username})`);
     } else {
-      const current = this.getCurrentUser();
-      if (current) {
-        this.logAudit('LOGOUT', 'AUTH', `تسجيل خروج للمستخدم: ${current.fullName}`);
+      const currentRaw = localStorage.getItem(STORAGE_KEYS.CURRENT_USER) || localStorage.getItem('ntss_current_user');
+      if (currentRaw) {
+        try {
+          const current = JSON.parse(currentRaw);
+          if (current?.fullName) {
+            this.logAudit('LOGOUT', 'AUTH', `تسجيل خروج للمستخدم: ${current.fullName}`);
+          }
+        } catch {}
       }
       localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
+      localStorage.removeItem('ntss_current_user');
     }
+
+    // Clean any sensitive user state from sessionStorage to prevent fallback trust
+    if (typeof window !== 'undefined' && typeof window.sessionStorage !== 'undefined') {
+      try {
+        window.sessionStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
+        window.sessionStorage.removeItem('ntss_current_user');
+      } catch {}
+    }
+
     this.notifyChange();
+  }
+
+  /**
+   * Validates the current session against Backend if online.
+   * If the session is rejected or expired by the backend, forces real logout.
+   */
+  public async validateSessionWithBackend(user?: User | null): Promise<boolean> {
+    const targetUser = user !== undefined ? user : this.getCurrentUser();
+    if (!targetUser || !this.isAuthenticated(targetUser)) {
+      if (targetUser) {
+        this.setCurrentUser(null);
+      }
+      return false;
+    }
+
+    const settings = this.getSettings();
+    const scriptUrl = settings.googleAppsScriptUrl || DEFAULT_BACKEND_URL;
+
+    if (!scriptUrl || scriptUrl.length < 15 || !navigator.onLine) {
+      return this.isAuthenticated(targetUser);
+    }
+
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      const response = await fetch(scriptUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'validateSession',
+          sessionToken: targetUser.sessionToken,
+          userId: targetUser.id,
+          userRole: targetUser.role,
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (response.ok) {
+        const result = await response.json();
+        if (
+          result.status === 'error' &&
+          (result.code === 'SESSION_EXPIRED' ||
+            result.code === 'INVALID_SESSION' ||
+            result.code === 'UNAUTHORIZED' ||
+            result.code === 'SESSION_REVOKED')
+        ) {
+          // Authoritative backend logout
+          this.setCurrentUser(null);
+          return false;
+        }
+      }
+      return true;
+    } catch {
+      // Retain active valid cryptographic token on transient network failure
+      return this.isAuthenticated(targetUser);
+    }
   }
 
   public async login(username: string, password: string): Promise<{ success: boolean; message?: string; user?: User; code?: string; loginNumber?: string | number }> {
@@ -3438,10 +3577,22 @@ class StorageService {
       });
 
       if (!response.ok) {
+        if (response.status === 401) {
+          this.setCurrentUser(null);
+        }
         return { success: false, message: `HTTP Error: ${response.status}` };
       }
 
       const res = await response.json();
+      if (
+        res.status === 'error' &&
+        (res.code === 'SESSION_EXPIRED' ||
+          res.code === 'INVALID_SESSION' ||
+          res.code === 'UNAUTHORIZED' ||
+          res.code === 'SESSION_REVOKED')
+      ) {
+        this.setCurrentUser(null);
+      }
       return {
         success: res.status === 'success',
         message: res.message || (res.status === 'success' ? 'Synced' : 'Failed to sync')
@@ -3475,10 +3626,22 @@ class StorageService {
       clearTimeout(timeoutId);
 
       if (!response.ok) {
+        if (response.status === 401) {
+          this.setCurrentUser(null);
+        }
         return { success: false, message: `HTTP Error: ${response.status}` };
       }
 
       const res = await response.json();
+      if (
+        res.status === 'error' &&
+        (res.code === 'SESSION_EXPIRED' ||
+          res.code === 'INVALID_SESSION' ||
+          res.code === 'UNAUTHORIZED' ||
+          res.code === 'SESSION_REVOKED')
+      ) {
+        this.setCurrentUser(null);
+      }
       return {
         ...res,
         success: res.status === 'success',

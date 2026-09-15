@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   AttendanceRecord,
   AuditLog,
@@ -13,6 +13,7 @@ import {
   canAccessTab,
   clearPreviousNavigationState,
   resolveDefaultRouteForCurrentUser,
+  normalizeTab,
 } from './utils/navigation';
 import { Header } from './components/layout/Header';
 import { Sidebar } from './components/layout/Sidebar';
@@ -47,8 +48,34 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(() => storageService.getCurrentUser());
   const [activeTab, setActiveTab] = useState<string>(() => {
     const user = storageService.getCurrentUser();
+    if (!user) return 'dashboard';
+
+    // 1. Check URL hash (e.g. #/students)
+    if (typeof window !== 'undefined' && window.location.hash) {
+      const hashTab = normalizeTab(window.location.hash);
+      if (hashTab && canAccessTab(user, hashTab)) {
+        return hashTab;
+      }
+    }
+
+    // 2. Check saved session tab
+    try {
+      const saved = sessionStorage.getItem('ntss_active_tab');
+      if (saved && canAccessTab(user, saved)) {
+        return normalizeTab(saved);
+      }
+    } catch {}
+
+    // 3. Fallback to role's authorized default landing route
     return resolveDefaultRouteForCurrentUser(user);
   });
+
+  const activeTabRef = useRef(activeTab);
+  activeTabRef.current = activeTab;
+
+  const currentUserRef = useRef(currentUser);
+  currentUserRef.current = currentUser;
+
   const [employees, setEmployees] = useState<Employee[]>(() => storageService.getEmployees());
   const [attendance, setAttendance] = useState<AttendanceRecord[]>(() => storageService.getAttendance());
   const [leaves, setLeaves] = useState<LeaveRecord[]>(() => storageService.getLeaves());
@@ -69,7 +96,26 @@ export default function App() {
     runMigrationScope011LoginNumbersFirstLogin();
   }, []);
 
-  // Subscribe to storage changes
+  // Sync with browser back/forward and URL hash
+  useEffect(() => {
+    const onHashChange = () => {
+      const hash = window.location.hash;
+      if (!hash) return;
+      const parsed = normalizeTab(hash);
+      if (parsed && currentUserRef.current && canAccessTab(currentUserRef.current, parsed)) {
+        if (parsed !== activeTabRef.current) {
+          setActiveTab(parsed);
+          try {
+            sessionStorage.setItem('ntss_active_tab', parsed);
+          } catch {}
+        }
+      }
+    };
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
+
+  // Subscribe to storage changes without unmount/remount churn
   useEffect(() => {
     const unsubscribe = storageService.subscribe(() => {
       setEmployees(storageService.getEmployees());
@@ -79,21 +125,81 @@ export default function App() {
       setUsers(storageService.getUsers());
       setAuditLogs(storageService.getAuditLogs());
       setSyncState(storageService.getSyncState());
+
       const updatedUser = storageService.getCurrentUser();
-      setCurrentUser(updatedUser);
-      if (updatedUser && !canAccessTab(updatedUser, activeTab)) {
-        setActiveTab(resolveDefaultRouteForCurrentUser(updatedUser));
+      if (!updatedUser) {
+        if (currentUserRef.current) {
+          setCurrentUser(null);
+        }
+      } else if (storageService.isAuthenticated(updatedUser)) {
+        if (
+          !currentUserRef.current ||
+          currentUserRef.current.id !== updatedUser.id ||
+          currentUserRef.current.role !== updatedUser.role ||
+          currentUserRef.current.sessionToken !== updatedUser.sessionToken
+        ) {
+          setCurrentUser(updatedUser);
+        }
+        if (!canAccessTab(updatedUser, activeTabRef.current)) {
+          const fallback = resolveDefaultRouteForCurrentUser(updatedUser);
+          setActiveTab(fallback);
+          try {
+            sessionStorage.setItem('ntss_active_tab', fallback);
+            if (typeof window !== 'undefined' && window.history?.replaceState) {
+              window.history.replaceState(null, '', `#/${fallback}`);
+            }
+          } catch {}
+        }
+      } else {
+        storageService.setCurrentUser(null);
+        setCurrentUser(null);
       }
     });
     return () => unsubscribe();
-  }, [activeTab]);
+  }, []);
+
+  // Actively validate active session against Backend & enforce real logout if expired
+  useEffect(() => {
+    if (!currentUser) return;
+
+    if (!storageService.isAuthenticated(currentUser)) {
+      handleLogout();
+      return;
+    }
+
+    storageService.validateSessionWithBackend(currentUser).then(valid => {
+      if (!valid) {
+        handleLogout();
+      }
+    });
+
+    const onFocus = () => {
+      const u = storageService.getCurrentUser();
+      if (!u || !storageService.isAuthenticated(u)) {
+        handleLogout();
+      }
+    };
+
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [currentUser]);
 
   const handleLoginSuccess = (user: User) => {
+    if (!storageService.isAuthenticated(user)) {
+      console.error('Login rejected: user lacks valid backend sessionToken');
+      return;
+    }
     clearPreviousNavigationState();
     storageService.setCurrentUser(user);
     setCurrentUser(user);
     const defaultRoute = resolveDefaultRouteForCurrentUser(user);
     setActiveTab(defaultRoute);
+    try {
+      sessionStorage.setItem('ntss_active_tab', defaultRoute);
+      if (typeof window !== 'undefined' && window.history?.replaceState) {
+        window.history.replaceState(null, '', `#/${defaultRoute}`);
+      }
+    } catch {}
   };
 
   const handleLogout = () => {
@@ -101,10 +207,40 @@ export default function App() {
     storageService.setCurrentUser(null);
     setCurrentUser(null);
     setActiveTab('dashboard');
+    try {
+      if (typeof window !== 'undefined' && window.history?.replaceState) {
+        window.history.replaceState(null, '', '#/login');
+      }
+    } catch {}
   };
 
-  // Check login state
-  if (!currentUser) {
+  const handleNavigate = (tab: string, params?: any) => {
+    const cleanTab = normalizeTab(tab);
+    if (!currentUserRef.current) return;
+
+    if (!canAccessTab(currentUserRef.current, cleanTab)) {
+      const fallback = resolveDefaultRouteForCurrentUser(currentUserRef.current);
+      setActiveTab(fallback);
+      return;
+    }
+
+    if (cleanTab === 'reports' && params) {
+      if (params.reportKey) setSelectedReportKey(params.reportKey);
+      if (params.filters) setSelectedReportFilters(params.filters);
+    }
+
+    setActiveTab(cleanTab);
+    try {
+      sessionStorage.setItem('ntss_active_tab', cleanTab);
+      if (typeof window !== 'undefined' && window.history?.replaceState) {
+        window.history.replaceState(null, '', `#/${cleanTab}`);
+      }
+    } catch {}
+  };
+
+  // Enterprise Backend-Authoritative Auth Guard
+  const isAuth = storageService.isAuthenticated(currentUser);
+  if (!currentUser || !isAuth) {
     if (isPublicScheduleOpen) {
       return <PublicStudentScheduleView onBackToLogin={() => setIsPublicScheduleOpen(false)} />;
     }
@@ -115,18 +251,6 @@ export default function App() {
       />
     );
   }
-
-  const handleNavigate = (tab: string, params?: any) => {
-    if (!canAccessTab(currentUser, tab)) {
-      setActiveTab(resolveDefaultRouteForCurrentUser(currentUser));
-      return;
-    }
-    if (tab === 'reports' && params) {
-      if (params.reportKey) setSelectedReportKey(params.reportKey);
-      if (params.filters) setSelectedReportFilters(params.filters);
-    }
-    setActiveTab(tab);
-  };
 
   const renderActiveView = () => {
     // Universal Role-Based Security Route Guard

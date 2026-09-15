@@ -1,9 +1,9 @@
 import React from 'react';
 
 interface NTSSLogoProps {
-  variant?: 'full' | 'compact' | 'icon' | 'white';
+  variant?: 'full' | 'compact' | 'icon' | 'white' | 'vertical';
   className?: string;
-  size?: 'sm' | 'md' | 'lg';
+  size?: 'sm' | 'md' | 'lg' | 'xl';
 }
 
 export const NTSSLogo: React.FC<NTSSLogoProps> = ({
@@ -20,7 +20,8 @@ export const NTSSLogo: React.FC<NTSSLogoProps> = ({
   const iconSizes = {
     sm: 'w-7 h-7',
     md: 'w-9 h-9',
-    lg: 'w-12 h-12'
+    lg: 'w-12 h-12',
+    xl: 'w-14 h-14'
   };
 
   const IconSvg = (
@@ -68,6 +69,29 @@ export const NTSSLogo: React.FC<NTSSLogoProps> = ({
 
   if (variant === 'icon') {
     return <div className={`inline-flex items-center justify-center ${className}`}>{IconSvg}</div>;
+  }
+
+  if (variant === 'vertical') {
+    return (
+      <div className={`flex flex-col items-center text-center select-none ${className}`}>
+        {/* 1. Icon / Logo at the top in center */}
+        <div className="mb-2 flex items-center justify-center transition-transform hover:scale-105 duration-200">
+          {IconSvg}
+        </div>
+        {/* 2. NTSS word directly below */}
+        <div className={`text-2xl font-black tracking-wider font-mono ${isWhite ? 'text-white' : 'text-[#008e8b]'} leading-tight`}>
+          NTSS
+        </div>
+        {/* 3. NATIONAL TECHNICAL SCIENCE SCHOOLS */}
+        <div className={`text-[9.5px] font-bold tracking-[0.14em] ${isWhite ? 'text-teal-200' : 'text-slate-500'} uppercase mt-0.5 leading-tight font-sans`}>
+          NATIONAL TECHNICAL SCIENCE SCHOOLS
+        </div>
+        {/* 4. Arabic Name: المدارس الوطنية للعلوم التقنية */}
+        <div className={`text-xs font-extrabold ${isWhite ? 'text-white' : 'text-slate-800'} mt-1.5 leading-snug`}>
+          المدارس الوطنية للعلوم التقنية
+        </div>
+      </div>
+    );
   }
 
   if (variant === 'compact') {

@@ -94,8 +94,9 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="flex items-center gap-3 sm:gap-4">
           {onToggleMobileMenu && (
             <button
+              type="button"
               onClick={onToggleMobileMenu}
-              className="lg:hidden p-2 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition"
+              className="lg:hidden p-2 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition cursor-pointer"
               title="القائمة الرئيسية"
               aria-label="القائمة"
             >
@@ -123,6 +124,7 @@ export const Header: React.FC<HeaderProps> = ({
           {/* Quick Search Button */}
           {currentUser?.role !== 'Parent' && (
             <button
+              type="button"
               onClick={() => setIsSearchOpen(true)}
               className="flex items-center gap-2 text-xs text-slate-400 bg-slate-100/80 hover:bg-slate-100 border border-slate-200/80 px-3 py-1.5 rounded-full cursor-pointer transition-all"
             >
@@ -158,6 +160,7 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* Refresh Data Button & Queue Indicator */}
           <button
+            type="button"
             id="btn-refresh-data"
             onClick={() => setIsSyncModalOpen(true)}
             disabled={isSyncing}
@@ -189,6 +192,7 @@ export const Header: React.FC<HeaderProps> = ({
 
             {onLogout && (
               <button
+                type="button"
                 id="btn-logout"
                 onClick={onLogout}
                 className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition cursor-pointer"
