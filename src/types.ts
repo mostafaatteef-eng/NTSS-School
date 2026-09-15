@@ -2147,10 +2147,11 @@ export interface AnnualSummaryItem {
 
 export interface SyncStatus {
   lastSyncTime: string | null;
-  status: 'idle' | 'syncing' | 'success' | 'error';
+  status: 'idle' | 'syncing' | 'success' | 'error' | 'session_expired';
   errorMessage?: string;
   syncedRecordsCount?: number;
   connectedToGoogleSheets: boolean;
+  hasPendingChanges?: boolean;
 }
 
 export type SyncState = SyncStatus;

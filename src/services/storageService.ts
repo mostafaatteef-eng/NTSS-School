@@ -133,10 +133,12 @@ const STORAGE_KEYS = {
   PARENT_COMMUNICATIONS: 'ntss_parent_communications_v3',
   LOCATIONS: 'ntss_locations_v3',
   HOMEWORKS: 'ntss_homeworks_v3',
+  PERMISSIONS: 'ntss_permissions_v3',
 };
 
 const DEFAULT_BACKEND_URL =
-  'https://script.google.com/macros/s/AKfycbyw4O2Y6X5B6yN8U1M3Q4R5T6Y7U8I9O0P1A2S3D4F5G6H7J8K9/exec';
+  ((typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_GOOGLE_APPS_SCRIPT_URL) as string) ||
+  'https://script.google.com/macros/s/AKfycbzw0kggQMGHdusMyKZOuqMC8eLiBzGccm7e7tdZbnMjvyBDqXPgI5f0tiJPKMFYAoln/exec';
 
 // Universal localStorage fallback for Node.js / test environments
 if (typeof globalThis !== 'undefined' && typeof (globalThis as any).localStorage === 'undefined') {
@@ -244,7 +246,32 @@ class StorageService {
     }
   }
 
+  // In-memory cache for session validation to prevent hammering backend
+  private sessionValidationCache: { [token: string]: { result: boolean; timestamp: number } } = {};
+
+  public getBackendUrl(): string {
+    const envUrl = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_GOOGLE_APPS_SCRIPT_URL as string) || '';
+    const settings = this.getSettings();
+    const configuredUrl = (settings.googleAppsScriptUrl || '').trim();
+
+    if (configuredUrl && !configuredUrl.includes('AKfycbyw4O2Y6X5B6yN8U1M3Q4R5T6Y7U8I9O0P1A2S3D4F5G6H7J8K9')) {
+      return configuredUrl;
+    }
+    if (envUrl && !envUrl.includes('AKfycbyw4O2Y6X5B6yN8U1M3Q4R5T6Y7U8I9O0P1A2S3D4F5G6H7J8K9')) {
+      return envUrl;
+    }
+    return DEFAULT_BACKEND_URL;
+  }
+
   // ---------------- Authentication & Enterprise Auth Guard ----------------
+
+  /**
+   * Structural syntax check for session tokens (checks length and format).
+   * Note: This is a structural check only; real authentication requires validateSessionWithBackend.
+   */
+  public isSessionTokenFormatValid(token?: string | null): boolean {
+    return this.isValidSessionToken(token);
+  }
 
   /**
    * Validates if a session token string is structurally sound and issued by the backend.
@@ -364,8 +391,14 @@ class StorageService {
       return false;
     }
 
-    const settings = this.getSettings();
-    const scriptUrl = settings.googleAppsScriptUrl || DEFAULT_BACKEND_URL;
+    const token = targetUser.sessionToken || '';
+    const now = Date.now();
+    const cached = this.sessionValidationCache[token];
+    if (cached && now - cached.timestamp < 15000) {
+      return cached.result;
+    }
+
+    const scriptUrl = this.getBackendUrl();
 
     if (!scriptUrl || scriptUrl.length < 15 || !navigator.onLine) {
       return this.isAuthenticated(targetUser);
@@ -387,6 +420,12 @@ class StorageService {
       });
       clearTimeout(timeoutId);
 
+      if (response.status === 401) {
+        this.setCurrentUser(null);
+        this.sessionValidationCache[token] = { result: false, timestamp: now };
+        return false;
+      }
+
       if (response.ok) {
         const result = await response.json();
         if (
@@ -398,9 +437,11 @@ class StorageService {
         ) {
           // Authoritative backend logout
           this.setCurrentUser(null);
+          this.sessionValidationCache[token] = { result: false, timestamp: now };
           return false;
         }
       }
+      this.sessionValidationCache[token] = { result: true, timestamp: now };
       return true;
     } catch {
       // Retain active valid cryptographic token on transient network failure
@@ -1754,7 +1795,10 @@ class StorageService {
 
   public saveScheduleItem(item: ScheduleItem): { success: boolean; message?: string } {
     const caller = this.getCurrentUser();
-    const isScheduleAdmin = !caller || caller.role === 'Admin' || (caller.role as string) === 'Supervisor';
+    if (!caller) {
+      return { success: false, message: 'يجب تسجيل الدخول لإجراء تعديلات على الجدول الدراسي.' };
+    }
+    const isScheduleAdmin = caller.role === 'Admin' || caller.role === 'SchoolDirector' || (caller.role as string) === 'Supervisor' || caller.role === 'TeacherAffairs';
     if (!isScheduleAdmin) {
       return { success: false, message: 'غير مصرح للمعلم بتعديل أو إضافة حصص في الجدول العام (مقتصر على الإدارة والمشرفين).' };
     }
@@ -1768,21 +1812,32 @@ class StorageService {
     localStorage.setItem(STORAGE_KEYS.SCHEDULE, JSON.stringify(list));
     this.logAudit('UPDATE', 'SCHEDULE', `تعديل الجدول الدراسي: ${item.grade} ${item.classroom} - ${item.subject}`);
     this.notifyChange();
-    this.pushPost('saveScheduleItem', item).catch(() => {});
+    this.pushPost('saveScheduleEntry', item).catch(() => {});
     return { success: true, message: 'تم حفظ الحصة في الجدول بنجاح' };
+  }
+
+  public saveScheduleEntry(item: ScheduleItem): { success: boolean; message?: string } {
+    return this.saveScheduleItem(item);
   }
 
   public deleteScheduleItem(id: string): { success: boolean; message?: string } {
     const caller = this.getCurrentUser();
-    const isScheduleAdmin = !caller || caller.role === 'Admin' || (caller.role as string) === 'Supervisor';
+    if (!caller) {
+      return { success: false, message: 'يجب تسجيل الدخول لحذف حصة من الجدول الدراسي.' };
+    }
+    const isScheduleAdmin = caller.role === 'Admin' || caller.role === 'SchoolDirector' || (caller.role as string) === 'Supervisor' || caller.role === 'TeacherAffairs';
     if (!isScheduleAdmin) {
       return { success: false, message: 'غير مصرح للمعلم بحذف حصص من الجدول العام.' };
     }
     const list = this.getSchedule().filter(s => s.id !== id);
     localStorage.setItem(STORAGE_KEYS.SCHEDULE, JSON.stringify(list));
     this.notifyChange();
-    this.pushPost('deleteScheduleItem', { id }).catch(() => {});
+    this.pushPost('deleteScheduleEntry', { id }).catch(() => {});
     return { success: true, message: 'تم حذف الحصة من الجدول' };
+  }
+
+  public deleteScheduleEntry(id: string): { success: boolean; message?: string } {
+    return this.deleteScheduleItem(id);
   }
 
   public getLessonContents(): LessonContent[] {
@@ -2546,8 +2601,7 @@ class StorageService {
   }
 
   public async syncWithGoogleSheets(isBackground = false): Promise<boolean> {
-    const settings = this.getSettings();
-    const scriptUrl = settings.googleAppsScriptUrl || DEFAULT_BACKEND_URL;
+    const scriptUrl = this.getBackendUrl();
 
     if (!scriptUrl || scriptUrl.length < 15) {
       this.setSyncStatus({
@@ -2555,6 +2609,17 @@ class StorageService {
         status: 'idle',
         connectedToGoogleSheets: false,
         errorMessage: 'لم يتم ربط رابط Google Apps Script بعد',
+      });
+      return false;
+    }
+
+    const currentUser = this.getCurrentUser();
+    if (!currentUser || !currentUser.sessionToken || !this.isAuthenticated(currentUser)) {
+      this.setSyncStatus({
+        ...this.getSyncStatus(),
+        status: 'error',
+        connectedToGoogleSheets: false,
+        errorMessage: 'مطلوب تسجيل الدخول بجلسة عمل معتمدة للمزامنة مع الخادم السحابي',
       });
       return false;
     }
@@ -2567,16 +2632,48 @@ class StorageService {
     }
 
     try {
-      const response = await fetch(`${scriptUrl}?action=getAll&t=${Date.now()}`);
+      const requestId = 'SYNC_' + Math.random().toString(36).substring(2, 10) + '_' + Date.now();
+      const clientTimestamp = getCairoNowISO();
+
+      const response = await fetch(scriptUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'syncData',
+          sessionToken: currentUser.sessionToken,
+          userId: currentUser.id,
+          userRole: currentUser.role,
+          requestId,
+          clientTimestamp,
+        }),
+      });
+
+      if (response.status === 401) {
+        this.setCurrentUser(null);
+        this.setSyncStatus({
+          lastSyncTime: null,
+          status: 'session_expired',
+          connectedToGoogleSheets: false,
+          errorMessage: 'انتهت صلاحية الجلسة، يرجى تسجيل الدخول مجدداً',
+        });
+        this.notifyChange();
+        return false;
+      }
+
       if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
 
       const result = await response.json();
       if (result.status === 'success' && result.data) {
         const d = result.data;
         if (Array.isArray(d.employees)) localStorage.setItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify(d.employees));
-        if (Array.isArray(d.attendance)) localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify(d.attendance));
+        if (Array.isArray(d.employeeAttendance)) {
+          localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify(d.employeeAttendance));
+        } else if (Array.isArray(d.attendance)) {
+          localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify(d.attendance));
+        }
         if (Array.isArray(d.users)) localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(d.users));
         if (Array.isArray(d.leaves)) localStorage.setItem(STORAGE_KEYS.LEAVES, JSON.stringify(d.leaves));
+        if (Array.isArray(d.permissions)) localStorage.setItem(STORAGE_KEYS.PERMISSIONS, JSON.stringify(d.permissions));
         if (Array.isArray(d.students)) localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify(d.students));
         if (Array.isArray(d.studentAttendance)) localStorage.setItem(STORAGE_KEYS.STUDENT_ATTENDANCE, JSON.stringify(d.studentAttendance));
         if (Array.isArray(d.behaviorTypes)) localStorage.setItem(STORAGE_KEYS.BEHAVIOR_TYPES, JSON.stringify(d.behaviorTypes));
@@ -2590,28 +2687,56 @@ class StorageService {
         if (Array.isArray(d.positiveBehaviorTypes)) localStorage.setItem(STORAGE_KEYS.POSITIVE_BEHAVIOR_TYPES, JSON.stringify(d.positiveBehaviorTypes));
         if (Array.isArray(d.behaviorLedger)) localStorage.setItem(STORAGE_KEYS.BEHAVIOR_LEDGER, JSON.stringify(d.behaviorLedger));
         if (Array.isArray(d.behaviorCases)) localStorage.setItem(STORAGE_KEYS.BEHAVIOR_CASES, JSON.stringify(d.behaviorCases));
-        if (Array.isArray(d.scheduleSubstitutions)) localStorage.setItem(STORAGE_KEYS.SCHEDULE_SUBSTITUTIONS, JSON.stringify(d.scheduleSubstitutions));
-        if (Array.isArray(d.lessonInstances)) localStorage.setItem(STORAGE_KEYS.LESSON_INSTANCES, JSON.stringify(d.lessonInstances));
-        if (Array.isArray(d.parentCommunications)) localStorage.setItem(STORAGE_KEYS.PARENT_COMMUNICATIONS, JSON.stringify(d.parentCommunications));
-        if (Array.isArray(d.locations)) localStorage.setItem(STORAGE_KEYS.LOCATIONS, JSON.stringify(d.locations));
+        if (Array.isArray(d.substitutions)) {
+          localStorage.setItem(STORAGE_KEYS.SCHEDULE_SUBSTITUTIONS, JSON.stringify(d.substitutions));
+        } else if (Array.isArray(d.scheduleSubstitutions)) {
+          localStorage.setItem(STORAGE_KEYS.SCHEDULE_SUBSTITUTIONS, JSON.stringify(d.scheduleSubstitutions));
+        }
+        if (Array.isArray(d.supervisionLocations)) {
+          localStorage.setItem(STORAGE_KEYS.LOCATIONS, JSON.stringify(d.supervisionLocations));
+        } else if (Array.isArray(d.locations)) {
+          localStorage.setItem(STORAGE_KEYS.LOCATIONS, JSON.stringify(d.locations));
+        }
+        if (Array.isArray(d.homeworks)) localStorage.setItem(STORAGE_KEYS.HOMEWORKS, JSON.stringify(d.homeworks));
 
         const nowIso = getCairoNowISO();
+        const recordsCount =
+          (d.employees?.length || 0) +
+          (d.students?.length || 0) +
+          (d.schedule?.length || 0) +
+          (d.attendance?.length || d.employeeAttendance?.length || 0) +
+          (d.academicYears?.length || 0) +
+          (d.leaves?.length || 0) +
+          (d.studentAttendance?.length || 0);
+
         this.setSyncStatus({
           lastSyncTime: nowIso,
           status: 'success',
           connectedToGoogleSheets: true,
-          syncedRecordsCount:
-            (d.employees?.length || 0) +
-            (d.students?.length || 0) +
-            (d.attendance?.length || 0) +
-            (d.academicYears?.length || 0) +
-            (d.studentEnrollments?.length || 0),
+          syncedRecordsCount: recordsCount,
         });
 
         this.notifyChange();
         return true;
       } else {
-        throw new Error(result.message || 'فشل استرجاع البيانات من السكربت');
+        if (
+          result.status === 'error' &&
+          (result.code === 'SESSION_EXPIRED' ||
+            result.code === 'INVALID_SESSION' ||
+            result.code === 'AUTH_REQUIRED' ||
+            result.code === 'SESSION_REVOKED')
+        ) {
+          this.setCurrentUser(null);
+          this.setSyncStatus({
+            lastSyncTime: null,
+            status: 'session_expired',
+            connectedToGoogleSheets: false,
+            errorMessage: 'انتهت صلاحية الجلسة، يرجى تسجيل الدخول مجدداً',
+          });
+          this.notifyChange();
+          return false;
+        }
+        throw new Error(result.message || 'فشل استرجاع البيانات من السكربت السحابي');
       }
     } catch (err: any) {
       console.warn('Sync failed:', err.message);

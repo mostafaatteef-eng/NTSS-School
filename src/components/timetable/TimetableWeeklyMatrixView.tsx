@@ -174,7 +174,11 @@ export const TimetableWeeklyMatrixView: React.FC<TimetableWeeklyMatrixViewProps>
     }
 
     // Save to storage
-    storageService.saveScheduleItem(itemToSave);
+    const saveRes = storageService.saveScheduleItem(itemToSave);
+    if (!saveRes.success) {
+      alert(saveRes.message || 'فشل حفظ الحصة في الجدول');
+      return;
+    }
     setIsModalOpen(false);
     setEditingItem(null);
     loadData();
@@ -182,13 +186,21 @@ export const TimetableWeeklyMatrixView: React.FC<TimetableWeeklyMatrixViewProps>
 
   const handleToggleLock = (item: ScheduleItem) => {
     const updated = { ...item, isLocked: !item.isLocked };
-    storageService.saveScheduleItem(updated);
+    const lockRes = storageService.saveScheduleItem(updated);
+    if (!lockRes.success) {
+      alert(lockRes.message || 'فشل تعديل حالة إغلاق الحصة');
+      return;
+    }
     loadData();
   };
 
   const handleDeleteItem = (id: string) => {
     if (confirm('هل أنت متأكد من رغبتك في حذف هذه الحصة من الجدول؟')) {
-      storageService.deleteScheduleItem(id);
+      const delRes = storageService.deleteScheduleItem(id);
+      if (!delRes.success) {
+        alert(delRes.message || 'فشل حذف الحصة من الجدول');
+        return;
+      }
       loadData();
     }
   };
