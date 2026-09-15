@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Calendar,
   FileSpreadsheet,
@@ -52,6 +52,10 @@ export const TimetableModuleView: React.FC<TimetableModuleViewProps> = ({
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<TimetableSubTab>(initialTab);
 
+  useEffect(() => {
+    setActiveSubTab(initialTab);
+  }, [initialTab]);
+
   const isAdmin = currentUser?.role === 'Admin' || currentUser?.role === 'SchoolDirector';
 
   const navTabs = [
@@ -81,6 +85,7 @@ export const TimetableModuleView: React.FC<TimetableModuleViewProps> = ({
 
             return (
               <button
+                type="button"
                 key={tab.id}
                 onClick={() => setActiveSubTab(tab.id as TimetableSubTab)}
                 className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap ${
