@@ -1793,15 +1793,76 @@ class StorageService {
     this.notifyChange();
   }
 
-  public saveScheduleItem(item: ScheduleItem): { success: boolean; message?: string } {
+  public async saveScheduleItem(item: ScheduleItem): Promise<{ success: boolean; message?: string }> {
     const caller = this.getCurrentUser();
-    if (!caller) {
+    if (!caller || !caller.sessionToken) {
       return { success: false, message: 'يجب تسجيل الدخول لإجراء تعديلات على الجدول الدراسي.' };
     }
     const isScheduleAdmin = caller.role === 'Admin' || caller.role === 'SchoolDirector' || (caller.role as string) === 'Supervisor' || caller.role === 'TeacherAffairs';
     if (!isScheduleAdmin) {
       return { success: false, message: 'غير مصرح للمعلم بتعديل أو إضافة حصص في الجدول العام (مقتصر على الإدارة والمشرفين).' };
     }
+
+    const scriptUrl = this.getBackendUrl();
+    if (!scriptUrl || scriptUrl.length < 15) {
+      return { success: false, message: 'Google Apps Script URL غير مهيأ' };
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    let response: Response;
+    try {
+      response = await fetch(scriptUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'saveScheduleEntry',
+          data: item,
+          payload: item,
+          sessionToken: caller.sessionToken,
+          userId: caller.id,
+          userRole: caller.role,
+          requestId: `REQ-SCH-${Date.now()}-${generateCryptographicToken(6)}`,
+          clientTimestamp: new Date().toISOString(),
+        }),
+        signal: controller.signal,
+      });
+    } catch (err: any) {
+      clearTimeout(timeoutId);
+      return {
+        success: false,
+        message: err?.name === 'AbortError'
+          ? 'انتهت مهلة الاتصال بالخادم، يرجى إعادة المحاولة'
+          : `تعذر الاتصال بالخادم الخلفي: ${err?.message || 'خطأ في الشبكة'}`
+      };
+    }
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        this.setCurrentUser(null);
+        this.setSyncStatus({ ...this.getSyncStatus(), status: 'session_expired', errorMessage: 'انتهت صلاحية جلسة العمل، يرجى إعادة تسجيل الدخول' });
+        return { success: false, message: 'انتهت صلاحية جلسة العمل. يرجى تسجيل الدخول مجدداً.' };
+      }
+      return { success: false, message: `فشل الحفظ في خادم البيانات (HTTP ${response.status})` };
+    }
+
+    let resData: any = null;
+    try {
+      resData = await response.json();
+    } catch {
+      return { success: false, message: 'استجابة غير صالحة من خادم البيانات' };
+    }
+
+    if (resData && (resData.status === 'error' || resData.success === false)) {
+      if (resData.code === 'SESSION_EXPIRED' || resData.code === 'AUTH_REQUIRED' || resData.code === 'INVALID_SESSION') {
+        this.setCurrentUser(null);
+        this.setSyncStatus({ ...this.getSyncStatus(), status: 'session_expired', errorMessage: resData.message || 'انتهت الجلسة' });
+      }
+      return { success: false, message: resData.message || 'فشل حفظ الحصة في خادم البيانات' };
+    }
+
+    // Backend success ONLY: update localStorage cache and notify
     const list = this.getSchedule();
     const idx = list.findIndex(s => s.id === item.id);
     if (idx >= 0) {
@@ -1812,31 +1873,91 @@ class StorageService {
     localStorage.setItem(STORAGE_KEYS.SCHEDULE, JSON.stringify(list));
     this.logAudit('UPDATE', 'SCHEDULE', `تعديل الجدول الدراسي: ${item.grade} ${item.classroom} - ${item.subject}`);
     this.notifyChange();
-    this.pushPost('saveScheduleEntry', item).catch(() => {});
-    return { success: true, message: 'تم حفظ الحصة في الجدول بنجاح' };
+    return { success: true, message: resData?.message || 'تم حفظ الحصة في الجدول بنجاح' };
   }
 
-  public saveScheduleEntry(item: ScheduleItem): { success: boolean; message?: string } {
+  public async saveScheduleEntry(item: ScheduleItem): Promise<{ success: boolean; message?: string }> {
     return this.saveScheduleItem(item);
   }
 
-  public deleteScheduleItem(id: string): { success: boolean; message?: string } {
+  public async deleteScheduleItem(id: string): Promise<{ success: boolean; message?: string }> {
     const caller = this.getCurrentUser();
-    if (!caller) {
+    if (!caller || !caller.sessionToken) {
       return { success: false, message: 'يجب تسجيل الدخول لحذف حصة من الجدول الدراسي.' };
     }
     const isScheduleAdmin = caller.role === 'Admin' || caller.role === 'SchoolDirector' || (caller.role as string) === 'Supervisor' || caller.role === 'TeacherAffairs';
     if (!isScheduleAdmin) {
       return { success: false, message: 'غير مصرح للمعلم بحذف حصص من الجدول العام.' };
     }
+
+    const scriptUrl = this.getBackendUrl();
+    if (!scriptUrl || scriptUrl.length < 15) {
+      return { success: false, message: 'Google Apps Script URL غير مهيأ' };
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    let response: Response;
+    try {
+      response = await fetch(scriptUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'deleteScheduleEntry',
+          data: { id },
+          payload: { id },
+          sessionToken: caller.sessionToken,
+          userId: caller.id,
+          userRole: caller.role,
+          requestId: `REQ-DEL-${Date.now()}-${generateCryptographicToken(6)}`,
+          clientTimestamp: new Date().toISOString(),
+        }),
+        signal: controller.signal,
+      });
+    } catch (err: any) {
+      clearTimeout(timeoutId);
+      return {
+        success: false,
+        message: err?.name === 'AbortError'
+          ? 'انتهت مهلة الاتصال بالخادم، يرجى إعادة المحاولة'
+          : `تعذر الاتصال بالخادم الخلفي: ${err?.message || 'خطأ في الشبكة'}`
+      };
+    }
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        this.setCurrentUser(null);
+        this.setSyncStatus({ ...this.getSyncStatus(), status: 'session_expired', errorMessage: 'انتهت صلاحية جلسة العمل، يرجى إعادة تسجيل الدخول' });
+        return { success: false, message: 'انتهت صلاحية جلسة العمل. يرجى تسجيل الدخول مجدداً.' };
+      }
+      return { success: false, message: `فشل الحذف من خادم البيانات (HTTP ${response.status})` };
+    }
+
+    let resData: any = null;
+    try {
+      resData = await response.json();
+    } catch {
+      return { success: false, message: 'استجابة غير صالحة من خادم البيانات' };
+    }
+
+    if (resData && (resData.status === 'error' || resData.success === false)) {
+      if (resData.code === 'SESSION_EXPIRED' || resData.code === 'AUTH_REQUIRED' || resData.code === 'INVALID_SESSION') {
+        this.setCurrentUser(null);
+        this.setSyncStatus({ ...this.getSyncStatus(), status: 'session_expired', errorMessage: resData.message || 'انتهت الجلسة' });
+      }
+      return { success: false, message: resData.message || 'فشل حذف الحصة من خادم البيانات' };
+    }
+
+    // Backend success ONLY: remove from local cache and notify
     const list = this.getSchedule().filter(s => s.id !== id);
     localStorage.setItem(STORAGE_KEYS.SCHEDULE, JSON.stringify(list));
+    this.logAudit('DELETE', 'SCHEDULE', `حذف حصة دراسية: ${id}`);
     this.notifyChange();
-    this.pushPost('deleteScheduleEntry', { id }).catch(() => {});
-    return { success: true, message: 'تم حذف الحصة من الجدول' };
+    return { success: true, message: resData?.message || 'تم حذف الحصة من الجدول' };
   }
 
-  public deleteScheduleEntry(id: string): { success: boolean; message?: string } {
+  public async deleteScheduleEntry(id: string): Promise<{ success: boolean; message?: string }> {
     return this.deleteScheduleItem(id);
   }
 

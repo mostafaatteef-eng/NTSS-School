@@ -111,7 +111,7 @@ describe('Cloud Sync (syncData) & Authoritative Schedule Actions', () => {
     expect(status.status).toBe('session_expired');
   });
 
-  it('4. saveScheduleItem and deleteScheduleItem enforce fail-closed auth and dispatch backend actions', async () => {
+  it('4. saveScheduleItem and deleteScheduleItem are backend-authoritative and update localStorage only on success', async () => {
     const mockItem: ScheduleItem = {
       id: 'SCH-TEST-1',
       dayOfWeek: 'الاثنين',
@@ -123,11 +123,12 @@ describe('Cloud Sync (syncData) & Authoritative Schedule Actions', () => {
       isActive: true,
     };
 
-    // Attempt without login must fail
-    const unauthSave = storageService.saveScheduleItem(mockItem);
+    // 4.1 Attempt without login must fail and not touch localStorage
+    const unauthSave = await storageService.saveScheduleItem(mockItem);
     expect(unauthSave.success).toBe(false);
+    expect(storageService.getSchedule().find(s => s.id === 'SCH-TEST-1')).toBeUndefined();
 
-    const unauthDelete = storageService.deleteScheduleItem('SCH-TEST-1');
+    const unauthDelete = await storageService.deleteScheduleItem('SCH-TEST-1');
     expect(unauthDelete.success).toBe(false);
 
     // Login as Admin
@@ -142,14 +143,60 @@ describe('Cloud Sync (syncData) & Authoritative Schedule Actions', () => {
     };
     storageService.setCurrentUser(adminUser);
 
-    const pushSpy = vi.spyOn(storageService as any, 'pushPost').mockResolvedValue(true);
+    // 4.2 Backend failure -> must NOT touch localStorage
+    const mockFailFetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: async () => ({ status: 'error', message: 'Internal server error' }),
+    });
+    vi.stubGlobal('fetch', mockFailFetch);
 
-    const authSave = storageService.saveScheduleItem(mockItem);
+    const failSave = await storageService.saveScheduleItem(mockItem);
+    expect(failSave.success).toBe(false);
+    expect(storageService.getSchedule().find(s => s.id === 'SCH-TEST-1')).toBeUndefined();
+
+    // 4.3 Backend success -> MUST update localStorage cache
+    const mockSuccessFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ status: 'success', message: 'تم حفظ الحصة الدراسية بنجاح' }),
+    });
+    vi.stubGlobal('fetch', mockSuccessFetch);
+
+    const authSave = await storageService.saveScheduleItem(mockItem);
     expect(authSave.success).toBe(true);
-    expect(pushSpy).toHaveBeenCalledWith('saveScheduleEntry', mockItem);
+    expect(storageService.getSchedule().find(s => s.id === 'SCH-TEST-1')).toBeDefined();
 
-    const authDelete = storageService.deleteScheduleItem('SCH-TEST-1');
+    // Verify correct POST payload
+    const saveCall = mockSuccessFetch.mock.calls[0];
+    const saveBody = JSON.parse(saveCall[1].body);
+    expect(saveBody.action).toBe('saveScheduleEntry');
+    expect(saveBody.sessionToken).toBe('AUTH_TOKEN_TEST_VALID_000');
+    expect(saveBody.data.id).toBe('SCH-TEST-1');
+
+    // 4.4 Delete failure -> must NOT remove from localStorage
+    mockSuccessFetch.mockClear();
+    vi.stubGlobal('fetch', mockFailFetch);
+
+    const failDelete = await storageService.deleteScheduleItem('SCH-TEST-1');
+    expect(failDelete.success).toBe(false);
+    expect(storageService.getSchedule().find(s => s.id === 'SCH-TEST-1')).toBeDefined();
+
+    // 4.5 Delete success -> removes from localStorage
+    const mockDeleteSuccessFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ status: 'success', message: 'تم حذف الحصة الدراسية بنجاح' }),
+    });
+    vi.stubGlobal('fetch', mockDeleteSuccessFetch);
+
+    const authDelete = await storageService.deleteScheduleItem('SCH-TEST-1');
     expect(authDelete.success).toBe(true);
-    expect(pushSpy).toHaveBeenCalledWith('deleteScheduleEntry', { id: 'SCH-TEST-1' });
+    expect(storageService.getSchedule().find(s => s.id === 'SCH-TEST-1')).toBeUndefined();
+
+    const deleteCall = mockDeleteSuccessFetch.mock.calls[0];
+    const deleteBody = JSON.parse(deleteCall[1].body);
+    expect(deleteBody.action).toBe('deleteScheduleEntry');
+    expect(deleteBody.data.id).toBe('SCH-TEST-1');
   });
 });

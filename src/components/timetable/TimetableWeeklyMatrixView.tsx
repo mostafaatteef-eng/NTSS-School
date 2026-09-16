@@ -43,6 +43,7 @@ export const TimetableWeeklyMatrixView: React.FC<TimetableWeeklyMatrixViewProps>
 
   // Edit / Add Modal
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [editingItem, setEditingItem] = useState<Partial<ScheduleItem> | null>(null);
   const [conflictErrors, setConflictErrors] = useState<string[]>([]);
   const [conflictWarnings, setConflictWarnings] = useState<string[]>([]);
@@ -138,7 +139,7 @@ export const TimetableWeeklyMatrixView: React.FC<TimetableWeeklyMatrixViewProps>
     setIsModalOpen(true);
   };
 
-  const handleValidateAndSave = () => {
+  const handleValidateAndSave = async () => {
     if (!editingItem) return;
 
     const teacher = teachers.find(t => t.id === editingItem.teacherId);
@@ -173,20 +174,25 @@ export const TimetableWeeklyMatrixView: React.FC<TimetableWeeklyMatrixViewProps>
       return;
     }
 
-    // Save to storage
-    const saveRes = storageService.saveScheduleItem(itemToSave);
-    if (!saveRes.success) {
-      alert(saveRes.message || 'فشل حفظ الحصة في الجدول');
-      return;
+    try {
+      setIsSaving(true);
+      // Save to storage
+      const result = await storageService.saveScheduleItem(itemToSave);
+      if (!result.success) {
+        alert(result.message || 'فشل حفظ الحصة في الجدول');
+        return;
+      }
+      setIsModalOpen(false);
+      setEditingItem(null);
+      loadData();
+    } finally {
+      setIsSaving(false);
     }
-    setIsModalOpen(false);
-    setEditingItem(null);
-    loadData();
   };
 
-  const handleToggleLock = (item: ScheduleItem) => {
+  const handleToggleLock = async (item: ScheduleItem) => {
     const updated = { ...item, isLocked: !item.isLocked };
-    const lockRes = storageService.saveScheduleItem(updated);
+    const lockRes = await storageService.saveScheduleItem(updated);
     if (!lockRes.success) {
       alert(lockRes.message || 'فشل تعديل حالة إغلاق الحصة');
       return;
@@ -194,9 +200,9 @@ export const TimetableWeeklyMatrixView: React.FC<TimetableWeeklyMatrixViewProps>
     loadData();
   };
 
-  const handleDeleteItem = (id: string) => {
+  const handleDeleteItem = async (id: string) => {
     if (confirm('هل أنت متأكد من رغبتك في حذف هذه الحصة من الجدول؟')) {
-      const delRes = storageService.deleteScheduleItem(id);
+      const delRes = await storageService.deleteScheduleItem(id);
       if (!delRes.success) {
         alert(delRes.message || 'فشل حذف الحصة من الجدول');
         return;
@@ -694,16 +700,18 @@ export const TimetableWeeklyMatrixView: React.FC<TimetableWeeklyMatrixViewProps>
 
             <div className="flex items-center justify-end gap-2 border-t pt-4">
               <button
+                disabled={isSaving}
                 onClick={() => setIsModalOpen(false)}
-                className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800 rounded-lg"
+                className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800 rounded-lg disabled:opacity-50"
               >
                 إلغاء
               </button>
               <button
+                disabled={isSaving}
                 onClick={handleValidateAndSave}
-                className="px-5 py-2 text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-sm"
+                className="px-5 py-2 text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-sm disabled:opacity-50"
               >
-                حفظ الحصة
+                {isSaving ? 'جاري الحفظ...' : 'حفظ الحصة'}
               </button>
             </div>
           </div>
