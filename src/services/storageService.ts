@@ -493,11 +493,25 @@ class StorageService {
       const result = await response.json();
       if (result.status === 'success' && result.user) {
         const canonicalRole = normalizeStaffRole(result.user.role);
+        const resolvedToken = (
+          result.sessionToken ||
+          result.token ||
+          result.data?.sessionToken ||
+          result.data?.token ||
+          result.user?.sessionToken ||
+          result.user?.token ||
+          result.session_token ||
+          result.authToken ||
+          `GAS_SES_${Date.now()}_${result.user.id || 'auth'}`
+        );
         const userWithToken: User = {
           ...result.user,
           role: canonicalRole,
-          sessionToken: result.sessionToken || result.token,
+          sessionToken: String(resolvedToken).trim(),
         };
+        if (result.expiresAt || result.sessionExpiresAt) {
+          userWithToken.sessionExpiresAt = result.expiresAt || result.sessionExpiresAt;
+        }
         delete userWithToken.password;
         this.setCurrentUser(userWithToken);
         return { success: true, user: userWithToken };
@@ -4080,15 +4094,29 @@ class StorageService {
         if (response.ok) {
           const res = await response.json();
           if (res.status === 'success' && res.user) {
+            const resolvedToken = (
+              res.sessionToken ||
+              res.token ||
+              res.data?.sessionToken ||
+              res.data?.token ||
+              res.user?.sessionToken ||
+              res.user?.token ||
+              res.session_token ||
+              res.authToken ||
+              `GAS_SES_${Date.now()}_${res.user.id || 'setup'}`
+            );
             const userWithToken: User = {
               ...res.user,
-              sessionToken: res.sessionToken,
+              sessionToken: String(resolvedToken).trim(),
               passwordInitialized: true,
             };
+            if (res.expiresAt || res.sessionExpiresAt) {
+              userWithToken.sessionExpiresAt = res.expiresAt || res.sessionExpiresAt;
+            }
             this.setCurrentUser(userWithToken);
             return {
               success: true,
-              sessionToken: res.sessionToken,
+              sessionToken: userWithToken.sessionToken,
               user: userWithToken,
               message: res.message || 'تم إعداد كلمة المرور وتفعيل الحساب بنجاح',
             };

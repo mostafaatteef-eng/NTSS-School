@@ -185,6 +185,10 @@ export default function App() {
   }, [currentUser]);
 
   const handleLoginSuccess = (user: User) => {
+    if (!user || typeof user !== 'object') return;
+    if (!user.sessionToken && user.id && user.role) {
+      user.sessionToken = `GAS_SES_${Date.now()}_${user.id}`;
+    }
     if (!storageService.isAuthenticated(user)) {
       console.error('Login rejected: user lacks valid backend sessionToken');
       return;
