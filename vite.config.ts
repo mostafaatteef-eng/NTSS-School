@@ -4,7 +4,7 @@ import path from 'path';
 import { defineConfig } from 'vite';
 
 export default defineConfig(({ mode }) => ({
-  base: mode === 'production' ? '/NTSS-School/' : '/',
+  base: process.env.GITHUB_PAGES === 'true' ? '/NTSS-School/' : '/',
 
   plugins: [
     react(),
@@ -20,6 +20,7 @@ export default defineConfig(({ mode }) => ({
   server: {
     port: 3000,
     host: '0.0.0.0',
+    strictPort: true,
     hmr: process.env.DISABLE_HMR !== 'true',
   },
 }));
