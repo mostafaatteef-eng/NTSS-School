@@ -43,6 +43,7 @@ import { runMigrationScope008RemoveSamatPayroll } from './services/migrationScop
 import { runMigrationScope009SecurityAndFinalRetirement } from './services/migrationScope009SecurityAndFinalRetirement';
 import { runMigrationScope010TimetableSecureBackend } from './services/migrationScope010TimetableSecureBackend';
 import { runMigrationScope011LoginNumbersFirstLogin } from './services/migrationScope011LoginNumbersFirstLogin';
+import { runMigrationScope012RemoveLocalPasswords } from './services/migrationScope012RemoveLocalPasswords';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(() => storageService.getCurrentUser());
@@ -94,6 +95,7 @@ export default function App() {
     runMigrationScope009SecurityAndFinalRetirement();
     runMigrationScope010TimetableSecureBackend();
     runMigrationScope011LoginNumbersFirstLogin();
+    runMigrationScope012RemoveLocalPasswords();
   }, []);
 
   // Sync with browser back/forward and URL hash

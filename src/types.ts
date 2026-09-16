@@ -60,6 +60,10 @@ export type PermissionKey =
   | 'studentAttendance.create'
   | 'studentAttendance.edit'
   | 'studentAttendance.delete'
+  | 'studentAttendance.manage'
+  | 'teacherAttendance.view'
+  | 'teacherAttendance.manage'
+  | 'teacherAccounts.manage'
   | 'schoolAttendance.view'
   | 'schoolAttendance.create'
   | 'schoolAttendance.edit'
@@ -2158,3 +2162,68 @@ export type SyncState = SyncStatus;
 
 // Re-export extended modern entities
 export * from './types_extended';
+
+export interface TeacherAccount {
+  id: string;
+  employeeId: string;
+  teacherCode: string;
+  username: string;
+  usernameNormalized?: string;
+  passwordHash?: string;
+  passwordSalt?: string;
+  passwordAlgorithm?: string;
+  passwordIterations?: number;
+  status: 'Active' | 'Suspended' | 'Inactive';
+  mustChangePassword?: boolean;
+  failedLoginAttempts?: number;
+  lockedUntil?: string;
+  lastLoginAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type TeacherAccountSafeDTO = Omit<TeacherAccount, 'passwordHash' | 'passwordSalt' | 'passwordAlgorithm' | 'passwordIterations'>;
+
+export interface SaveDailyStudentAttendanceBatchRequest {
+  action: 'saveDailyStudentAttendanceBatch';
+  sessionToken?: string;
+  date: string;
+  gradeId?: string;
+  classroomId?: string;
+  records: Array<{
+    id?: string;
+    studentId: string;
+    studentName: string;
+    grade?: string;
+    classroom?: string;
+    date: string;
+    dayName?: string;
+    status: StudentAttendanceStatus;
+    checkInTime?: string;
+    lateMinutes?: number;
+    notes?: string;
+    absenceReason?: string;
+  }>;
+}
+
+export interface SaveDailyStaffAttendanceBatchRequest {
+  action: 'saveDailyStaffAttendanceBatch' | 'saveDailyTeacherAttendanceBatch';
+  sessionToken?: string;
+  date: string;
+  records: Array<{
+    id?: string;
+    employeeId: string;
+    employeeName: string;
+    department?: string;
+    date: string;
+    dayName?: string;
+    status: AttendanceStatus;
+    checkIn?: string;
+    checkOut?: string;
+    lateMinutes?: number;
+    notes?: string;
+    leaveType?: string;
+    permissionType?: string;
+  }>;
+}
+
