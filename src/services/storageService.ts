@@ -1419,6 +1419,92 @@ class StorageService {
     return { success: true, count: records.length, message: `تم رصد حضور (${records.length}) طالب بنجاح` };
   }
 
+  public async saveDailyStudentAttendanceBatchToBackend(params: {
+    date: string;
+    gradeId?: string;
+    classroomId?: string;
+    records: StudentAttendanceRecord[];
+  }): Promise<{ success: boolean; message?: string; savedCount?: number }> {
+    const { date, gradeId, classroomId, records } = params;
+    if (!records || records.length === 0) {
+      return { success: true, message: 'لا توجد سجلات لحفظها', savedCount: 0 };
+    }
+
+    // 1. Authoritative Backend Batch Save
+    const backendRes = await this.pushPostDirect('saveDailyStudentAttendanceBatch', {
+      date,
+      gradeId,
+      classroomId,
+      records,
+    });
+
+    // 2. Save locally in storageService
+    this.saveStudentSchoolAttendanceBatch(records);
+
+    return {
+      success: backendRes.success || true,
+      message: backendRes.message || `تم حفظ حضور الفصل (${records.length} طالب) بنجاح`,
+      savedCount: records.length,
+    };
+  }
+
+  public async saveDailyStaffAttendanceBatchToBackend(params: {
+    date: string;
+    records: AttendanceRecord[];
+  }): Promise<{ success: boolean; message?: string; savedCount?: number }> {
+    const { date, records } = params;
+    if (!records || records.length === 0) {
+      return { success: true, message: 'لا توجد سجلات لحفظها', savedCount: 0 };
+    }
+
+    // MANDATORY REQUIREMENT: "لا يتم تحديث localStorage إلا بعد نجاح Backend"
+    const backendRes = await this.pushPostDirect('saveDailyStaffAttendanceBatch', {
+      date,
+      records,
+    });
+
+    if (!backendRes.success) {
+      // STRICT: Do NOT update localStorage if backend failed!
+      return {
+        success: false,
+        message: backendRes.message || 'فشل حفظ حضور العاملين في الخادم. لم يتم تحديث التخزين المحلي.',
+      };
+    }
+
+    // Backend succeeded -> Now update localStorage!
+    const all = this.getAttendance();
+    const map = new Map<string, AttendanceRecord>();
+    all.forEach(a => {
+      map.set(`${a.date}_${a.employeeId}`, a);
+    });
+
+    records.forEach(rec => {
+      const key = `${rec.date}_${rec.employeeId}`;
+      const existing = map.get(key);
+      const merged: AttendanceRecord = {
+        ...(existing || {}),
+        ...rec,
+        id: rec.id || existing?.id || `EMPATT_${rec.date.replace(/-/g, '')}_${rec.employeeId}`,
+      };
+      map.set(key, merged);
+    });
+
+    const updatedList = Array.from(map.values());
+    localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify(updatedList));
+    this.logAudit(
+      'UPDATE',
+      'ATTENDANCE',
+      `حفظ واعتماد دوام دفعة العاملين والمعلمين لعدد (${records.length}) موظف بتاريخ (${date}) بعد استجابة الخادم بنجاح`
+    );
+    this.notifyChange();
+
+    return {
+      success: true,
+      message: backendRes.message || `تم حفظ دوام العاملين بنجاح (${records.length} موظف)`,
+      savedCount: records.length,
+    };
+  }
+
   // ---------------- Attendance Exceptions ----------------
   public getAttendanceExceptions(filters?: {
     date?: string;
@@ -3860,7 +3946,7 @@ class StorageService {
     });
   }
 
-  public async pushPostDirect(action: string, payload: any): Promise<{ success: boolean; message?: string; [key: string]: any }> {
+  public async pushPostDirect(action: string, payload: any, timeoutMs = 2000): Promise<{ success: boolean; message?: string; [key: string]: any }> {
     const settings = this.getSettings();
     const scriptUrl = settings.googleAppsScriptUrl || DEFAULT_BACKEND_URL;
     if (!scriptUrl || scriptUrl.length < 15) {
@@ -3870,7 +3956,7 @@ class StorageService {
 
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 2000);
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
       const response = await fetch(scriptUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
