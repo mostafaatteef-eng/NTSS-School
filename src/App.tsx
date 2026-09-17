@@ -37,6 +37,7 @@ import { SystemHealthView } from './components/health/SystemHealthView';
 import { OperationsCenterView } from './components/operations/OperationsCenterView';
 import { TimetableModuleView } from './components/timetable/TimetableModuleView';
 import { PublicStudentScheduleView } from './components/timetable/PublicStudentScheduleView';
+import { TeacherPortalView } from './components/timetable/TeacherPortalView';
 import { LoginView } from './components/auth/LoginView';
 import { ForceChangePasswordModal } from './components/auth/ForceChangePasswordModal';
 import { runMigrationScope008RemoveSamatPayroll } from './services/migrationScope008RemoveSamatPayroll';
@@ -88,6 +89,8 @@ export default function App() {
   const [selectedReportKey, setSelectedReportKey] = useState<string | undefined>();
   const [selectedReportFilters, setSelectedReportFilters] = useState<Record<string, any> | undefined>();
   const [isPublicScheduleOpen, setIsPublicScheduleOpen] = useState(false);
+  const [isTeacherPortalOpen, setIsTeacherPortalOpen] = useState(false);
+  const [teacherSession, setTeacherSession] = useState(() => storageService.getTeacherSession());
 
   // Run scope reduction, retirement, and timetable security migrations on boot
   useEffect(() => {
@@ -127,6 +130,7 @@ export default function App() {
       setUsers(storageService.getUsers());
       setAuditLogs(storageService.getAuditLogs());
       setSyncState(storageService.getSyncState());
+      setTeacherSession(storageService.getTeacherSession());
 
       const updatedUser = storageService.getCurrentUser();
       if (!updatedUser) {
@@ -244,6 +248,36 @@ export default function App() {
     } catch {}
   };
 
+  // Teacher Portal Authenticated Route (Authoritative Session Token Isolation)
+  if (teacherSession && teacherSession.teacherSessionToken) {
+    return (
+      <div className="min-h-screen bg-slate-100 p-4 sm:p-6 lg:p-8" dir="rtl">
+        <div className="max-w-7xl mx-auto">
+          <TeacherPortalView
+            onBackToLogin={() => {
+              storageService.logoutTeacher();
+              setTeacherSession(null);
+              setIsTeacherPortalOpen(false);
+            }}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  // Teacher Portal Standalone Login Screen
+  if (isTeacherPortalOpen) {
+    return (
+      <div className="min-h-screen bg-slate-100 p-4 sm:p-6 lg:p-8" dir="rtl">
+        <div className="max-w-7xl mx-auto">
+          <TeacherPortalView
+            onBackToLogin={() => setIsTeacherPortalOpen(false)}
+          />
+        </div>
+      </div>
+    );
+  }
+
   // Enterprise Backend-Authoritative Auth Guard
   const isAuth = storageService.isAuthenticated(currentUser);
   if (!currentUser || !isAuth) {
@@ -254,6 +288,7 @@ export default function App() {
       <LoginView
         onLoginSuccess={handleLoginSuccess}
         onOpenPublicSchedule={() => setIsPublicScheduleOpen(true)}
+        onOpenTeacherPortal={() => setIsTeacherPortalOpen(true)}
       />
     );
   }

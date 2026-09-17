@@ -57,29 +57,25 @@ describe('NTSS ERP - Sidebar Navigation Stability & Route Guard Tests', () => {
     expect(resolveDefaultRouteForCurrentUser(parentUser)).toBe('dashboard');
   });
 
-  it('Test 3: canAccessTab ensures dashboard is universally accessible while guarding admin modules', () => {
+  it('Test 3: canAccessTab ensures dashboard is accessible to admin while strictly guarding against teacher ERP access', () => {
     const teacherUser: User = { id: 'U4', username: 'teacher1', fullName: 'معلم أول', role: 'Teacher' };
     const adminUser: User = { id: 'U1', username: 'admin', fullName: 'مدير النظام', role: 'Admin' };
 
-    // Dashboard is accessible to both
-    expect(canAccessTab(teacherUser, 'dashboard')).toBe(true);
+    // Admin has access to administrative dashboard and system operations
     expect(canAccessTab(adminUser, 'dashboard')).toBe(true);
+    expect(canAccessTab(adminUser, 'settings')).toBe(true);
+    expect(canAccessTab(adminUser, 'users')).toBe(true);
+    expect(canAccessTab(adminUser, 'audit')).toBe(true);
 
-    // Teacher can access teacher portal and weekly schedule
+    // Teacher cannot enter administrative ERP modules (Strictly isolated to teacher_portal)
+    expect(canAccessTab(teacherUser, 'dashboard')).toBe(false);
     expect(canAccessTab(teacherUser, 'teacher_portal')).toBe(true);
-    expect(canAccessTab(teacherUser, 'timetable_weekly')).toBe(true);
-
-    // Teacher cannot access sensitive admin modules
+    expect(canAccessTab(teacherUser, 'timetable_weekly')).toBe(false);
     expect(canAccessTab(teacherUser, 'settings')).toBe(false);
     expect(canAccessTab(teacherUser, 'users')).toBe(false);
     expect(canAccessTab(teacherUser, 'audit')).toBe(false);
     expect(canAccessTab(teacherUser, 'backup')).toBe(false);
     expect(canAccessTab(teacherUser, 'system_health')).toBe(false);
-
-    // Admin has access to system operations
-    expect(canAccessTab(adminUser, 'settings')).toBe(true);
-    expect(canAccessTab(adminUser, 'users')).toBe(true);
-    expect(canAccessTab(adminUser, 'audit')).toBe(true);
   });
 
   it('Test 4: Backend sessionToken is strictly required - local storage presence alone is not authenticated', () => {

@@ -79,9 +79,12 @@ export function canAccessTab(user: User | null, rawTab: string): boolean {
     return false;
   }
 
-  // Dashboard is universally accessible to all authenticated roles because
-  // DashboardView provides role-specific dashboards (Admin, StudentAffairs, TeacherAffairs,
-  // Teacher, SocialSpecialist, Parent).
+  // Teacher is strictly forbidden from accessing any administrative ERP module
+  if ((user.role as string) === 'Teacher') {
+    return tab === 'teacher_portal';
+  }
+
+  // Dashboard is universally accessible to all authenticated administrative roles
   if (tab === 'dashboard') {
     return true;
   }

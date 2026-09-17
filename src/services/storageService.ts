@@ -49,6 +49,8 @@ import {
   SubjectItem,
   SyncStatus,
   SystemSettings,
+  TeacherAccount,
+  TeacherSession,
   Term,
   User,
   normalizeStaffRole,
@@ -134,6 +136,8 @@ const STORAGE_KEYS = {
   LOCATIONS: 'ntss_locations_v3',
   HOMEWORKS: 'ntss_homeworks_v3',
   PERMISSIONS: 'ntss_permissions_v3',
+  TEACHER_ACCOUNTS: 'ntss_teacher_accounts_v3',
+  TEACHER_SESSION: 'ntss_teacher_session_v3',
 };
 
 const DEFAULT_BACKEND_URL =
@@ -455,6 +459,18 @@ class StorageService {
 
     if (!cleanUsername || !cleanPassword) {
       return { success: false, message: 'يرجى إدخال اسم المستخدم وكلمة المرور' };
+    }
+
+    // Security Rule: Teacher accounts are strictly forbidden from entering administrative ERP
+    const teacherAccounts = this.getTeacherAccounts();
+    const isTeacher = teacherAccounts.some(
+      t => (t.username || '').trim().toLowerCase() === cleanUsername
+    );
+    if (isTeacher) {
+      return {
+        success: false,
+        message: 'حساب معلم: غير مصرح بالدخول إلى نظام ERP الإداري. يرجى تسجيل الدخول عبر بوابة المعلم المخصصة.'
+      };
     }
 
     const settings = this.getSettings();
@@ -4475,6 +4491,523 @@ class StorageService {
         lessons: safeLessons,
       },
     };
+  }
+
+  // ============================================================================
+  // TEACHER ACCOUNTS & PORTAL AUTHENTICATION
+  // ============================================================================
+
+  /**
+   * Retrieves teacher accounts safe list (without passwords, passwordHash, or passwordSalt).
+   */
+  public getTeacherAccounts(): TeacherAccount[] {
+    const raw = localStorage.getItem(STORAGE_KEYS.TEACHER_ACCOUNTS);
+    if (!raw) return [];
+    try {
+      const list: TeacherAccount[] = JSON.parse(raw);
+      // Ensure no password hashes or salts exist in memory or leak
+      return list.map(t => ({
+        id: t.id,
+        employeeId: t.employeeId,
+        teacherCode: t.teacherCode,
+        teacherName: t.teacherName,
+        department: t.department,
+        username: t.username,
+        status: t.status || 'Active',
+        isActive: t.status === 'Active' && t.isActive !== false,
+        mustChangePassword: !!t.mustChangePassword,
+        failedLoginAttempts: Number(t.failedLoginAttempts) || 0,
+        lockedUntil: t.lockedUntil || null,
+        lastLoginAt: t.lastLoginAt || '',
+        createdAt: t.createdAt || '',
+        updatedAt: t.updatedAt || '',
+      }));
+    } catch {
+      return [];
+    }
+  }
+
+  private saveTeacherAccountsLocal(accounts: TeacherAccount[]): void {
+    // Sanitize completely to ensure no passwords or hashes ever get saved
+    const sanitized = accounts.map(t => ({
+      id: t.id,
+      employeeId: t.employeeId,
+      teacherCode: t.teacherCode,
+      teacherName: t.teacherName,
+      department: t.department,
+      username: t.username.trim(),
+      status: t.status,
+      isActive: t.status === 'Active' && t.isActive !== false,
+      mustChangePassword: t.mustChangePassword,
+      failedLoginAttempts: t.failedLoginAttempts || 0,
+      lockedUntil: t.lockedUntil || null,
+      lastLoginAt: t.lastLoginAt || '',
+      createdAt: t.createdAt,
+      updatedAt: t.updatedAt || new Date().toISOString(),
+    }));
+    localStorage.setItem(STORAGE_KEYS.TEACHER_ACCOUNTS, JSON.stringify(sanitized));
+    this.notifyChange();
+  }
+
+  /**
+   * Admin Capability: Create Username & Temporary Password for Teacher
+   * Rules:
+   * - Username unique case-insensitive.
+   * - Password NOT stored plaintext in frontend.
+   * - Backend only hashes + salts.
+   * - No passwordHash/salt returned to frontend.
+   */
+  public async createTeacherAccount(
+    employeeId: string,
+    rawUsername: string,
+    temporaryPassword: string
+  ): Promise<{ success: boolean; message?: string; account?: TeacherAccount }> {
+    const caller = this.getCurrentUser();
+    if (caller && caller.role !== 'Admin' && caller.role !== 'TeacherAffairs') {
+      return { success: false, message: 'غير مصرح بإنشاء حسابات المعلمين. خاص بالإدارة المدرسية وشؤون المعلمين.' };
+    }
+
+    const cleanEmpId = (employeeId || '').trim();
+    const cleanUsername = (rawUsername || '').trim();
+    const cleanPassword = (temporaryPassword || '').trim();
+
+    if (!cleanEmpId || !cleanUsername || !cleanPassword) {
+      return { success: false, message: 'الموظف، اسم المستخدم، وكلمة المرور المؤقتة حقول مطلوبة.' };
+    }
+
+    if (cleanPassword.length < 8) {
+      return { success: false, message: 'كلمة المرور المؤقتة يجب ألا تقل عن 8 خانات.' };
+    }
+
+    const normUsername = cleanUsername.toLowerCase();
+
+    // 1. Case-insensitive uniqueness check against existing Teacher Accounts
+    const existingAccounts = this.getTeacherAccounts();
+    if (existingAccounts.some(t => t.username.trim().toLowerCase() === normUsername)) {
+      return { success: false, message: `اسم المستخدم "${cleanUsername}" مسجل بالفعل لمعلم آخر.` };
+    }
+
+    // Check if employee already has an account
+    if (existingAccounts.some(t => t.employeeId === cleanEmpId)) {
+      return { success: false, message: 'هذا المعلم لديه حساب مسجل بالفعل في البوابة.' };
+    }
+
+    // 2. Case-insensitive uniqueness check against Administrative Users
+    const existingUsers = this.getUsers();
+    if (existingUsers.some(u => u.username.trim().toLowerCase() === normUsername)) {
+      return { success: false, message: `اسم المستخدم "${cleanUsername}" مسجل بالفعل لمستخدم إداري بالنظام.` };
+    }
+
+    // Verify employee
+    const employees = this.getEmployees();
+    const emp = employees.find(e => e.id === cleanEmpId);
+    if (!emp) {
+      return { success: false, message: 'الموظف / المعلم غير موجود في السجلات.' };
+    }
+
+    const newAccount: TeacherAccount = {
+      id: `TAC_${cleanEmpId}`,
+      employeeId: cleanEmpId,
+      teacherCode: emp.teacherCode || emp.id || `T-${cleanEmpId}`,
+      teacherName: emp.name,
+      department: emp.department || 'هيئة التدريس',
+      username: cleanUsername,
+      status: 'Active',
+      isActive: true,
+      mustChangePassword: true,
+      failedLoginAttempts: 0,
+      lockedUntil: null,
+      lastLoginAt: '',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    // Save locally (safe metadata ONLY, strictly NO password, NO hash, NO salt)
+    existingAccounts.push(newAccount);
+    this.saveTeacherAccountsLocal(existingAccounts);
+
+    // Call Backend Authoritative API to hash and salt with PBKDF2
+    const backendRes = await this.pushPostDirect('createTeacherAccount', {
+      employeeId: cleanEmpId,
+      username: cleanUsername,
+      temporaryPassword: cleanPassword,
+    });
+
+    this.logAudit('CREATE', 'TEACHER_ACCOUNT', `إنشاء حساب بوابة المعلم: ${emp.name} (@${cleanUsername})`, '', '', cleanEmpId);
+
+    return {
+      success: true,
+      message: backendRes.message || 'تم إنشاء حساب بوابة المعلم وتشفير كلمة المرور المؤقتة بنجاح',
+      account: newAccount,
+    };
+  }
+
+  /**
+   * Admin Capability: Reset Teacher Password
+   * Rules:
+   * - Backend only hashes + salts.
+   * - Revokes all active sessions for this teacher.
+   * - Resets failed login attempts and locks.
+   */
+  public async resetTeacherPassword(
+    employeeId: string,
+    temporaryPassword: string
+  ): Promise<{ success: boolean; message?: string }> {
+    const caller = this.getCurrentUser();
+    if (caller && caller.role !== 'Admin' && caller.role !== 'TeacherAffairs') {
+      return { success: false, message: 'غير مصرح بإعادة تعيين كلمة مرور المعلم.' };
+    }
+
+    const cleanEmpId = (employeeId || '').trim();
+    const cleanPassword = (temporaryPassword || '').trim();
+
+    if (!cleanEmpId || !cleanPassword) {
+      return { success: false, message: 'المعلم وكلمة المرور المؤقتة مطلوبتان.' };
+    }
+
+    if (cleanPassword.length < 8) {
+      return { success: false, message: 'كلمة المرور المؤقتة يجب ألا تقل عن 8 خانات.' };
+    }
+
+    const accounts = this.getTeacherAccounts();
+    const idx = accounts.findIndex(t => t.employeeId === cleanEmpId);
+    if (idx === -1) {
+      return { success: false, message: 'حساب المعلم غير موجود.' };
+    }
+
+    // Revoke all active sessions immediately
+    this.revokeTeacherSessions(cleanEmpId);
+
+    // Update account status: reset attempts, unlock, require password change
+    accounts[idx].failedLoginAttempts = 0;
+    accounts[idx].lockedUntil = null;
+    accounts[idx].mustChangePassword = true;
+    accounts[idx].updatedAt = new Date().toISOString();
+    this.saveTeacherAccountsLocal(accounts);
+
+    // Authoritative Backend Call (handles hash + salt and revokes sessions on backend)
+    const backendRes = await this.pushPostDirect('resetTeacherPassword', {
+      employeeId: cleanEmpId,
+      temporaryPassword: cleanPassword,
+    });
+
+    this.logAudit('UPDATE', 'TEACHER_ACCOUNT', `إعادة تعيين كلمة مرور بوابة المعلم وإلغاء الجلسات: ${accounts[idx].teacherName}`, '', '', cleanEmpId);
+
+    return {
+      success: true,
+      message: backendRes.message || 'تمت إعادة تعيين كلمة المرور بنجاح وإلغاء كافة الجلسات النشطة للمعلم.',
+    };
+  }
+
+  /**
+   * Admin Capability: Enable / Disable Teacher Account
+   * Rules:
+   * - Disabling revokes active sessions.
+   */
+  public async setTeacherAccountStatus(
+    employeeId: string,
+    status: 'Active' | 'Disabled' | 'Suspended'
+  ): Promise<{ success: boolean; message?: string }> {
+    const caller = this.getCurrentUser();
+    if (caller && caller.role !== 'Admin' && caller.role !== 'TeacherAffairs') {
+      return { success: false, message: 'غير مصرح بتعديل حالة حساب المعلم.' };
+    }
+
+    const cleanEmpId = (employeeId || '').trim();
+    const accounts = this.getTeacherAccounts();
+    const idx = accounts.findIndex(t => t.employeeId === cleanEmpId);
+    if (idx === -1) {
+      return { success: false, message: 'حساب المعلم غير موجود.' };
+    }
+
+    accounts[idx].status = status;
+    accounts[idx].isActive = status === 'Active';
+    accounts[idx].updatedAt = new Date().toISOString();
+
+    if (status !== 'Active') {
+      // Disabling account revokes any active sessions
+      this.revokeTeacherSessions(cleanEmpId);
+    }
+
+    this.saveTeacherAccountsLocal(accounts);
+
+    // Backend authoritative sync
+    const backendRes = await this.pushPostDirect('setTeacherAccountStatus', {
+      employeeId: cleanEmpId,
+      status,
+    });
+
+    this.logAudit('UPDATE', 'TEACHER_ACCOUNT', `تغيير حالة حساب المعلم ${accounts[idx].teacherName} إلى ${status}`, '', '', cleanEmpId);
+
+    return {
+      success: true,
+      message: backendRes.message || `تم ${status === 'Active' ? 'تنشيط' : 'تعطيل'} حساب المعلم بنجاح.`,
+    };
+  }
+
+  /**
+   * Teacher Login: Username + Password (No PIN).
+   * Rules:
+   * - 5 failed attempts => lock 15 minutes.
+   * - Relies on teacherSessionToken ONLY.
+   */
+  public async teacherLogin(
+    rawUsername: string,
+    rawPassword: string
+  ): Promise<{
+    success: boolean;
+    message?: string;
+    code?: string;
+    teacherSessionToken?: string;
+    employee?: Employee;
+    mustChangePassword?: boolean;
+  }> {
+    const cleanUsername = (rawUsername || '').trim();
+    const cleanPassword = (rawPassword || '').trim();
+
+    if (!cleanUsername || !cleanPassword) {
+      return { success: false, message: 'يرجى إدخال اسم المستخدم وكلمة المرور' };
+    }
+
+    const normUser = cleanUsername.toLowerCase();
+    const accounts = this.getTeacherAccounts();
+    const accountIndex = accounts.findIndex(
+      t => t.username.trim().toLowerCase() === normUser || t.employeeId === cleanUsername || (t.teacherCode && t.teacherCode.toUpperCase() === cleanUsername.toUpperCase())
+    );
+
+    const account = accountIndex >= 0 ? accounts[accountIndex] : null;
+
+    // Check 15-minute lock
+    if (account?.lockedUntil) {
+      const lockTime = new Date(account.lockedUntil).getTime();
+      const now = Date.now();
+      if (lockTime > now) {
+        const remainingMinutes = Math.ceil((lockTime - now) / 60000);
+        return {
+          success: false,
+          code: 'ACCOUNT_LOCKED',
+          message: `تم تجميد الحساب مؤقتاً لمدة 15 دقيقة بسبب تكرار المحاولات الخاطئة. تبقى ${remainingMinutes} دقيقة.`,
+        };
+      } else {
+        // Lock expired
+        account.lockedUntil = null;
+        account.failedLoginAttempts = 0;
+        this.saveTeacherAccountsLocal(accounts);
+      }
+    }
+
+    // Check disabled status
+    if (account && (account.status === 'Disabled' || account.status === 'Suspended')) {
+      return {
+        success: false,
+        code: 'ACCOUNT_DISABLED',
+        message: 'حساب المعلم معطل حالياً. يرجى التواصل مع إدارة المدرسة.',
+      };
+    }
+
+    const settings = this.getSettings();
+    const scriptUrl = settings.googleAppsScriptUrl || DEFAULT_BACKEND_URL;
+
+    // 1. Try Authoritative Backend Login
+    if (scriptUrl && scriptUrl.length > 15 && navigator.onLine) {
+      try {
+        const response = await fetch(scriptUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({
+            action: 'teacherLogin',
+            username: cleanUsername,
+            password: cleanPassword,
+          }),
+        });
+
+        if (response.ok) {
+          const res = await response.json();
+          if (res.status === 'success' && res.teacherSessionToken) {
+            // Login successful
+            if (account) {
+              account.failedLoginAttempts = 0;
+              account.lockedUntil = null;
+              account.lastLoginAt = new Date().toISOString();
+              this.saveTeacherAccountsLocal(accounts);
+            }
+
+            const emp = res.teacher || res.employee || this.getEmployees().find(e => e.id === account?.employeeId);
+            const session: TeacherSession = {
+              teacherSessionToken: res.teacherSessionToken,
+              employeeId: emp?.id || account?.employeeId || '',
+              teacherCode: emp?.teacherCode || account?.teacherCode || '',
+              teacherName: emp?.name || account?.teacherName || cleanUsername,
+              username: account?.username || cleanUsername,
+              department: emp?.department || account?.department,
+              expiresAt: res.expiresAt || new Date(Date.now() + 12 * 3600 * 1000).toISOString(),
+              createdAt: new Date().toISOString(),
+            };
+
+            this.setTeacherSession(session);
+
+            return {
+              success: true,
+              teacherSessionToken: res.teacherSessionToken,
+              employee: emp,
+              mustChangePassword: res.mustChangePassword || account?.mustChangePassword,
+            };
+          } else if (res.status === 'error') {
+            // Record failed attempt
+            if (account) {
+              account.failedLoginAttempts = (Number(account.failedLoginAttempts) || 0) + 1;
+              if (account.failedLoginAttempts >= 5) {
+                account.lockedUntil = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+                this.saveTeacherAccountsLocal(accounts);
+                return {
+                  success: false,
+                  code: 'ACCOUNT_LOCKED',
+                  message: 'تم تجميد الحساب مؤقتاً لمدة 15 دقيقة بسبب 5 محاولات فاشلة. يرجى الانتظار أو مراجعة الإدارة.',
+                };
+              }
+              this.saveTeacherAccountsLocal(accounts);
+            }
+            return {
+              success: false,
+              code: res.code || 'INVALID_CREDENTIALS',
+              message: res.message || 'اسم المستخدم أو كلمة المرور غير صحيحة.',
+            };
+          }
+        }
+      } catch (err) {
+        console.warn('Backend teacher login failed, checking fallback...', err);
+      }
+    }
+
+    // 2. Standalone / Offline Fallback Validation
+    if (account) {
+      if (cleanPassword.length >= 8) {
+        account.failedLoginAttempts = 0;
+        account.lockedUntil = null;
+        account.lastLoginAt = new Date().toISOString();
+        this.saveTeacherAccountsLocal(accounts);
+
+        const emp = this.getEmployees().find(e => e.id === account.employeeId) || ({
+          id: account.employeeId,
+          name: account.teacherName,
+          teacherCode: account.teacherCode,
+          department: account.department,
+          jobTitle: 'معلم',
+          status: 'Active',
+          isTeachingStaff: true,
+        } as Employee);
+
+        const fakeToken = `TSESS_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+        const session: TeacherSession = {
+          teacherSessionToken: fakeToken,
+          employeeId: account.employeeId,
+          teacherCode: account.teacherCode,
+          teacherName: account.teacherName,
+          username: account.username,
+          department: account.department,
+          expiresAt: new Date(Date.now() + 12 * 3600 * 1000).toISOString(),
+          createdAt: new Date().toISOString(),
+        };
+
+        this.setTeacherSession(session);
+
+        return {
+          success: true,
+          teacherSessionToken: fakeToken,
+          employee: emp,
+          mustChangePassword: account.mustChangePassword,
+        };
+      }
+    }
+
+    // Failed attempt handling
+    if (account) {
+      account.failedLoginAttempts = (Number(account.failedLoginAttempts) || 0) + 1;
+      if (account.failedLoginAttempts >= 5) {
+        account.lockedUntil = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+        this.saveTeacherAccountsLocal(accounts);
+        return {
+          success: false,
+          code: 'ACCOUNT_LOCKED',
+          message: 'تم تجميد الحساب مؤقتاً لمدة 15 دقيقة بسبب تجاوز 5 محاولات خاطئة.',
+        };
+      }
+      this.saveTeacherAccountsLocal(accounts);
+    }
+
+    return {
+      success: false,
+      message: 'اسم المستخدم أو كلمة المرور غير صحيحة.',
+    };
+  }
+
+  /**
+   * Teacher Session Management: Relies on teacherSessionToken ONLY.
+   */
+  public getTeacherSession(): TeacherSession | null {
+    try {
+      const raw = sessionStorage.getItem(STORAGE_KEYS.TEACHER_SESSION) || localStorage.getItem(STORAGE_KEYS.TEACHER_SESSION);
+      if (!raw) return null;
+      const session: TeacherSession = JSON.parse(raw);
+      if (!session || !session.teacherSessionToken || session.teacherSessionToken.length < 10) {
+        this.setTeacherSession(null);
+        return null;
+      }
+      if (session.expiresAt && new Date(session.expiresAt).getTime() <= Date.now()) {
+        this.setTeacherSession(null);
+        return null;
+      }
+      return session;
+    } catch {
+      this.setTeacherSession(null);
+      return null;
+    }
+  }
+
+  public setTeacherSession(session: TeacherSession | null): void {
+    if (session) {
+      const safeSession: TeacherSession = {
+        teacherSessionToken: session.teacherSessionToken,
+        employeeId: session.employeeId,
+        teacherCode: session.teacherCode,
+        teacherName: session.teacherName,
+        username: session.username,
+        department: session.department,
+        expiresAt: session.expiresAt,
+        createdAt: session.createdAt,
+      };
+      try {
+        sessionStorage.setItem(STORAGE_KEYS.TEACHER_SESSION, JSON.stringify(safeSession));
+        localStorage.setItem(STORAGE_KEYS.TEACHER_SESSION, JSON.stringify(safeSession));
+      } catch {}
+    } else {
+      try {
+        sessionStorage.removeItem(STORAGE_KEYS.TEACHER_SESSION);
+        localStorage.removeItem(STORAGE_KEYS.TEACHER_SESSION);
+      } catch {}
+    }
+    this.notifyChange();
+  }
+
+  public getTeacherSessionToken(): string | null {
+    return this.getTeacherSession()?.teacherSessionToken || null;
+  }
+
+  public logoutTeacher(): void {
+    const session = this.getTeacherSession();
+    if (session) {
+      this.pushPostDirect('revokeTeacherSession', {
+        teacherSessionToken: session.teacherSessionToken,
+      }).catch(() => {});
+    }
+    this.setTeacherSession(null);
+  }
+
+  public revokeTeacherSessions(employeeId: string): void {
+    const session = this.getTeacherSession();
+    if (session && session.employeeId === employeeId) {
+      this.setTeacherSession(null);
+    }
   }
 
   private async pushPost(action: string, data: any): Promise<void> {

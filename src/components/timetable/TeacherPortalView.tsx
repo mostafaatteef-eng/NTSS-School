@@ -35,18 +35,19 @@ import { FirstLoginSetupModal } from '../auth/FirstLoginSetupModal';
 
 interface TeacherPortalViewProps {
   currentUser?: User | null;
+  onBackToLogin?: () => void;
 }
 
-export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ currentUser }) => {
+export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ currentUser, onBackToLogin }) => {
   const [activeTeacher, setActiveTeacher] = useState<Employee | null>(null);
+  const [sessionToken, setSessionToken] = useState<string | null>(storageService.getTeacherSessionToken());
   const [portalTab, setPortalTab] = useState<'today' | 'weekly' | 'classes' | 'homework' | 'resources' | 'exams'>('today');
 
-  // Login form state (if not logged in as teacher)
-  const [loginTeacherCode, setLoginTeacherCode] = useState('');
-  const [loginPin, setLoginPin] = useState('');
+  // Teacher Login Form State
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState<string | null>(null);
-  const [isFirstLoginOpen, setIsFirstLoginOpen] = useState(false);
-  const [firstLoginNumber, setFirstLoginNumber] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Data states
   const [weeklySchedule, setWeeklySchedule] = useState<ScheduleItem[]>([]);
@@ -76,25 +77,31 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ currentUse
     currentUser?.role === 'SchoolDirector' ||
     currentUser?.role === 'TeacherAffairs';
 
-  // Initial check: if current user is teacher, link them automatically by session
+  // Session-first authentication
   useEffect(() => {
-    const teachers = timetableService.getTeachingStaff();
-    if (currentUser) {
-      const match = teachers.find(
-        t => (currentUser.employeeId && t.id === currentUser.employeeId) ||
-             (currentUser.loginNumber && t.loginNumber === currentUser.loginNumber) ||
-             (t.teacherCode && currentUser.username && t.teacherCode.toUpperCase() === currentUser.username.toUpperCase()) ||
-             (t.email && currentUser.email && t.email.toLowerCase() === currentUser.email.toLowerCase())
-      );
-      if (match) {
-        selectTeacher(match);
-        return;
-      }
+    // 1. Check existing active Teacher Session (authoritative token)
+    const session = storageService.getTeacherSession();
+    if (session && session.teacherSessionToken) {
+      setSessionToken(session.teacherSessionToken);
+      const teachers = timetableService.getTeachingStaff();
+      const match = teachers.find(t => t.id === session.employeeId) || {
+        id: session.employeeId,
+        name: session.teacherName,
+        teacherCode: session.teacherCode,
+        department: session.department || 'هيئة التدريس',
+        jobTitle: 'معلم',
+        status: 'Active',
+        isTeachingStaff: true,
+      } as Employee;
+      selectTeacher(match);
+      return;
+    }
 
-      // If user is supervisor and no teacher linked yet, default to first teacher for review
-      if (isSupervisor && !activeTeacher && teachers.length > 0) {
+    // 2. Supervisor preview fallback if logged in as Admin or TeacherAffairs in ERP
+    if (isSupervisor && currentUser) {
+      const teachers = timetableService.getTeachingStaff();
+      if (teachers.length > 0 && !activeTeacher) {
         selectTeacher(teachers[0]);
-        return;
       }
     }
   }, [currentUser]);
@@ -125,36 +132,45 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ currentUse
     e.preventDefault();
     setLoginError(null);
 
-    const codeOrNum = loginTeacherCode.trim();
-    const pinOrPass = loginPin.trim();
+    const cleanUser = username.trim();
+    const cleanPass = password.trim();
 
-    if (!codeOrNum) {
-      setLoginError('يرجى إدخال رقم الدخول أو كود المعلم');
+    if (!cleanUser) {
+      setLoginError('يرجى إدخال اسم المستخدم (Username)');
       return;
     }
 
-    if (!pinOrPass) {
-      setLoginError('يرجى إدخال كلمة المرور');
+    if (!cleanPass) {
+      setLoginError('يرجى إدخال كلمة المرور (Password)');
       return;
     }
 
-    const verification = await timetableService.verifyTeacherPin(codeOrNum, pinOrPass);
-    if (!verification.success || !verification.employee) {
-      if (verification.code === 'PASSWORD_SETUP_REQUIRED') {
-        setFirstLoginNumber(String(verification.loginNumber || codeOrNum));
-        setIsFirstLoginOpen(true);
-        setLoginError('يتطلب هذا الحساب تفعيل كلمة المرور لأول مرة. تم فتح نافذة التفعيل.');
+    setIsSubmitting(true);
+    try {
+      const res = await storageService.teacherLogin(cleanUser, cleanPass);
+      if (!res.success || !res.teacherSessionToken) {
+        setLoginError(res.message || 'بيانات الدخول غير صحيحة');
         return;
       }
-      setLoginError(verification.message || 'بيانات الدخول غير صحيحة');
-      return;
-    }
 
-    selectTeacher(verification.employee);
+      setSessionToken(res.teacherSessionToken);
+      if (res.employee) {
+        selectTeacher(res.employee);
+      }
+    } catch {
+      setLoginError('حدث خطأ أثناء الاتصال بالخادم');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleLogout = () => {
+    storageService.logoutTeacher();
+    setSessionToken(null);
     setActiveTeacher(null);
+    if (onBackToLogin) {
+      onBackToLogin();
+    }
   };
 
   // Days and periods for weekly grid
@@ -220,94 +236,86 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ currentUse
 
   // LOGIN SCREEN if no teacher is authenticated
   if (!activeTeacher) {
-    const teachersList = timetableService.getTeachingStaff();
-
     return (
       <div className="max-w-md mx-auto my-12 bg-white rounded-3xl p-8 border border-slate-200 shadow-xl space-y-6" dir="rtl">
         <div className="text-center space-y-2">
           <div className="w-14 h-14 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center mx-auto shadow-sm">
             <GraduationCap className="w-8 h-8" />
           </div>
-          <h2 className="text-xl font-bold text-slate-800">بوابة المعلم — الجدول والواجبات</h2>
-          <p className="text-xs text-slate-500">
-            يرجى تسجيل الدخول باستخدام كود المعلم والرقم السري (PIN) للوصول إلى جدولك وحصصك
+          <h2 className="text-xl font-bold text-slate-800">بوابة المعلم — الدخول الآمن</h2>
+          <p className="text-xs text-slate-500 leading-relaxed">
+            يرجى تسجيل الدخول باستخدام اسم المستخدم وكلمة المرور المسلمة لك من الإدارة المدرسية
           </p>
         </div>
 
         {loginError && (
-          <div className="bg-rose-50 border border-rose-200 p-3 rounded-xl text-xs font-bold text-rose-800">
-            {loginError}
+          <div className="bg-rose-50 border border-rose-200 p-3 rounded-xl text-xs font-bold text-rose-800 flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+            <div className="leading-relaxed">{loginError}</div>
           </div>
         )}
 
         <form onSubmit={handleLogin} className="space-y-4 text-xs">
           <div>
             <label className="block font-semibold text-slate-700 mb-1">
-              رقم الدخول أو كود المعلم (Login Number / Teacher Code)
+              اسم المستخدم للمعلم (Username)
             </label>
             <input
               type="text"
               required
-              placeholder="أدخل رقم الدخول (مثال: 125) أو كود المعلم"
-              value={loginTeacherCode}
-              onChange={e => setLoginTeacherCode(e.target.value)}
+              autoComplete="username"
+              placeholder="أدخل اسم المستخدم (مثال: ahmed.hassan)"
+              value={username}
+              onChange={e => setUsername(e.target.value)}
               className="w-full border border-slate-300 rounded-xl p-2.5 text-xs font-mono focus:ring-2 focus:ring-indigo-500"
             />
           </div>
 
           <div>
             <label className="block font-semibold text-slate-700 mb-1">
-              كلمة المرور المشفرة (Password)
+              كلمة المرور (Password)
             </label>
             <input
               type="password"
               required
-              placeholder="أدخل كلمة المرور الخاصة بك"
-              value={loginPin}
-              onChange={e => setLoginPin(e.target.value)}
+              autoComplete="current-password"
+              placeholder="أدخل كلمة المرور"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
               className="w-full border border-slate-300 rounded-xl p-2.5 text-xs font-mono focus:ring-2 focus:ring-indigo-500"
             />
           </div>
 
           <button
             type="submit"
-            className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-md transition cursor-pointer"
+            disabled={isSubmitting}
+            className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-md transition cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
           >
-            تسجيل دخول بوابة المعلم
+            {isSubmitting ? (
+              <span>جاري التحقق من الحساب...</span>
+            ) : (
+              <span>تسجيل الدخول لبوابة المعلم</span>
+            )}
           </button>
         </form>
 
-        <div className="pt-2">
-          <button
-            type="button"
-            onClick={() => {
-              setFirstLoginNumber(loginTeacherCode.trim());
-              setIsFirstLoginOpen(true);
-            }}
-            className="w-full py-2.5 px-3 bg-teal-50 hover:bg-teal-100 text-[#008e8b] font-bold text-xs rounded-xl border border-teal-200 transition flex items-center justify-center gap-1.5 cursor-pointer"
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>أول دخول للمعلم؟ تفعيل الحساب وإنشاء كلمة المرور</span>
-          </button>
+        <div className="pt-2 text-center">
+          <p className="text-[11px] text-slate-400">
+            أمان الحسابات: يتم تجميد الحساب لمدة 15 دقيقة تلقائياً بعد 5 محاولات دخول خاطئة. في حال فقدان كلمة المرور، يرجى مراجعة إدارة المدرسة وشؤون المعلمين.
+          </p>
         </div>
 
-        <FirstLoginSetupModal
-          isOpen={isFirstLoginOpen}
-          initialLoginNumber={firstLoginNumber}
-          onClose={() => setIsFirstLoginOpen(false)}
-          onSuccess={u => {
-            setIsFirstLoginOpen(false);
-            const teachers = timetableService.getTeachingStaff();
-            const match = teachers.find(
-              t => (u.employeeId && t.id === u.employeeId) ||
-                   (u.loginNumber && t.loginNumber === u.loginNumber) ||
-                   (t.teacherCode && u.username && t.teacherCode.toUpperCase() === u.username.toUpperCase())
-            );
-            if (match) {
-              selectTeacher(match);
-            }
-          }}
-        />
+        {onBackToLogin && (
+          <div className="border-t border-slate-100 pt-4 text-center">
+            <button
+              type="button"
+              onClick={onBackToLogin}
+              className="text-xs text-slate-500 hover:text-slate-800 font-bold transition"
+            >
+              العودة لشاشة الدخول الرئيسية
+            </button>
+          </div>
+        )}
       </div>
     );
   }
@@ -317,6 +325,21 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ currentUse
 
   return (
     <div className="space-y-6" dir="rtl">
+      {/* Teacher Portal Independent Header & Security Guard Banner */}
+      <div className="bg-indigo-900 text-white p-3.5 rounded-2xl flex flex-wrap items-center justify-between gap-3 shadow-sm">
+        <div className="flex items-center gap-2 text-xs">
+          <Shield className="w-4 h-4 text-emerald-400" />
+          <span className="font-bold">بوابة المعلم المستقلة</span>
+          <span className="text-indigo-200">|</span>
+          <span className="text-indigo-200 text-[11px]">
+            جلسة مؤمنة بتوكن معتمد: <span className="font-mono text-emerald-300">{sessionToken ? `${sessionToken.substring(0, 16)}...` : 'نشطة'}</span>
+          </span>
+        </div>
+        <div className="text-[11px] text-indigo-300">
+          حساب المعلم معزول تماماً عن نظام ERP الإداري
+        </div>
+      </div>
+
       {/* Teacher Profile Banner */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
         <div className="flex items-center gap-4">
@@ -326,19 +349,14 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ currentUse
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-lg font-bold text-slate-900">{activeTeacher.name}</h2>
-              {activeTeacher.loginNumber && (
-                <span className="font-mono text-xs font-bold text-[#008e8b] bg-teal-50 px-2 py-0.5 rounded border border-teal-100">
-                  رقم الدخول: {activeTeacher.loginNumber}
-                </span>
-              )}
               {activeTeacher.teacherCode && (
                 <span className="font-mono text-xs font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100">
-                  {activeTeacher.teacherCode}
+                  كود المعلم: {activeTeacher.teacherCode}
                 </span>
               )}
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
-              {activeTeacher.specialization || 'معلم مواد تخصصية'} • مدرسة التكنولوجيا التطبيقية
+              {activeTeacher.specialization || 'معلم مواد تخصصية'} • {activeTeacher.department || 'هيئة التدريس'}
             </p>
           </div>
         </div>

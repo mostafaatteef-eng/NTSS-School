@@ -23,10 +23,12 @@ import {
   Clock,
   Sparkles,
   Printer,
-  RefreshCw
+  RefreshCw,
+  GraduationCap
 } from 'lucide-react';
 import { User, UserRole, CANONICAL_STAFF_ROLES, normalizeStaffRole } from '../../types';
 import { storageService } from '../../services/storageService';
+import { TeacherAccountsManager } from './TeacherAccountsManager';
 
 interface UsersViewProps {
   users: User[];
@@ -34,6 +36,7 @@ interface UsersViewProps {
 }
 
 export const UsersView: React.FC<UsersViewProps> = ({ users, currentUser }) => {
+  const [activeSubTab, setActiveSubTab] = useState<'staff' | 'teachers'>('staff');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
   const [isActivationModalOpen, setIsActivationModalOpen] = useState(false);
@@ -356,8 +359,40 @@ export const UsersView: React.FC<UsersViewProps> = ({ users, currentUser }) => {
 
   return (
     <div className="space-y-5">
-      {/* Header */}
-      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+      {/* Sub Tabs: Administrative ERP Users vs Teacher Accounts */}
+      <div className="flex items-center gap-2 p-1.5 bg-slate-100 rounded-2xl w-fit border border-slate-200 text-xs font-bold">
+        <button
+          type="button"
+          onClick={() => setActiveSubTab('staff')}
+          className={`px-4 py-2 rounded-xl transition cursor-pointer flex items-center gap-2 ${
+            activeSubTab === 'staff'
+              ? 'bg-white text-[#008e8b] shadow-xs'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <ShieldCheck className="w-4 h-4" />
+          <span>مستخدمو النظام الإداري (ERP Staff)</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveSubTab('teachers')}
+          className={`px-4 py-2 rounded-xl transition cursor-pointer flex items-center gap-2 ${
+            activeSubTab === 'teachers'
+              ? 'bg-white text-indigo-600 shadow-xs'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <GraduationCap className="w-4 h-4" />
+          <span>حسابات المعلمين وبوابة المعلم (Teacher Accounts)</span>
+        </button>
+      </div>
+
+      {activeSubTab === 'teachers' ? (
+        <TeacherAccountsManager currentUserRole={currentUser?.role} />
+      ) : (
+        <>
+          {/* Header */}
+          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
             <ShieldCheck className="w-5 h-5 text-[#008e8b]" />
@@ -953,6 +988,8 @@ export const UsersView: React.FC<UsersViewProps> = ({ users, currentUser }) => {
             </div>
           </div>
         </div>
+      )}
+        </>
       )}
     </div>
   );

@@ -1165,13 +1165,16 @@ export interface SafeStudentProfile {
 }
 
 export interface TeacherSession {
-  token: string;
-  teacherId: string;
+  token?: string; // compatibility alias
+  teacherId?: string; // compatibility alias
+  teacherSessionToken: string;
   employeeId: string;
   teacherCode: string;
   teacherName: string;
-  createdAt: string;
+  username: string;
+  department?: string;
   expiresAt: string;
+  createdAt: string;
 }
 
 export interface TeacherPortalAccess {
@@ -1182,6 +1185,28 @@ export interface TeacherPortalAccess {
   salt?: string;
   isActivated: boolean;
   lastLogin?: string;
+}
+
+export interface TeacherAccount {
+  id: string;
+  employeeId: string;
+  teacherCode: string;
+  teacherName: string;
+  department?: string;
+  username: string; // Case-insensitive unique
+  usernameNormalized?: string;
+  passwordHash?: string;
+  passwordSalt?: string;
+  passwordAlgorithm?: string;
+  passwordIterations?: number;
+  status: 'Active' | 'Suspended' | 'Disabled' | 'Inactive';
+  isActive: boolean;
+  mustChangePassword?: boolean;
+  failedLoginAttempts: number;
+  lockedUntil?: string | null;
+  lastLoginAt?: string;
+  createdAt: string;
+  updatedAt?: string;
 }
 
 export interface TeacherLoadCalculation {
@@ -2097,6 +2122,7 @@ export interface AuditLogEntry {
     | 'PAYROLL'
     | 'LEAVE'
     | 'USER'
+    | 'TEACHER_ACCOUNT'
     | 'SETTINGS'
     | 'AUTH'
     | 'IMPORT'
@@ -2162,25 +2188,6 @@ export type SyncState = SyncStatus;
 
 // Re-export extended modern entities
 export * from './types_extended';
-
-export interface TeacherAccount {
-  id: string;
-  employeeId: string;
-  teacherCode: string;
-  username: string;
-  usernameNormalized?: string;
-  passwordHash?: string;
-  passwordSalt?: string;
-  passwordAlgorithm?: string;
-  passwordIterations?: number;
-  status: 'Active' | 'Suspended' | 'Inactive';
-  mustChangePassword?: boolean;
-  failedLoginAttempts?: number;
-  lockedUntil?: string;
-  lastLoginAt?: string;
-  createdAt: string;
-  updatedAt: string;
-}
 
 export type TeacherAccountSafeDTO = Omit<TeacherAccount, 'passwordHash' | 'passwordSalt' | 'passwordAlgorithm' | 'passwordIterations'>;
 

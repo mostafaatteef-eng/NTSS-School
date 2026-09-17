@@ -11,7 +11,8 @@ import {
   KeyRound,
   X,
   Sparkles,
-  CalendarDays
+  CalendarDays,
+  GraduationCap
 } from 'lucide-react';
 import { User } from '../../types';
 import { storageService } from '../../services/storageService';
@@ -21,9 +22,14 @@ import { FirstLoginSetupModal } from './FirstLoginSetupModal';
 interface LoginViewProps {
   onLoginSuccess: (user: User) => void;
   onOpenPublicSchedule?: () => void;
+  onOpenTeacherPortal?: () => void;
 }
 
-export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess, onOpenPublicSchedule }) => {
+export const LoginView: React.FC<LoginViewProps> = ({
+  onLoginSuccess,
+  onOpenPublicSchedule,
+  onOpenTeacherPortal,
+}) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -279,6 +285,17 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess, onOpenPubl
                 >
                   <CalendarDays className="w-3.5 h-3.5 text-slate-500" />
                   <span>بوابة جدول الطلاب والفصول (بدون تسجيل دخول)</span>
+                </button>
+              )}
+
+              {onOpenTeacherPortal && (
+                <button
+                  type="button"
+                  onClick={onOpenTeacherPortal}
+                  className="w-full py-2 px-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs rounded-xl border border-indigo-200 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <GraduationCap className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>بوابة المعلم (تسجيل الدخول المستقل)</span>
                 </button>
               )}
             </div>
