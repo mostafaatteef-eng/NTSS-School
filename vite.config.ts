@@ -4,7 +4,7 @@ import path from 'path';
 import { defineConfig } from 'vite';
 
 export default defineConfig(({ mode }) => ({
-  base: process.env.GITHUB_PAGES === 'true' ? '/NTSS-School/' : '/',
+  base: mode === 'production' ? '/NTSS-School/' : '/',
 
   plugins: [
     react(),
