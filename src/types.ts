@@ -1,4 +1,6 @@
 export type StaffRole =
+  | 'SystemAdmin'
+  | 'SchoolAdmin'
   | 'Admin'
   | 'SchoolDirector'
   | 'StudentAffairs'
@@ -8,6 +10,8 @@ export type StaffRole =
   | 'QualityOfficer';
 
 export const CANONICAL_STAFF_ROLES: StaffRole[] = [
+  'SystemAdmin',
+  'SchoolAdmin',
   'Admin',
   'SchoolDirector',
   'StudentAffairs',
@@ -32,7 +36,7 @@ export type LegacyUserRole =
   | 'Student'; // Historical archive only - forbidden from login
 
 /**
- * Normalizes legacy roles to the 7 canonical Staff roles.
+ * Normalizes legacy roles to the canonical Staff roles.
  * Throws ACCOUNT_ROLE_NOT_ALLOWED for retired non-staff roles.
  */
 export function normalizeStaffRole(role: string): StaffRole {
@@ -40,6 +44,8 @@ export function normalizeStaffRole(role: string): StaffRole {
   if (r === 'Teacher' || r === 'Parent' || r === 'Student') {
     throw new Error('ACCOUNT_ROLE_NOT_ALLOWED');
   }
+  if (r === 'SystemAdmin') return 'SystemAdmin';
+  if (r === 'SchoolAdmin') return 'SchoolAdmin';
   if (r === 'Admin') return 'Admin';
   if (r === 'SchoolDirector' || r === 'Supervisor') return 'SchoolDirector';
   if (r === 'StudentAffairs') return 'StudentAffairs';
@@ -174,8 +180,29 @@ export type LeaveType =
 
 export type LeaveStatus = 'معلقة' | 'مقبولة' | 'مرفوضة';
 
+/**
+ * Multi-School Architecture: Public School definition exposed to Frontend.
+ * Security Note: spreadsheetId is strictly hidden from frontend and exists only in Backend Master Registry.
+ */
+export interface School {
+  schoolId: string;
+  schoolCode: string;
+  schoolName: string;
+  status: 'Active' | 'Inactive';
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+/**
+ * Backend Authoritative Master Registry Record (Backend only)
+ */
+export interface MasterSchoolRegistryRecord extends School {
+  spreadsheetId: string;
+}
+
 export interface User {
   id: string;
+  schoolId?: string;
   username: string;
   loginNumber?: number | string;
   fullName: string;
@@ -1172,6 +1199,7 @@ export interface TeacherSession {
   teacherCode: string;
   teacherName: string;
   username: string;
+  schoolId: string;
   department?: string;
   expiresAt: string;
   createdAt: string;
@@ -1187,6 +1215,7 @@ export interface TeacherPortalAccess {
 
 export interface TeacherAccount {
   id: string;
+  schoolId?: string;
   employeeId: string;
   teacherCode: string;
   teacherName: string;
