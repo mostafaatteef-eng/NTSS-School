@@ -141,9 +141,10 @@ describe('MIG_SCOPE_013_RETIRE_TEACHER_PIN - Teacher Authentication System Tests
         legacyPinRetired: true,
         failedLoginAttempts: 0,
         lockedUntil: null,
+        createdAt: new Date().toISOString(),
       },
     ];
-    storageService.saveTeacherAccountsLocal(accounts);
+    localStorage.setItem('ntss_teacher_accounts_v3', JSON.stringify(accounts));
 
     // Attempt login while in PasswordResetRequired
     const loginAttempt1 = await storageService.teacherLogin('teacher_pending', 'anyPassword123');

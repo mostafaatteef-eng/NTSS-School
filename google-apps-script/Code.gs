@@ -3324,6 +3324,9 @@ function ensureProductionStaffSheetsExist(ss) {
       }
     }
   }
+
+  // Idempotent migration MIG_SCOPE_013: safely retire legacy PIN support from Teacher_Credentials
+  runMigrationScope013RetireTeacherPin(ss);
 }
 
 function getSheetData(ss, sheetName) {
@@ -3975,30 +3978,32 @@ function runMigrationScope013RetireTeacherPin(ss) {
         updatedCount++;
       }
     } else {
-      var hasUsername = Boolean(c.username && String(c.username).trim());
-      c.mustChangePassword = true;
-      c.legacyPinRetired = true;
-      c.migrationVersion = 'MIG_SCOPE_013';
-      c.migratedAt = c.migratedAt || getCairoISOString();
+      if (hasLegacyPin || !c.legacyPinRetired || c.migrationVersion !== 'MIG_SCOPE_013') {
+        var hasUsername = Boolean(c.username && String(c.username).trim());
+        c.mustChangePassword = true;
+        c.legacyPinRetired = true;
+        c.migrationVersion = 'MIG_SCOPE_013';
+        c.migratedAt = c.migratedAt || getCairoISOString();
 
-      if (!hasUsername) {
-        c.accountStatus = 'Needs Setup';
-        c.status = 'Needs Setup';
-      } else {
-        c.accountStatus = 'PasswordResetRequired';
-        c.status = 'PasswordResetRequired';
+        if (!hasUsername) {
+          c.accountStatus = 'Needs Setup';
+          c.status = 'Needs Setup';
+        } else {
+          c.accountStatus = 'PasswordResetRequired';
+          c.status = 'PasswordResetRequired';
+        }
+
+        revokeTeacherSessions(ss, empId);
+
+        delete c.pinHash;
+        delete c.pinSalt;
+        delete c.salt;
+        delete c.pin;
+        delete c.legacyPin;
+
+        upsertRecord(ss, SHEETS.TEACHER_CREDENTIALS, 'employeeId', c);
+        updatedCount++;
       }
-
-      revokeTeacherSessions(ss, empId);
-
-      delete c.pinHash;
-      delete c.pinSalt;
-      delete c.salt;
-      delete c.pin;
-      delete c.legacyPin;
-
-      upsertRecord(ss, SHEETS.TEACHER_CREDENTIALS, 'employeeId', c);
-      updatedCount++;
     }
   }
 
