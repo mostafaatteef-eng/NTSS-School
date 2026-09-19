@@ -4512,15 +4512,19 @@ class StorageService {
         teacherCode: t.teacherCode,
         teacherName: t.teacherName,
         department: t.department,
-        username: t.username,
+        username: t.username || '',
         status: t.status || 'Active',
+        accountStatus: t.accountStatus || t.status || 'Active',
         isActive: t.status === 'Active' && t.isActive !== false,
         mustChangePassword: !!t.mustChangePassword,
+        legacyPinRetired: !!t.legacyPinRetired,
         failedLoginAttempts: Number(t.failedLoginAttempts) || 0,
         lockedUntil: t.lockedUntil || null,
         lastLoginAt: t.lastLoginAt || '',
         createdAt: t.createdAt || '',
         updatedAt: t.updatedAt || '',
+        migrationVersion: t.migrationVersion,
+        migratedAt: t.migratedAt,
       }));
     } catch {
       return [];
@@ -4535,15 +4539,19 @@ class StorageService {
       teacherCode: t.teacherCode,
       teacherName: t.teacherName,
       department: t.department,
-      username: t.username.trim(),
+      username: (t.username || '').trim(),
       status: t.status,
+      accountStatus: t.accountStatus || t.status,
       isActive: t.status === 'Active' && t.isActive !== false,
       mustChangePassword: t.mustChangePassword,
+      legacyPinRetired: t.legacyPinRetired,
       failedLoginAttempts: t.failedLoginAttempts || 0,
       lockedUntil: t.lockedUntil || null,
       lastLoginAt: t.lastLoginAt || '',
       createdAt: t.createdAt,
       updatedAt: t.updatedAt || new Date().toISOString(),
+      migrationVersion: t.migrationVersion,
+      migratedAt: t.migratedAt,
     }));
     localStorage.setItem(STORAGE_KEYS.TEACHER_ACCOUNTS, JSON.stringify(sanitized));
     this.notifyChange();
@@ -4583,12 +4591,48 @@ class StorageService {
 
     // 1. Case-insensitive uniqueness check against existing Teacher Accounts
     const existingAccounts = this.getTeacherAccounts();
-    if (existingAccounts.some(t => t.username.trim().toLowerCase() === normUsername)) {
+    if (existingAccounts.some(t => t.username && t.username.trim().toLowerCase() === normUsername && t.employeeId !== cleanEmpId)) {
       return { success: false, message: `اسم المستخدم "${cleanUsername}" مسجل بالفعل لمعلم آخر.` };
     }
 
     // Check if employee already has an account
-    if (existingAccounts.some(t => t.employeeId === cleanEmpId)) {
+    const existingIdx = existingAccounts.findIndex(t => t.employeeId === cleanEmpId);
+    if (existingIdx >= 0) {
+      const existing = existingAccounts[existingIdx];
+      if (existing.status === 'Needs Setup' || !existing.username) {
+        // Upgrade legacy account that needs setup with username & temporary password
+        existing.username = cleanUsername;
+        existing.usernameNormalized = normUsername;
+        existing.status = 'Active';
+        existing.accountStatus = 'Active';
+        existing.isActive = true;
+        existing.mustChangePassword = true;
+        existing.legacyPinRetired = true;
+        existing.failedLoginAttempts = 0;
+        existing.lockedUntil = null;
+        existing.updatedAt = new Date().toISOString();
+        delete (existing as any).pinHash;
+        delete (existing as any).pinSalt;
+        delete (existing as any).pin;
+        delete (existing as any).legacyPin;
+        delete (existing as any).salt;
+
+        this.saveTeacherAccountsLocal(existingAccounts);
+
+        const backendRes = await this.pushPostDirect('createTeacherAccount', {
+          employeeId: cleanEmpId,
+          username: cleanUsername,
+          temporaryPassword: cleanPassword,
+        });
+
+        this.logAudit('CREATE', 'TEACHER_ACCOUNT', `تهيئة حساب بوابة المعلم: ${existing.teacherName} (@${cleanUsername})`, '', '', cleanEmpId);
+
+        return {
+          success: true,
+          message: backendRes.message || 'تمت تهيئة حساب المعلم وتعيين اسم المستخدم وكلمة المرور المؤقتة بنجاح',
+          account: existing,
+        };
+      }
       return { success: false, message: 'هذا المعلم لديه حساب مسجل بالفعل في البوابة.' };
     }
 
@@ -4678,11 +4722,21 @@ class StorageService {
     // Revoke all active sessions immediately
     this.revokeTeacherSessions(cleanEmpId);
 
-    // Update account status: reset attempts, unlock, require password change
+    // Update account status: reset attempts, unlock, require password change, clear legacy PIN data
+    accounts[idx].status = 'Active';
+    accounts[idx].accountStatus = 'Active';
+    accounts[idx].isActive = true;
+    accounts[idx].legacyPinRetired = true;
     accounts[idx].failedLoginAttempts = 0;
     accounts[idx].lockedUntil = null;
     accounts[idx].mustChangePassword = true;
     accounts[idx].updatedAt = new Date().toISOString();
+    delete (accounts[idx] as any).pinHash;
+    delete (accounts[idx] as any).pinSalt;
+    delete (accounts[idx] as any).pin;
+    delete (accounts[idx] as any).legacyPin;
+    delete (accounts[idx] as any).salt;
+
     this.saveTeacherAccountsLocal(accounts);
 
     // Authoritative Backend Call (handles hash + salt and revokes sessions on backend)
@@ -4796,8 +4850,23 @@ class StorageService {
       }
     }
 
+    // Check PasswordResetRequired / Needs Setup first so proper error is returned
+    if (
+      account &&
+      (account.status === 'PasswordResetRequired' ||
+        account.status === 'Needs Setup' ||
+        account.accountStatus === 'PasswordResetRequired' ||
+        account.accountStatus === 'Needs Setup')
+    ) {
+      return {
+        success: false,
+        code: 'PASSWORD_RESET_REQUIRED',
+        message: 'الحساب يتطلب تعيين كلمة مرور من قبل إدارة المدرسة قبل تسجيل الدخول.',
+      };
+    }
+
     // Check disabled status
-    if (account && (account.status === 'Disabled' || account.status === 'Suspended')) {
+    if (account && (account.status === 'Disabled' || account.status === 'Suspended' || account.status === 'Inactive' || account.isActive === false)) {
       return {
         success: false,
         code: 'ACCOUNT_DISABLED',

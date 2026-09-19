@@ -151,6 +151,17 @@ export const TeacherAccountsManager: React.FC<TeacherAccountsManagerProps> = ({ 
     }
   };
 
+  const openSetupModal = (account: TeacherAccount) => {
+    setSelectedEmployeeId(account.employeeId);
+    const transliterated = (account.teacherCode || account.employeeId)
+      .replace(/[^a-zA-Z0-9]/g, '')
+      .toLowerCase();
+    const suggested = `t_${transliterated || Math.floor(1000 + Math.random() * 9000)}`;
+    setCreateUsername(suggested);
+    setCreateTempPassword(generateRandomPassword());
+    setIsCreateModalOpen(true);
+  };
+
   const openResetModal = (account: TeacherAccount) => {
     setResetTargetAccount(account);
     setResetTempPassword(generateRandomPassword());
@@ -410,22 +421,27 @@ export const TeacherAccountsManager: React.FC<TeacherAccountsManagerProps> = ({ 
                 <th className="p-3.5">المعلم</th>
                 <th className="p-3.5">اسم المستخدم (Username)</th>
                 <th className="p-3.5">كود المعلم</th>
-                <th className="p-3.5">الحالة</th>
-                <th className="p-3.5">محاولات الدخول</th>
-                <th className="p-3.5 text-center">الإجراءات الأمنية</th>
+                <th className="p-3.5">حالة الحساب</th>
+                <th className="p-3.5">تغيير كلمة المرور</th>
+                <th className="p-3.5">آخر دخول</th>
+                <th className="p-3.5">المحاولات الفاشلة</th>
+                <th className="p-3.5">تاريخ التجميد</th>
+                <th className="p-3.5 text-center">الإجراءات المسموحة</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filteredAccounts.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="p-8 text-center text-slate-400">
+                  <td colSpan={9} className="p-8 text-center text-slate-400">
                     لا توجد حسابات معلمين مطابقة لبحثك.
                   </td>
                 </tr>
               ) : (
                 filteredAccounts.map(account => {
                   const isLocked = account.lockedUntil && new Date(account.lockedUntil).getTime() > Date.now();
-                  const isActive = account.status === 'Active' && account.isActive !== false;
+                  const needsSetup = !account.username || account.status === 'Needs Setup' || account.accountStatus === 'Needs Setup';
+                  const isPasswordResetRequired = account.status === 'PasswordResetRequired' || account.accountStatus === 'PasswordResetRequired';
+                  const isActive = account.status === 'Active' && account.isActive !== false && !needsSetup && !isPasswordResetRequired;
 
                   return (
                     <tr key={account.id} className="hover:bg-slate-50/50 transition">
@@ -433,8 +449,16 @@ export const TeacherAccountsManager: React.FC<TeacherAccountsManagerProps> = ({ 
                         <div className="font-bold text-slate-900">{account.teacherName}</div>
                         <div className="text-[10px] text-slate-400">{account.department || 'هيئة التدريس'}</div>
                       </td>
-                      <td className="p-3.5 font-mono text-indigo-700 font-bold text-xs">
-                        @{account.username}
+                      <td className="p-3.5">
+                        {needsSetup ? (
+                          <span className="inline-flex items-center gap-1 bg-amber-50 border border-amber-200 text-amber-800 px-2 py-0.5 rounded-lg text-[10px] font-bold">
+                            الحساب يحتاج تهيئة اسم مستخدم وكلمة مرور
+                          </span>
+                        ) : (
+                          <span className="font-mono text-indigo-700 font-bold text-xs">
+                            @{account.username}
+                          </span>
+                        )}
                       </td>
                       <td className="p-3.5 font-mono text-slate-600">
                         {account.teacherCode || '-'}
@@ -444,6 +468,14 @@ export const TeacherAccountsManager: React.FC<TeacherAccountsManagerProps> = ({ 
                           <span className="inline-flex items-center gap-1 bg-rose-100 text-rose-800 px-2.5 py-0.5 rounded-full text-[10px] font-bold">
                             <Clock className="w-3 h-3" />
                             <span>مجمد 15 دقيقة</span>
+                          </span>
+                        ) : needsSetup ? (
+                          <span className="inline-flex items-center gap-1 bg-amber-100 text-amber-900 px-2.5 py-0.5 rounded-full text-[10px] font-bold">
+                            <span>Needs Setup</span>
+                          </span>
+                        ) : isPasswordResetRequired ? (
+                          <span className="inline-flex items-center gap-1 bg-orange-100 text-orange-900 px-2.5 py-0.5 rounded-full text-[10px] font-bold">
+                            <span>PasswordResetRequired</span>
                           </span>
                         ) : isActive ? (
                           <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full text-[10px] font-bold">
@@ -457,10 +489,41 @@ export const TeacherAccountsManager: React.FC<TeacherAccountsManagerProps> = ({ 
                           </span>
                         )}
                       </td>
+                      <td className="p-3.5 text-center">
+                        {account.mustChangePassword ? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800">
+                            نعم (مطلوب)
+                          </span>
+                        ) : (
+                          <span className="text-slate-400 font-medium">لا</span>
+                        )}
+                      </td>
+                      <td className="p-3.5 text-slate-600 font-mono text-[11px]">
+                        {account.lastLoginAt ? (
+                          new Date(account.lastLoginAt).toLocaleString('ar-EG', {
+                            dateStyle: 'short',
+                            timeStyle: 'short',
+                          })
+                        ) : (
+                          <span className="text-slate-400">لم يدخل بعد</span>
+                        )}
+                      </td>
                       <td className="p-3.5 font-mono">
                         <span className={account.failedLoginAttempts ? 'text-rose-600 font-bold' : 'text-slate-400'}>
                           {account.failedLoginAttempts || 0} / 5
                         </span>
+                      </td>
+                      <td className="p-3.5 text-slate-600 font-mono text-[11px]">
+                        {isLocked ? (
+                          <span className="text-rose-700 font-bold">
+                            {new Date(account.lockedUntil!).toLocaleTimeString('ar-EG', {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400">-</span>
+                        )}
                       </td>
                       <td className="p-3.5">
                         <div className="flex items-center justify-center gap-2">
@@ -475,15 +538,27 @@ export const TeacherAccountsManager: React.FC<TeacherAccountsManagerProps> = ({ 
                             </button>
                           )}
 
-                          <button
-                            type="button"
-                            onClick={() => openResetModal(account)}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 text-[11px] font-bold rounded-lg border border-amber-200 transition"
-                            title="إعادة تعيين كلمة المرور وإلغاء كل الجلسات"
-                          >
-                            <KeyRound className="w-3 h-3 text-amber-600" />
-                            <span>Reset Password</span>
-                          </button>
+                          {needsSetup ? (
+                            <button
+                              type="button"
+                              onClick={() => openSetupModal(account)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold rounded-lg transition shadow-xs"
+                              title="تهيئة اسم المستخدم وكلمة المرور للمعلم"
+                            >
+                              <UserPlus className="w-3 h-3" />
+                              <span>تهيئة الحساب</span>
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => openResetModal(account)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 text-[11px] font-bold rounded-lg border border-amber-200 transition"
+                              title="إعادة تعيين كلمة المرور وإلغاء كل الجلسات"
+                            >
+                              <KeyRound className="w-3 h-3 text-amber-600" />
+                              <span>Reset Password</span>
+                            </button>
+                          )}
 
                           <button
                             type="button"

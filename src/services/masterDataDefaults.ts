@@ -96,6 +96,8 @@ export const STORAGE_KEYS = {
   EXAM_SCHEDULES: 'ntss_exam_schedules_v1',
   STUDENT_ACCESS_TOKENS: 'ntss_student_access_tokens_v1',
   TEACHER_PORTAL_ACCESS: 'ntss_teacher_portal_access_v1',
+  TEACHER_ACCOUNTS: 'ntss_teacher_accounts_v3',
+  TEACHER_SESSION: 'ntss_teacher_session_v3',
   SCHEDULE_BREAKS: 'ntss_schedule_breaks_v1',
 };
 

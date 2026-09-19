@@ -1278,126 +1278,31 @@ class TimetableService {
     }
   }
 
-  public async setTeacherPin(employeeId: string, pin: string): Promise<{ success: boolean; message?: string }> {
-    const teacher = this.findTeacherById(employeeId);
-    if (!teacher) return { success: false, message: 'المعلم غير موجود' };
-    if (!pin || pin.length < 4) return { success: false, message: 'كلمة المرور / الـ PIN يجب ألا تقل عن 4 خانات' };
-
-    const salt = generateRandomToken(16);
-    const pinHash = await hashPin(pin, salt);
-
-    const raw = localStorage.getItem(STORAGE_KEYS.TEACHER_PORTAL_ACCESS);
-    let list: TeacherPortalAccess[] = [];
-    if (raw) {
-      try {
-        list = JSON.parse(raw);
-      } catch {
-        list = [];
-      }
-    }
-
-    const idx = list.findIndex(a => a.employeeId === employeeId);
-    const prepared: TeacherPortalAccess = {
-      employeeId,
-      teacherCode: teacher.teacherCode || 'T-???',
-      teacherName: teacher.name,
-      pinHash,
-      salt,
-      isActivated: true,
-      lastLogin: getCairoNowISO(),
+  /**
+   * @deprecated LEGACY PIN SYSTEM RETIRED (MIG_SCOPE_013_RETIRE_TEACHER_PIN)
+   * Teacher accounts authenticate strictly via Username + Password.
+   */
+  public async setTeacherPin(employeeId: string, pin: string): Promise<{ success: boolean; code?: string; message?: string }> {
+    return {
+      success: false,
+      code: 'LEGACY_PIN_RETIRED',
+      message: 'تم إيقاف تعيين رمز PIN نهائياً. يرجى إدارة حساب المعلم من شاشة إدارة الحسابات بواسطة اسم المستخدم وكلمة المرور.',
     };
-
-    if (idx >= 0) {
-      list[idx] = prepared;
-    } else {
-      list.push(prepared);
-    }
-
-    localStorage.setItem(STORAGE_KEYS.TEACHER_PORTAL_ACCESS, JSON.stringify(list));
-    return { success: true, message: 'تم تعيين رمز الدخول للبوابة بنجاح' };
   }
 
+  /**
+   * @deprecated LEGACY PIN SYSTEM RETIRED (MIG_SCOPE_013_RETIRE_TEACHER_PIN)
+   * Teacher accounts authenticate strictly via Username + Password.
+   */
   public async verifyTeacherPin(
     teacherCode: string,
     pin: string
   ): Promise<{ success: boolean; employee?: Employee; token?: string; message?: string; code?: string; loginNumber?: string | number }> {
-    const cleanCode = (teacherCode || '').trim();
-    const cleanPin = (pin || '').trim();
-
-    if (!cleanCode || !cleanPin) {
-      return { success: false, message: 'يرجى إدخال كود المعلم ورمز المرور' };
-    }
-
-    const settings = storageService.getSettings();
-    const scriptUrl = settings.googleAppsScriptUrl;
-
-    // 1. Authoritative Backend Login (POST)
-    if (scriptUrl && scriptUrl.length > 15 && navigator.onLine) {
-      try {
-        const response = await fetch(scriptUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({
-            action: 'teacherLogin',
-            teacherCode: cleanCode,
-            pin: cleanPin,
-          }),
-        });
-
-        if (response.ok) {
-          const res = await response.json();
-          if (res.status === 'success' && res.employee) {
-            return {
-              success: true,
-              employee: res.employee,
-              token: res.teacherSessionToken,
-            };
-          } else if (res.status === 'error') {
-            return {
-              success: false,
-              code: res.code,
-              loginNumber: res.loginNumber,
-              message: res.message || 'بيانات الدخول غير صحيحة'
-            } as any;
-          }
-        }
-      } catch (err) {
-        console.warn('Backend teacher login failed, checking salted credentials...', err);
-      }
-    }
-
-    // 2. Strict Salted PBKDF2/SHA-256 Local Validation (No hardcoded backdoor PIN)
-    const teacher = this.findTeacherByCode(cleanCode);
-    if (!teacher) {
-      return { success: false, message: 'كود المعلم غير صحيح أو غير مسجل بالنظام' };
-    }
-
-    const access = this.getTeacherPortalAccess(teacher.id);
-    if (!access || !access.pinHash || !access.salt) {
-      return { success: false, message: 'حساب المعلم لم يتم تعيين رمز مرور (PIN) معتمد له بعد' };
-    }
-
-    const computed = await hashPin(cleanPin, access.salt);
-    if (computed !== access.pinHash) {
-      return { success: false, message: 'رمز المرور غير صحيح' };
-    }
-
-    // Record login
-    access.lastLogin = getCairoNowISO();
-    const raw = localStorage.getItem(STORAGE_KEYS.TEACHER_PORTAL_ACCESS);
-    if (raw) {
-      try {
-        const list: TeacherPortalAccess[] = JSON.parse(raw);
-        const idx = list.findIndex(a => a.employeeId === teacher.id);
-        if (idx >= 0) {
-          list[idx].lastLogin = access.lastLogin;
-          localStorage.setItem(STORAGE_KEYS.TEACHER_PORTAL_ACCESS, JSON.stringify(list));
-        }
-      } catch {}
-    }
-
-    const token = generateRandomToken(32);
-    return { success: true, employee: teacher, token };
+    return {
+      success: false,
+      code: 'LEGACY_PIN_RETIRED',
+      message: 'تم إيقاف تسجيل الدخول باستخدام PIN نهائياً. يرجى استخدام بوابة المعلم بواسطة اسم المستخدم وكلمة المرور.',
+    };
   }
 
   // ============================================================================

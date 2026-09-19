@@ -45,6 +45,7 @@ import { runMigrationScope009SecurityAndFinalRetirement } from './services/migra
 import { runMigrationScope010TimetableSecureBackend } from './services/migrationScope010TimetableSecureBackend';
 import { runMigrationScope011LoginNumbersFirstLogin } from './services/migrationScope011LoginNumbersFirstLogin';
 import { runMigrationScope012RemoveLocalPasswords } from './services/migrationScope012RemoveLocalPasswords';
+import { runMigrationScope013RetireTeacherPin } from './services/migrationScope013RetireTeacherPin';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(() => storageService.getCurrentUser());
@@ -99,6 +100,7 @@ export default function App() {
     runMigrationScope010TimetableSecureBackend();
     runMigrationScope011LoginNumbersFirstLogin();
     runMigrationScope012RemoveLocalPasswords();
+    runMigrationScope013RetireTeacherPin();
   }, []);
 
   // Sync with browser back/forward and URL hash

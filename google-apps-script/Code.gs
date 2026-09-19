@@ -200,7 +200,7 @@ function doPost(e) {
     // Teacher Login (Username / Teacher Code + Password -> Opaque TeacherSessionToken)
     if (action === 'teacherLogin') {
       var tUserOrCode = String(postData.username || postData.teacherCode || (payload && (payload.username || payload.teacherCode)) || '').trim();
-      var tPass = String(postData.password || postData.pin || (payload && (payload.password || payload.pin)) || '').trim();
+      var tPass = String(postData.password || (payload && payload.password) || '').trim();
 
       var teacherAuth = handleTeacherLogin(ss, tUserOrCode, tPass, requestId);
       if (!teacherAuth.success) {
@@ -902,20 +902,15 @@ function doPost(e) {
       return createJsonResponse(output, 200);
     }
 
-    // P. Teacher Portal PIN & Account Management (By Staff)
-    if (action === 'setTeacherPortalPin' && payload) {
-      var pinResult = setTeacherPortalPin(ss, payload.teacherId, payload.pin, authenticatedUsername, requestId);
-      if (!pinResult.success) {
-        return createJsonResponse({
-          status: 'error',
-          code: pinResult.code || 'PIN_SET_FAILED',
-          message: pinResult.message,
-          requestId: requestId
-        }, 400);
-      }
-      recordAuthoritativeAudit(ss, requestId, authenticatedUsername, authenticatedRole, 'SET_PIN', 'TEACHER_CREDENTIALS', payload.teacherId, 'تعيين رمز مرور بوابة المعلم');
-      output.message = pinResult.message;
-      return createJsonResponse(output, 200);
+    // P. Teacher Portal PIN (Retired) & Account Management (By Staff)
+    if (action === 'setTeacherPortalPin') {
+      return createJsonResponse({
+        status: 'error',
+        success: false,
+        code: 'LEGACY_PIN_RETIRED',
+        message: 'تم إيقاف تسجيل الدخول باستخدام PIN',
+        requestId: requestId
+      }, 400);
     }
 
     if (action === 'createTeacherAccount' && payload) {
@@ -1334,10 +1329,11 @@ function handleStaffLogin(ss, inputUsername, inputPassword, requestId) {
 
 /**
  * Handle Teacher Portal Login (Username / Teacher Code + Password -> Teacher Session Token)
+ * Strictly password-based (PIN retired via MIG_SCOPE_013_RETIRE_TEACHER_PIN)
  */
-function handleTeacherLogin(ss, usernameOrCode, passwordOrPin, requestId) {
+function handleTeacherLogin(ss, usernameOrCode, password, requestId) {
   var cleanInput = String(usernameOrCode || '').trim();
-  var inputPassword = String(passwordOrPin || '').trim();
+  var inputPassword = String(password || '').trim();
 
   if (!cleanInput || !inputPassword) {
     return { success: false, code: 'INVALID_CREDENTIALS', message: 'اسم المستخدم أو كلمة المرور غير صحيحة' };
@@ -1376,16 +1372,20 @@ function handleTeacherLogin(ss, usernameOrCode, passwordOrPin, requestId) {
       }
     }
 
-    var credStatus = String(cred.status || 'Active').trim().toLowerCase();
-    if (credStatus === 'inactive' || credStatus === 'suspended') {
+    var credStatus = String(cred.status || cred.accountStatus || 'Active').trim().toLowerCase();
+    if (credStatus === 'inactive' || credStatus === 'suspended' || credStatus === 'disabled') {
       return { success: false, code: 'TEACHER_INACTIVE', message: 'حساب المعلم غير نشط حالياً، يرجى مراجعة إدارة شؤون المعلمين' };
     }
 
-    // Verify password / pin
+    if (credStatus === 'needs setup' || credStatus === 'passwordresetrequired') {
+      return { success: false, code: 'PASSWORD_RESET_REQUIRED', message: 'الحساب يتطلب تعيين كلمة مرور من قبل إدارة المدرسة قبل تسجيل الدخول' };
+    }
+
+    // Verify password ONLY (PIN system retired - no pinHash fallback allowed)
     var passwordValid = false;
-    var storedHash = cred.passwordHash || cred.pinHash || '';
-    var storedSalt = cred.passwordSalt || cred.salt || '';
-    var storedIter = parseInt(cred.passwordIterations || cred.iterations || PBKDF2_ITERATIONS, 10);
+    var storedHash = cred.passwordHash || '';
+    var storedSalt = cred.passwordSalt || '';
+    var storedIter = parseInt(cred.passwordIterations || PBKDF2_ITERATIONS, 10);
 
     if (storedSalt && storedHash) {
       var computedHash = computeSaltedHash(inputPassword, storedSalt, storedIter);
@@ -2396,41 +2396,15 @@ function revokeStudentAccessToken(ss, targetId) {
 }
 
 /**
- * Set Teacher Portal PIN (Salted PBKDF2 hash stored in Teacher_Credentials)
+ * @deprecated LEGACY PIN SYSTEM RETIRED - MIG_SCOPE_013_RETIRE_TEACHER_PIN
+ * PIN authentication is permanently disabled. Teacher authentication is strictly Username + Password.
  */
 function setTeacherPortalPin(ss, teacherId, pin, authenticatedUsername, requestId) {
-  if (!teacherId || !pin || pin.length < 4) {
-    return { success: false, code: 'INVALID_PIN', message: 'رمز المرور يجب ألا يقل عن 4 خانات' };
-  }
-
-  var employees = getSheetData(ss, SHEETS.EMPLOYEES);
-  var teacher = null;
-  for (var i = 0; i < employees.length; i++) {
-    if (employees[i].id === teacherId) {
-      teacher = employees[i];
-      break;
-    }
-  }
-
-  if (!teacher) {
-    return { success: false, code: 'TEACHER_NOT_FOUND', message: 'المعلم غير موجود' };
-  }
-
-  var salt = Utilities.getUuid().replace(/-/g, '');
-  var pinHash = computeSaltedHash(pin, salt, PBKDF2_ITERATIONS);
-
-  var credRecord = {
-    teacherId: teacher.id,
-    teacherCode: teacher.teacherCode || '',
-    pinHash: pinHash,
-    salt: salt,
-    iterations: PBKDF2_ITERATIONS,
-    isActivated: true,
-    updatedAt: getCairoISOString()
+  return {
+    success: false,
+    code: 'LEGACY_PIN_RETIRED',
+    message: 'تم إيقاف تسجيل الدخول باستخدام PIN'
   };
-
-  upsertRecord(ss, SHEETS.TEACHER_CREDENTIALS, 'teacherId', credRecord);
-  return { success: true, message: 'تم تعيين وتشفير رمز مرور بوابة المعلم بنجاح' };
 }
 
 /**
@@ -3690,9 +3664,10 @@ function createTeacherAccount(ss, payload, authUsername, authRole, requestId) {
     passwordSalt: salt,
     passwordAlgorithm: 'PBKDF2-HMAC-SHA256',
     passwordIterations: PBKDF2_ITERATIONS,
-    pinHash: hash,
-    salt: salt,
     status: 'Active',
+    accountStatus: 'Active',
+    legacyPinRetired: true,
+    migrationVersion: 'MIG_SCOPE_013',
     mustChangePassword: true,
     failedLoginAttempts: 0,
     lockedUntil: '',
@@ -3760,8 +3735,15 @@ function resetTeacherPassword(ss, payload, authUsername, authRole, requestId) {
   cred.passwordSalt = salt;
   cred.passwordAlgorithm = 'PBKDF2-HMAC-SHA256';
   cred.passwordIterations = PBKDF2_ITERATIONS;
-  cred.pinHash = hash;
-  cred.salt = salt;
+  cred.status = 'Active';
+  cred.accountStatus = 'Active';
+  cred.legacyPinRetired = true;
+  cred.migrationVersion = 'MIG_SCOPE_013';
+  delete cred.pinHash;
+  delete cred.pinSalt;
+  delete cred.salt;
+  delete cred.pin;
+  delete cred.legacyPin;
   cred.mustChangePassword = true;
   cred.failedLoginAttempts = 0;
   cred.lockedUntil = '';
@@ -3906,8 +3888,15 @@ function changeTeacherPassword(ss, teacherSessionToken, newPassword, requestId) 
   cred.passwordSalt = salt;
   cred.passwordAlgorithm = 'PBKDF2-HMAC-SHA256';
   cred.passwordIterations = PBKDF2_ITERATIONS;
-  cred.pinHash = hash;
-  cred.salt = salt;
+  cred.status = 'Active';
+  cred.accountStatus = 'Active';
+  cred.legacyPinRetired = true;
+  cred.migrationVersion = 'MIG_SCOPE_013';
+  delete cred.pinHash;
+  delete cred.pinSalt;
+  delete cred.salt;
+  delete cred.pin;
+  delete cred.legacyPin;
   cred.mustChangePassword = false;
   cred.failedLoginAttempts = 0;
   cred.lockedUntil = '';
@@ -3949,5 +3938,73 @@ function changeTeacherPassword(ss, teacherSessionToken, newPassword, requestId) 
     message: 'تم تغيير كلمة المرور بنجاح',
     teacherSessionToken: newToken,
     expiresAt: expiresStr
+  };
+}
+
+/**
+ * Idempotent Migration: MIG_SCOPE_013_RETIRE_TEACHER_PIN
+ * Safely retires legacy PIN support from Teacher_Credentials.
+ */
+function runMigrationScope013RetireTeacherPin(ss) {
+  var creds = getSheetData(ss, SHEETS.TEACHER_CREDENTIALS);
+  if (!creds || creds.length === 0) {
+    return { success: true, count: 0, message: 'No teacher credentials to migrate' };
+  }
+
+  var updatedCount = 0;
+  for (var i = 0; i < creds.length; i++) {
+    var c = creds[i];
+    var empId = c.employeeId || c.teacherId;
+    if (!empId) continue;
+
+    var hasPassword = Boolean(c.passwordHash && c.passwordSalt);
+    var hasLegacyPin = Boolean(c.pinHash || c.salt || c.pin || c.legacyPin);
+
+    if (hasPassword) {
+      if (hasLegacyPin || !c.legacyPinRetired || c.migrationVersion !== 'MIG_SCOPE_013') {
+        delete c.pinHash;
+        delete c.pinSalt;
+        delete c.salt;
+        delete c.pin;
+        delete c.legacyPin;
+        c.legacyPinRetired = true;
+        c.migrationVersion = 'MIG_SCOPE_013';
+        c.migratedAt = c.migratedAt || getCairoISOString();
+        c.accountStatus = c.accountStatus || c.status || 'Active';
+        upsertRecord(ss, SHEETS.TEACHER_CREDENTIALS, 'employeeId', c);
+        updatedCount++;
+      }
+    } else {
+      var hasUsername = Boolean(c.username && String(c.username).trim());
+      c.mustChangePassword = true;
+      c.legacyPinRetired = true;
+      c.migrationVersion = 'MIG_SCOPE_013';
+      c.migratedAt = c.migratedAt || getCairoISOString();
+
+      if (!hasUsername) {
+        c.accountStatus = 'Needs Setup';
+        c.status = 'Needs Setup';
+      } else {
+        c.accountStatus = 'PasswordResetRequired';
+        c.status = 'PasswordResetRequired';
+      }
+
+      revokeTeacherSessions(ss, empId);
+
+      delete c.pinHash;
+      delete c.pinSalt;
+      delete c.salt;
+      delete c.pin;
+      delete c.legacyPin;
+
+      upsertRecord(ss, SHEETS.TEACHER_CREDENTIALS, 'employeeId', c);
+      updatedCount++;
+    }
+  }
+
+  return {
+    success: true,
+    count: updatedCount,
+    message: 'Migration MIG_SCOPE_013_RETIRE_TEACHER_PIN completed for ' + updatedCount + ' accounts'
   };
 }

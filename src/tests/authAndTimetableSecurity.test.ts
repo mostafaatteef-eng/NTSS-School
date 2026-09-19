@@ -322,7 +322,7 @@ describe('NTSS ERP - Security, Login Numbers, First Login & Timetable Integratio
     expect(knownTeacher).toBeFalsy();
   });
 
-  it('Test 15: Teacher portal verifyTeacherPin recognizes loginNumber', async () => {
+  it('Test 15: Teacher portal rejects legacy PIN and authenticates via Username + Password', async () => {
     const emp: Employee = {
       id: 'EMP-PIN-TEST',
       name: 'معلم الاختبار',
@@ -334,18 +334,22 @@ describe('NTSS ERP - Security, Login Numbers, First Login & Timetable Integratio
     };
     storageService.saveEmployee(emp);
 
+    // 1. Assert that legacy setTeacherPin and verifyTeacherPin fail / reject
     const setRes = await timetableService.setTeacherPin(emp.id, '5566');
-    expect(setRes.success).toBe(true);
+    expect(setRes.success).toBe(false);
+    expect(setRes.code).toBe('LEGACY_PIN_RETIRED');
 
-    // Verification via loginNumber
-    const verifyByNum = await timetableService.verifyTeacherPin('177', '5566');
-    expect(verifyByNum.success).toBe(true);
-    expect(verifyByNum.employee?.id).toBe(emp.id);
+    const verifyRes = await timetableService.verifyTeacherPin('177', '5566');
+    expect(verifyRes.success).toBe(false);
+    expect(verifyRes.code).toBe('LEGACY_PIN_RETIRED');
 
-    // Verification via teacherCode
-    const verifyByCode = await timetableService.verifyTeacherPin('T-777', '5566');
-    expect(verifyByCode.success).toBe(true);
-    expect(verifyByCode.employee?.id).toBe(emp.id);
+    // 2. Assert that Teacher Account works securely with Username + Password
+    const createRes = await storageService.createTeacherAccount(emp.id, 'teacher_robotics', 'P@ssw0rd123');
+    expect(createRes.success).toBe(true);
+
+    const loginRes = await storageService.teacherLogin('teacher_robotics', 'P@ssw0rd123');
+    expect(loginRes.success).toBe(true);
+    expect(loginRes.teacherSessionToken).toBeTruthy();
   });
 
   it('Test 16: Deactivating a user account blocks subsequent login attempts', async () => {

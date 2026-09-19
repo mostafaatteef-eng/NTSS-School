@@ -1181,8 +1181,6 @@ export interface TeacherPortalAccess {
   employeeId: string;
   teacherCode: string;
   teacherName: string;
-  pinHash?: string;
-  salt?: string;
   isActivated: boolean;
   lastLogin?: string;
 }
@@ -1199,14 +1197,18 @@ export interface TeacherAccount {
   passwordSalt?: string;
   passwordAlgorithm?: string;
   passwordIterations?: number;
-  status: 'Active' | 'Suspended' | 'Disabled' | 'Inactive';
+  status: 'Active' | 'Suspended' | 'Disabled' | 'Inactive' | 'PasswordResetRequired' | 'Needs Setup';
+  accountStatus?: 'Active' | 'Suspended' | 'Disabled' | 'Inactive' | 'PasswordResetRequired' | 'Needs Setup';
   isActive: boolean;
   mustChangePassword?: boolean;
+  legacyPinRetired?: boolean;
   failedLoginAttempts: number;
   lockedUntil?: string | null;
   lastLoginAt?: string;
   createdAt: string;
   updatedAt?: string;
+  migrationVersion?: string;
+  migratedAt?: string;
 }
 
 export interface TeacherLoadCalculation {
