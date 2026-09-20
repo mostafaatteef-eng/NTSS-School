@@ -1,6 +1,8 @@
 import { UserRole, LegacyUserRole } from '../types';
 
 export const ROLE_LABELS: Record<LegacyUserRole, string> = {
+  SystemAdmin: 'مدير النظام الشامل (Multi-School)',
+  SchoolAdmin: 'مدير المدرسة الإداري',
   Admin: 'مدير النظام',
   SchoolDirector: 'مدير المدرسة',
   StudentAffairs: 'مسئول شئون الطلاب والقيد',

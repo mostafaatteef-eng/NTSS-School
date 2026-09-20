@@ -31,7 +31,6 @@ import {
 } from '../../types';
 import { timetableService } from '../../services/timetableService';
 import { storageService } from '../../services/storageService';
-import { FirstLoginSetupModal } from '../auth/FirstLoginSetupModal';
 
 interface TeacherPortalViewProps {
   currentUser?: User | null;

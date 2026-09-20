@@ -1,6 +1,8 @@
 import { PermissionKey, Student, User, UserRole, LegacyUserRole } from '../types';
 
 export const ROLE_DISPLAY_NAMES: Record<LegacyUserRole, string> = {
+  SystemAdmin: 'مدير النظام الشامل (System Admin)',
+  SchoolAdmin: 'مدير المدرسة الإداري (School Admin)',
   Admin: 'مدير النظام',
   SchoolDirector: 'مدير المدرسة',
   StudentAffairs: 'شئون الطلاب والقيد',
@@ -18,8 +20,7 @@ export const ROLE_DISPLAY_NAMES: Record<LegacyUserRole, string> = {
   Student: 'طالب (سجل مدرسي - لا يوجد حساب)',
 };
 
-export const DEFAULT_ROLE_PERMISSIONS: Record<LegacyUserRole, Partial<Record<PermissionKey, boolean>>> = {
-  Admin: {
+const ADMIN_ROLE_PERMISSIONS: Partial<Record<PermissionKey, boolean>> = {
     'students.view': true,
     'students.create': true,
     'students.edit': true,
@@ -100,7 +101,12 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<LegacyUserRole, Partial<Record<Per
     'users.manage': true,
     'audit.view': true,
     'reports.view': true,
-  },
+};
+
+export const DEFAULT_ROLE_PERMISSIONS: Record<LegacyUserRole, Partial<Record<PermissionKey, boolean>>> = {
+  SystemAdmin: ADMIN_ROLE_PERMISSIONS,
+  SchoolAdmin: ADMIN_ROLE_PERMISSIONS,
+  Admin: ADMIN_ROLE_PERMISSIONS,
   StudentAffairs: {
     'students.view': true,
     'students.create': true,

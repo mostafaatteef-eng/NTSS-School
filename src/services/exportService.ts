@@ -45,17 +45,18 @@ export class ExportService {
     const empData = employees.map(e => sanitizeRow({
       'رقم الموظف': e.id,
       'اسم الموظف': e.name,
-      'الهوية الوطنية': e.nationalId || '',
-      'القسم / الإدارة': e.department,
+      'نوع الموظف': e.employeeType === 'Teacher' ? 'معلم' : 'إداري',
       'المسمى الوظيفي': e.jobTitle,
-      'تاريخ التعيين': e.hireDate,
-      'الراتب الأساسي': e.basicSalary || '',
+      'التخصص': e.specialization || '',
+      'كود المعلم': e.teacherCode || '',
+      'الرقم القومي': e.nationalId || '',
+      'تاريخ التعيين': e.hireDate || '',
       'ساعات العمل': e.workingHours,
       'وقت الحضور الرسمي': e.workStartTime,
       'وقت الانصراف الرسمي': e.workEndTime,
       'أيام العطلة': (e.daysOff || []).join(', '),
       'الحالة': e.status === 'Active' ? 'نشط' : 'معطل',
-      'رقم الجوال': e.phone || '',
+      'رقم الهاتف': e.phone || '',
       'البريد الإلكتروني': e.email || ''
     }));
     const wsEmp = XLSX.utils.json_to_sheet(empData);
@@ -144,7 +145,9 @@ export class ExportService {
       const row: Record<string, any> = {
         'رقم الموظف': emp.id,
         'اسم الموظف': emp.name,
-        'القسم': emp.department
+        'نوع الموظف': emp.employeeType === 'Teacher' ? 'معلم' : 'إداري',
+        'المسمى الوظيفي': emp.jobTitle,
+        'التخصص': emp.specialization || ''
       };
 
       daysList.forEach(d => {

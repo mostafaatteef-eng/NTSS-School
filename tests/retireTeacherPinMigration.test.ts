@@ -54,6 +54,7 @@ describe('MIG_SCOPE_013_RETIRE_TEACHER_PIN - Teacher Authentication System Tests
     // Also simulate active teacher session for legacy user 1
     const activeSession: TeacherSession = {
       teacherSessionToken: 'TSESS_LEGACY_TOKEN',
+      schoolId: 'SCH-BADR',
       employeeId: 'EMP-LEG-1',
       teacherCode: 'T-101',
       teacherName: 'أحمد محمود',

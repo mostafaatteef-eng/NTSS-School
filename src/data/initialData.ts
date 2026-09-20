@@ -55,24 +55,28 @@ import {
   LegacyUserRole,
 } from '../types';
 
+const ADMIN_PERM_MATRIX: PermissionMatrix = {
+  canViewStudents: true,
+  canEditStudents: true,
+  canImportStudents: true,
+  canTakeStudentAttendance: true,
+  canEditStudentAttendance: true,
+  canCreateViolation: true,
+  canApproveViolation: true,
+  canViewPayroll: true,
+  canProcessPayroll: true,
+  canApprovePayroll: true,
+  canManageSchedule: true,
+  canAddLessonContent: true,
+  canViewParentPortal: true,
+  canManageSettings: true,
+  canViewAuditLogs: true,
+};
+
 export const DEFAULT_PERMISSION_MATRIX: Record<LegacyUserRole, PermissionMatrix> = {
-  Admin: {
-    canViewStudents: true,
-    canEditStudents: true,
-    canImportStudents: true,
-    canTakeStudentAttendance: true,
-    canEditStudentAttendance: true,
-    canCreateViolation: true,
-    canApproveViolation: true,
-    canViewPayroll: true,
-    canProcessPayroll: true,
-    canApprovePayroll: true,
-    canManageSchedule: true,
-    canAddLessonContent: true,
-    canViewParentPortal: true,
-    canManageSettings: true,
-    canViewAuditLogs: true,
-  },
+  SystemAdmin: ADMIN_PERM_MATRIX,
+  SchoolAdmin: ADMIN_PERM_MATRIX,
+  Admin: ADMIN_PERM_MATRIX,
   HR: {
     canViewStudents: true,
     canEditStudents: false,

@@ -42,6 +42,7 @@ export const Header: React.FC<HeaderProps> = ({
   const [isSyncing, setIsSyncing] = useState(false);
   const [cairoTime, setCairoTime] = useState<string>(getCairoCurrentTimeString());
   const [settings, setSettings] = useState<SystemSettings>(() => propSettings || storageService.getSettings());
+  const [activeSchool, setActiveSchool] = useState(() => storageService.getActiveSchool());
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
 
@@ -49,6 +50,7 @@ export const Header: React.FC<HeaderProps> = ({
     const unsubscribe = storageService.subscribe(() => {
       setSyncStatus(storageService.getSyncStatus());
       setSettings(storageService.getSettings());
+      setActiveSchool(storageService.getActiveSchool());
     });
     const timer = setInterval(() => {
       setCairoTime(getCairoCurrentTimeString());
@@ -109,8 +111,13 @@ export const Header: React.FC<HeaderProps> = ({
               <GraduationCap className="w-5 h-5" />
             </div>
             <div>
-              <div className="text-xs sm:text-sm font-bold text-slate-900 leading-tight">
-                {settings.schoolName || 'نظام الإدارة المدرسية والموارد البشرية'}
+              <div className="text-xs sm:text-sm font-bold text-slate-900 leading-tight flex items-center gap-2">
+                <span>{activeSchool?.schoolName || settings.schoolName || 'نظام الإدارة المدرسية والموارد البشرية'}</span>
+                {activeSchool?.schoolCode && (
+                  <span className="text-[10px] font-mono font-bold bg-teal-50 text-teal-800 border border-teal-200 px-1.5 py-0.5 rounded-md hidden sm:inline-block">
+                    {activeSchool.schoolCode}
+                  </span>
+                )}
               </div>
               <div className="text-[10px] text-teal-700 font-semibold hidden sm:block">
                 جمهورية مصر العربية • {settings.currentAcademicYear || '2026/2027'}

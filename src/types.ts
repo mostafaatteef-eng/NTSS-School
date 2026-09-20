@@ -234,6 +234,8 @@ export interface User {
   mustChangePassword?: boolean;
 }
 
+export type EmployeeType = 'Teacher' | 'Administrative';
+
 export interface Employee {
   id: string; // EMP001, EMP002, etc.
   employeeId?: string; // alias for id
@@ -242,8 +244,22 @@ export interface Employee {
   name: string;
   fullName?: string; // alias for name
   nationalId?: string;
-  department: string;
+  
+  // Phase 2 Active Model
+  employeeType: EmployeeType; // 'Teacher' | 'Administrative' (معلم | إداري)
   jobTitle: string;
+  specialization: string; // e.g. رياضيات، لغة إنجليزية، ذكاء اصطناعي، شؤون طلاب، موارد بشرية، حسابات
+  
+  // Retired fields for backward compatibility with historical spreadsheets/archives (Do NOT use in active UI/DTO)
+  /** @deprecated Retired in Phase 2 - use employeeType & specialization */
+  department?: string;
+  /** @deprecated Retired in Phase 2 - forbidden from active UI/DTO/Cache/Export */
+  basicSalary?: number;
+  /** @deprecated Retired in Phase 2 - forbidden from active UI/DTO/Cache/Export */
+  allowances?: number;
+  /** @deprecated Retired in Phase 2 - forbidden from active UI/DTO/Cache/Export */
+  salary?: number;
+
   hireDate?: string;
   workingHours?: number; // e.g. 8
   workStartTime?: string; // e.g. "07:30"
@@ -252,8 +268,6 @@ export interface Employee {
   status?: 'Active' | 'Inactive' | 'Suspended';
   phone?: string;
   email?: string;
-  basicSalary?: number;
-  allowances?: number;
   isTeacher?: boolean;
   isTeachingStaff?: boolean;
   teacherCode?: string;
@@ -357,6 +371,33 @@ export interface AcademicYear {
  * ========================================================================= */
 export type StudentStatus = 'نشط' | 'موقوف' | 'منقول' | 'متخرج' | 'غير مقيد' | 'غير نشط';
 export type Gender = 'ذكر' | 'أنثى';
+export type StudentGender = 'ذكر' | 'أنثى' | 'Male' | 'Female' | 'غير محدد';
+export type StudentReligion = 'مسلم' | 'مسيحي' | 'Muslim' | 'Christian' | 'غير محدد';
+export type StudentEnrollmentState = 'مستجد' | 'باقي' | 'New' | 'Remaining' | 'غير محدد';
+
+export function normalizeStudentGender(val?: any): 'ذكر' | 'أنثى' | 'غير محدد' {
+  if (!val) return 'غير محدد';
+  const s = String(val).trim().toLowerCase();
+  if (s === 'ذكر' || s === 'male' || s === 'm') return 'ذكر';
+  if (s === 'أنثى' || s === 'انثى' || s === 'female' || s === 'f') return 'أنثى';
+  return 'غير محدد';
+}
+
+export function normalizeStudentReligion(val?: any): 'مسلم' | 'مسيحي' | 'غير محدد' {
+  if (!val) return 'غير محدد';
+  const s = String(val).trim().toLowerCase();
+  if (s === 'مسلم' || s === 'muslim') return 'مسلم';
+  if (s === 'مسيحي' || s === 'christian') return 'مسيحي';
+  return 'غير محدد';
+}
+
+export function normalizeStudentEnrollmentState(val?: any): 'مستجد' | 'باقي' | 'غير محدد' {
+  if (!val) return 'غير محدد';
+  const s = String(val).trim().toLowerCase();
+  if (s === 'مستجد' || s === 'new') return 'مستجد';
+  if (s === 'باقي' || s === 'remaining') return 'باقي';
+  return 'غير محدد';
+}
 
 export type EnrollmentStatus = 
   | 'نشط' 
@@ -454,7 +495,9 @@ export interface Student {
   schoolStudentCode?: string;
   name: string; // اسم الطالب رباعي
   nationalId?: string; // الرقم القومي
-  gender: Gender;
+  gender: Gender | StudentGender;
+  religion?: StudentReligion;
+  studentStatus?: StudentEnrollmentState;
   birthDate?: string; // YYYY-MM-DD
   stage?: string; // المرحلة (ثانوي / إعدادي / ابتدائي)
   stageId?: string;

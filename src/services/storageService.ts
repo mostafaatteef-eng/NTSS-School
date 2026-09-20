@@ -47,6 +47,7 @@ import {
   StudentEnrollment,
   StudentTransferHistory,
   SubjectItem,
+  School,
   SyncStatus,
   SystemSettings,
   TeacherAccount,
@@ -55,6 +56,12 @@ import {
   User,
   normalizeStaffRole,
 } from '../types';
+import {
+  MASTER_SCHOOLS_KEY,
+  ACTIVE_SCHOOL_KEY,
+  DEFAULT_PRIMARY_SCHOOL,
+  SECONDARY_SEED_SCHOOL,
+} from './migrationScope014MultiSchool';
 import {
   DEFAULT_ACADEMIC_YEARS,
   DEFAULT_ALERT_RULES,
@@ -267,6 +274,100 @@ class StorageService {
     return DEFAULT_BACKEND_URL;
   }
 
+  // ---------------- Multi-School Architecture & Master Registry ----------------
+
+  /**
+   * Retrieves all registered schools from the Master Registry.
+   * If not cached locally, returns the default isolated tenant seeds.
+   */
+  public getSchools(): School[] {
+    try {
+      const raw = localStorage.getItem(MASTER_SCHOOLS_KEY);
+      if (raw) {
+        const parsed: School[] = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
+    } catch {}
+    return [DEFAULT_PRIMARY_SCHOOL, SECONDARY_SEED_SCHOOL];
+  }
+
+  /**
+   * Returns the currently active school ID.
+   * Priority:
+   * 1. The authenticated user's bound schoolId
+   * 2. The active school selected on the client / login screen
+   * 3. Fallback to SCH-BADR
+   */
+  public getActiveSchoolId(): string {
+    const current = this.getCurrentUser();
+    if (current && current.schoolId && current.schoolId.trim()) {
+      return current.schoolId.trim();
+    }
+    const stored = localStorage.getItem(ACTIVE_SCHOOL_KEY);
+    if (stored && stored.trim()) {
+      return stored.trim();
+    }
+    return DEFAULT_PRIMARY_SCHOOL.schoolId;
+  }
+
+  /**
+   * Persists the selected active school ID in client storage.
+   */
+  public setActiveSchoolId(schoolId: string): void {
+    if (!schoolId) return;
+    const cleanId = schoolId.trim();
+    localStorage.setItem(ACTIVE_SCHOOL_KEY, cleanId);
+    this.notifyChange();
+  }
+
+  /**
+   * Returns the complete School descriptor object for the currently active school.
+   */
+  public getActiveSchool(): School {
+    const activeId = this.getActiveSchoolId();
+    const schools = this.getSchools();
+    const found = schools.find(s => s.schoolId === activeId);
+    return found || schools[0] || DEFAULT_PRIMARY_SCHOOL;
+  }
+
+  /**
+   * Dynamically fetches the list of active public schools from the Master Registry on the backend.
+   */
+  public async fetchPublicSchoolsFromBackend(): Promise<School[]> {
+    const scriptUrl = this.getBackendUrl();
+    if (!scriptUrl || scriptUrl.length < 15 || !navigator.onLine) {
+      return this.getSchools();
+    }
+    try {
+      const response = await fetch(scriptUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: 'publicSchools' }),
+      });
+      if (response.ok) {
+        const res = await response.json();
+        if (res.status === 'success' && Array.isArray(res.schools) && res.schools.length > 0) {
+          const cleanSchools: School[] = res.schools.map((s: any) => ({
+            schoolId: s.schoolId,
+            schoolCode: s.schoolCode,
+            schoolName: s.schoolName,
+            status: s.status || 'Active',
+            createdAt: s.createdAt,
+            updatedAt: s.updatedAt,
+          }));
+          localStorage.setItem(MASTER_SCHOOLS_KEY, JSON.stringify(cleanSchools));
+          this.notifyChange();
+          return cleanSchools;
+        }
+      }
+    } catch (e) {
+      console.warn('fetchPublicSchoolsFromBackend warning:', e);
+    }
+    return this.getSchools();
+  }
+
   // ---------------- Authentication & Enterprise Auth Guard ----------------
 
   /**
@@ -419,6 +520,7 @@ class StorageService {
           sessionToken: targetUser.sessionToken,
           userId: targetUser.id,
           userRole: targetUser.role,
+          schoolId: targetUser.schoolId || this.getActiveSchoolId(),
         }),
         signal: controller.signal,
       });
@@ -453,9 +555,14 @@ class StorageService {
     }
   }
 
-  public async login(username: string, password: string): Promise<{ success: boolean; message?: string; user?: User; code?: string; loginNumber?: string | number }> {
+  public async login(
+    username: string,
+    password: string,
+    schoolId?: string
+  ): Promise<{ success: boolean; message?: string; user?: User; code?: string; loginNumber?: string | number }> {
     const cleanUsername = (username || '').trim().toLowerCase();
     const cleanPassword = (password || '').trim();
+    const cleanSchoolId = (schoolId || this.getActiveSchoolId()).trim();
 
     if (!cleanUsername || !cleanPassword) {
       return { success: false, message: 'يرجى إدخال اسم المستخدم وكلمة المرور' };
@@ -499,6 +606,7 @@ class StorageService {
           action: 'login',
           username: cleanUsername,
           password: cleanPassword,
+          schoolId: cleanSchoolId,
         }),
       });
 
@@ -520,8 +628,15 @@ class StorageService {
           result.authToken ||
           `GAS_SES_${Date.now()}_${result.user.id || 'auth'}`
         );
+        const resolvedSchoolId = (
+          result.schoolId ||
+          cleanSchoolId ||
+          result.user?.schoolId ||
+          DEFAULT_PRIMARY_SCHOOL.schoolId
+        );
         const userWithToken: User = {
           ...result.user,
+          schoolId: resolvedSchoolId,
           role: canonicalRole,
           sessionToken: String(resolvedToken).trim(),
         };
@@ -529,6 +644,7 @@ class StorageService {
           userWithToken.sessionExpiresAt = result.expiresAt || result.sessionExpiresAt;
         }
         delete userWithToken.password;
+        this.setActiveSchoolId(resolvedSchoolId);
         this.setCurrentUser(userWithToken);
         return { success: true, user: userWithToken };
       } else if (result.status === 'error') {
@@ -537,14 +653,6 @@ class StorageService {
             success: false,
             code: 'DATABASE_EMPTY',
             message: result.message || 'قاعدة بيانات المستخدمين فارغة، يلزم تهيئة حساب مدير النظام الأول.'
-          };
-        }
-        if (result.code === 'PASSWORD_SETUP_REQUIRED') {
-          return {
-            success: false,
-            code: 'PASSWORD_SETUP_REQUIRED',
-            loginNumber: result.loginNumber,
-            message: result.message || 'يتطلب حسابك إعداد كلمة المرور لأول مرة عبر كود التفعيل.'
           };
         }
         return { success: false, message: result.message || 'بيانات الدخول غير صحيحة' };
@@ -561,7 +669,8 @@ class StorageService {
   public async bootstrapFirstAdmin(
     username: string,
     password: string,
-    fullName: string
+    fullName: string,
+    schoolId?: string
   ): Promise<{ success: boolean; message?: string; user?: any }> {
     const settings = this.getSettings();
     const scriptUrl = settings.googleAppsScriptUrl || DEFAULT_BACKEND_URL;
@@ -570,6 +679,7 @@ class StorageService {
     }
 
     try {
+      const cleanSchoolId = (schoolId || this.getActiveSchoolId()).trim();
       const response = await fetch(scriptUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -577,7 +687,8 @@ class StorageService {
           action: 'bootstrapFirstAdmin',
           username: username.trim().toLowerCase(),
           password: password.trim(),
-          fullName: fullName.trim()
+          fullName: fullName.trim(),
+          schoolId: cleanSchoolId,
         }),
       });
 
@@ -3935,6 +4046,7 @@ class StorageService {
           userRole: currentUser?.role || '',
           userId: currentUser?.id || '',
           sessionToken: currentUser?.sessionToken || '',
+          schoolId: currentUser?.schoolId || this.getActiveSchoolId(),
         }),
       });
 
@@ -3982,6 +4094,7 @@ class StorageService {
           userRole: currentUser?.role || '',
           userId: currentUser?.id || '',
           sessionToken: currentUser?.sessionToken || '',
+          schoolId: currentUser?.schoolId || this.getActiveSchoolId(),
         }),
         signal: controller.signal,
       });
@@ -4394,10 +4507,12 @@ class StorageService {
 
   public async getPublicClassSchedule(
     gradeName: string,
-    classroomName: string
+    classroomName: string,
+    schoolId?: string
   ): Promise<{ success: boolean; data?: PublicClassScheduleDTO; message?: string }> {
     const cleanGrade = (gradeName || '').trim();
     const cleanClass = (classroomName || '').trim();
+    const cleanSchoolId = (schoolId || this.getActiveSchoolId()).trim();
 
     if (!cleanGrade || !cleanClass) {
       return { success: false, message: 'يرجى تحديد الصف والفصل الدراسي' };
@@ -4416,6 +4531,7 @@ class StorageService {
             action: 'getPublicClassSchedule',
             gradeName: cleanGrade,
             classroomName: cleanClass,
+            schoolId: cleanSchoolId,
           }),
         });
 
@@ -4807,7 +4923,8 @@ class StorageService {
    */
   public async teacherLogin(
     rawUsername: string,
-    rawPassword: string
+    rawPassword: string,
+    schoolId?: string
   ): Promise<{
     success: boolean;
     message?: string;
@@ -4818,6 +4935,7 @@ class StorageService {
   }> {
     const cleanUsername = (rawUsername || '').trim();
     const cleanPassword = (rawPassword || '').trim();
+    const cleanSchoolId = (schoolId || this.getActiveSchoolId()).trim();
 
     if (!cleanUsername || !cleanPassword) {
       return { success: false, message: 'يرجى إدخال اسم المستخدم وكلمة المرور' };
@@ -4887,6 +5005,7 @@ class StorageService {
             action: 'teacherLogin',
             username: cleanUsername,
             password: cleanPassword,
+            schoolId: cleanSchoolId,
           }),
         });
 
@@ -4904,6 +5023,7 @@ class StorageService {
             const emp = res.teacher || res.employee || this.getEmployees().find(e => e.id === account?.employeeId);
             const session: TeacherSession = {
               teacherSessionToken: res.teacherSessionToken,
+              schoolId: cleanSchoolId,
               employeeId: emp?.id || account?.employeeId || '',
               teacherCode: emp?.teacherCode || account?.teacherCode || '',
               teacherName: emp?.name || account?.teacherName || cleanUsername,
@@ -4969,6 +5089,7 @@ class StorageService {
         const fakeToken = `TSESS_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
         const session: TeacherSession = {
           teacherSessionToken: fakeToken,
+          schoolId: this.getActiveSchoolId(),
           employeeId: account.employeeId,
           teacherCode: account.teacherCode,
           teacherName: account.teacherName,
@@ -5037,6 +5158,7 @@ class StorageService {
     if (session) {
       const safeSession: TeacherSession = {
         teacherSessionToken: session.teacherSessionToken,
+        schoolId: session.schoolId || this.getActiveSchoolId(),
         employeeId: session.employeeId,
         teacherCode: session.teacherCode,
         teacherName: session.teacherName,

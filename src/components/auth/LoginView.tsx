@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Lock,
   User as UserIcon,
@@ -10,14 +10,14 @@ import {
   CheckCircle2,
   KeyRound,
   X,
-  Sparkles,
   CalendarDays,
-  GraduationCap
+  GraduationCap,
+  Building,
+  ChevronDown,
 } from 'lucide-react';
-import { User } from '../../types';
+import { School, User } from '../../types';
 import { storageService } from '../../services/storageService';
 import { NTSSLogo } from '../common/NTSSLogo';
-import { FirstLoginSetupModal } from './FirstLoginSetupModal';
 
 interface LoginViewProps {
   onLoginSuccess: (user: User) => void;
@@ -30,16 +30,14 @@ export const LoginView: React.FC<LoginViewProps> = ({
   onOpenPublicSchedule,
   onOpenTeacherPortal,
 }) => {
+  const [schools, setSchools] = useState<School[]>(() => storageService.getSchools());
+  const [selectedSchoolId, setSelectedSchoolId] = useState<string>(() => storageService.getActiveSchoolId());
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [isDatabaseEmpty, setIsDatabaseEmpty] = useState(false);
-
-  // First Login Setup State
-  const [isFirstLoginOpen, setIsFirstLoginOpen] = useState(false);
-  const [firstLoginNumber, setFirstLoginNumber] = useState('');
 
   // Setup / Bootstrap Admin State
   const [isSetupOpen, setIsSetupOpen] = useState(false);
@@ -50,13 +48,27 @@ export const LoginView: React.FC<LoginViewProps> = ({
   const [setupError, setSetupError] = useState('');
   const [setupSuccess, setSetupSuccess] = useState('');
 
+  // Fetch registered schools from Master Registry on mount
+  useEffect(() => {
+    storageService.fetchPublicSchoolsFromBackend().then(list => {
+      if (list && list.length > 0) {
+        setSchools(list);
+      }
+    });
+  }, []);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
     setIsDatabaseEmpty(false);
 
+    if (!selectedSchoolId) {
+      setErrorMessage('يرجى اختيار المدرسة التابع لها الحساب');
+      return;
+    }
+
     if (!username.trim()) {
-      setErrorMessage('يرجى إدخال اسم المستخدم أو رقم الدخول');
+      setErrorMessage('يرجى إدخال اسم المستخدم');
       return;
     }
 
@@ -68,22 +80,17 @@ export const LoginView: React.FC<LoginViewProps> = ({
     setIsLoading(true);
 
     try {
-      const result = await storageService.login(username.trim(), password);
+      const result = await storageService.login(username.trim(), password, selectedSchoolId);
 
       if (result.success && result.user) {
         onLoginSuccess(result.user);
       } else {
         if (result.code === 'DATABASE_EMPTY') {
           setIsDatabaseEmpty(true);
-        } else if (result.code === 'PASSWORD_SETUP_REQUIRED') {
-          setFirstLoginNumber(String(result.loginNumber || username.trim()));
-          setIsFirstLoginOpen(true);
-          setErrorMessage('يتطلب هذا الحساب تفعيل كلمة المرور لأول مرة. تم فتح نافذة التفعيل.');
-          return;
         }
         setErrorMessage(result.message || 'بيانات الدخول غير صحيحة.');
       }
-    } catch (err: any) {
+    } catch {
       setErrorMessage('حدث خطأ أثناء الاتصال بالخادم. يرجى المحاولة مرة أخرى.');
     } finally {
       setIsLoading(false);
@@ -111,14 +118,15 @@ export const LoginView: React.FC<LoginViewProps> = ({
       const res = await storageService.bootstrapFirstAdmin(
         setupUsername.trim(),
         setupPassword.trim(),
-        setupFullName.trim()
+        setupFullName.trim(),
+        selectedSchoolId
       );
 
       if (res.success) {
         setSetupSuccess('تم إنشاء مدير النظام وتشفير كلمة المرور بنجاح في قاعدة البيانات!');
         setTimeout(async () => {
           setIsSetupOpen(false);
-          const loginRes = await storageService.login(setupUsername.trim(), setupPassword.trim());
+          const loginRes = await storageService.login(setupUsername.trim(), setupPassword.trim(), selectedSchoolId);
           if (loginRes.success && loginRes.user) {
             onLoginSuccess(loginRes.user);
           }
@@ -132,6 +140,8 @@ export const LoginView: React.FC<LoginViewProps> = ({
       setSetupLoading(false);
     }
   };
+
+  const selectedSchoolObj = schools.find(s => s.schoolId === selectedSchoolId);
 
   return (
     <div
@@ -147,12 +157,12 @@ export const LoginView: React.FC<LoginViewProps> = ({
       <div className="w-full max-w-md my-auto">
         <div className="bg-white rounded-3xl p-6 sm:p-8 shadow-[0_10px_35px_rgba(0,0,0,0.03)] border border-slate-200/80 transition-all">
           {/* Header Title */}
-          <div className="text-center space-y-2 mb-8">
+          <div className="text-center space-y-2 mb-7">
             <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">
               تسجيل الدخول للنظام
             </h1>
             <p className="text-xs sm:text-sm text-slate-500 font-normal">
-              أدخل بيانات حسابك المعتمد للمتابعة إلى لوحة التحكم
+              منظومة المدارس المتعددة — اختر مدرستك ثم أدخل بيانات الحساب
             </p>
           </div>
 
@@ -176,15 +186,56 @@ export const LoginView: React.FC<LoginViewProps> = ({
             </div>
           )}
 
-          {/* Form */}
+          {/* Login Form: 1. School, 2. Username, 3. Password */}
           <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Username Input */}
+            {/* 1. School Selector */}
+            <div className="space-y-1.5 text-right">
+              <label
+                htmlFor="select-school"
+                className="block text-xs font-bold text-slate-700 select-none"
+              >
+                1. المدرسة
+              </label>
+              <div className="relative flex items-center">
+                <div className="absolute right-3.5 text-[#008e8b] pointer-events-none">
+                  <Building className="w-4 h-4" />
+                </div>
+                <select
+                  id="select-school"
+                  required
+                  value={selectedSchoolId}
+                  onChange={e => {
+                    const newId = e.target.value;
+                    setSelectedSchoolId(newId);
+                    storageService.setActiveSchoolId(newId);
+                  }}
+                  className="w-full pr-10 pl-9 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#008e8b]/20 focus:border-[#008e8b] transition-all cursor-pointer appearance-none"
+                >
+                  {schools.map(s => (
+                    <option key={s.schoolId} value={s.schoolId}>
+                      {s.schoolName} ({s.schoolCode || s.schoolId})
+                    </option>
+                  ))}
+                </select>
+                <div className="absolute left-3 text-slate-400 pointer-events-none">
+                  <ChevronDown className="w-4 h-4" />
+                </div>
+              </div>
+              {selectedSchoolObj && (
+                <div className="text-[11px] text-teal-700 font-medium px-1 flex items-center justify-between">
+                  <span>كود المدرسة: {selectedSchoolObj.schoolCode || selectedSchoolObj.schoolId}</span>
+                  <span className="text-slate-400">قاعدة بيانات مستقلة</span>
+                </div>
+              )}
+            </div>
+
+            {/* 2. Username Input */}
             <div className="space-y-1.5 text-right">
               <label
                 htmlFor="input-username"
                 className="block text-xs font-bold text-slate-700 select-none"
               >
-                اسم المستخدم
+                2. اسم المستخدم
               </label>
               <div className="relative flex items-center">
                 <div className="absolute right-3.5 text-slate-400 pointer-events-none">
@@ -194,7 +245,6 @@ export const LoginView: React.FC<LoginViewProps> = ({
                   id="input-username"
                   type="text"
                   autoComplete="username"
-                  autoFocus
                   required
                   value={username}
                   onChange={e => setUsername(e.target.value)}
@@ -204,13 +254,13 @@ export const LoginView: React.FC<LoginViewProps> = ({
               </div>
             </div>
 
-            {/* Password Input */}
+            {/* 3. Password Input */}
             <div className="space-y-1.5 text-right">
               <label
                 htmlFor="input-password"
                 className="block text-xs font-bold text-slate-700 select-none"
               >
-                كلمة المرور
+                3. كلمة المرور
               </label>
               <div className="relative flex items-center">
                 <div className="absolute right-3.5 text-slate-400 pointer-events-none">
@@ -253,7 +303,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
                 {isLoading ? (
                   <>
                     <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    <span>جارٍ التحقق من الحساب...</span>
+                    <span>جارٍ التحقق من الحساب والمدرسة...</span>
                   </>
                 ) : (
                   <>
@@ -263,20 +313,9 @@ export const LoginView: React.FC<LoginViewProps> = ({
                 )}
               </button>
             </div>
-            {/* Action Links: First Login & Public Student Schedule */}
-            <div className="pt-3 flex flex-col gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setFirstLoginNumber(username.trim());
-                  setIsFirstLoginOpen(true);
-                }}
-                className="w-full py-2.5 px-3 bg-teal-50 hover:bg-teal-100/80 text-[#008e8b] font-bold text-xs rounded-xl border border-teal-200 transition flex items-center justify-center gap-1.5 cursor-pointer"
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>أول دخول للنظام؟ تفعيل الحساب وإنشاء كلمة المرور</span>
-              </button>
 
+            {/* Public Schedule & Teacher Portal */}
+            <div className="pt-3 flex flex-col gap-2">
               {onOpenPublicSchedule && (
                 <button
                   type="button"
@@ -304,21 +343,10 @@ export const LoginView: React.FC<LoginViewProps> = ({
           {/* Clean Security Note */}
           <div className="mt-6 pt-5 border-t border-slate-100 flex items-center justify-center gap-1.5 text-slate-400 text-[11px] font-medium">
             <ShieldCheck className="w-3.5 h-3.5 text-[#008e8b]" />
-            <span>نظام تسجيل الدخول المشفر والمؤمن بالكامل</span>
+            <span>نظام تسجيل الدخول المشفر والمؤمن — عزل كامل بين المدارس</span>
           </div>
         </div>
       </div>
-
-      {/* First Login Password Setup Modal */}
-      <FirstLoginSetupModal
-        isOpen={isFirstLoginOpen}
-        initialLoginNumber={firstLoginNumber}
-        onClose={() => setIsFirstLoginOpen(false)}
-        onSuccess={user => {
-          setIsFirstLoginOpen(false);
-          onLoginSuccess(user);
-        }}
-      />
 
       {/* Setup First Admin Modal */}
       {isSetupOpen && (
@@ -330,7 +358,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
                   <KeyRound className="w-4 h-4" />
                 </div>
                 <h3 className="text-sm font-bold text-slate-900">
-                  تهيئة حساب مدير النظام الأول
+                  تهيئة حساب مدير النظام الأول للمدرسة
                 </h3>
               </div>
               <button
@@ -342,7 +370,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
             </div>
 
             <p className="text-xs text-slate-600 mb-4 leading-relaxed">
-              هذا الإجراء متاح لمرة واحدة فقط عند تهيئة قاعدة البيانات لأول مرة. يتم تشفير كلمة المرور بـ Salted PBKDF2 وحفظها في الخادم ثم يُغلق هذا المسار نهائياً.
+              هذا الإجراء متاح لمرة واحدة فقط عند تهيئة مدرسة جديدة لأول مرة. يتم تشفير كلمة المرور بـ Salted PBKDF2 وحفظها في قاعدة بيانات المدرسة المحددة ثم يُغلق هذا المسار نهائياً.
             </p>
 
             {setupError && (
@@ -360,6 +388,13 @@ export const LoginView: React.FC<LoginViewProps> = ({
             )}
 
             <form onSubmit={handleBootstrapAdmin} className="space-y-3">
+              <div className="space-y-1 text-right">
+                <label className="text-xs font-bold text-slate-700">المدرسة المستهدفة</label>
+                <div className="px-3 py-2 bg-slate-100 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700">
+                  {selectedSchoolObj?.schoolName || selectedSchoolId} ({selectedSchoolId})
+                </div>
+              </div>
+
               <div className="space-y-1 text-right">
                 <label className="text-xs font-bold text-slate-700">اسم المستخدم</label>
                 <input
@@ -417,7 +452,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
 
       {/* Bottom Footer */}
       <footer className="w-full max-w-md pb-4 text-center text-xs text-slate-400 font-medium">
-        نظام إدارة الحضور والانصراف والموارد البشرية &copy; {new Date().getFullYear()}
+        نظام إدارة المدارس المتعددة والحضور والموارد البشرية &copy; {new Date().getFullYear()}
       </footer>
     </div>
   );

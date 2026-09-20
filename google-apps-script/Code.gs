@@ -80,7 +80,8 @@ var SHEETS = {
   EXAM_SCHEDULES: 'Exam_Schedules',
   STUDENT_ACCESS_TOKENS: 'Student_Access_Tokens',
   TEACHER_SESSIONS: 'Teacher_Sessions',
-  TEACHER_CREDENTIALS: 'Teacher_Credentials'
+  TEACHER_CREDENTIALS: 'Teacher_Credentials',
+  MASTER_SCHOOLS: 'Master_Schools'
 };
 
 // Retired Modules List (Strictly forbidden from execution)
@@ -120,6 +121,17 @@ function doGet(e) {
       scope: 'Staff ERP + Timetable System + Teacher Portal + Student Access',
       retiredModules: ['Parent_Portal', 'Payroll', 'SAMAT', 'Class_Period_Attendance'],
       storageAuthority: 'Google Sheets Authoritative Backend'
+    }, 200);
+  }
+
+  // Public Active Schools Registry (No spreadsheetId returned)
+  if (action === 'publicSchools' || action === 'getPublicSchools') {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    ensureProductionStaffSheetsExist(ss);
+    var schools = getPublicActiveSchools(ss);
+    return createJsonResponse({
+      status: 'success',
+      schools: schools
     }, 200);
   }
 
@@ -175,12 +187,21 @@ function doPost(e) {
       return createJsonResponse(output, 200);
     }
 
-    // Staff Login
+    // Public Active Schools Registry (No spreadsheetId returned)
+    if (action === 'publicSchools' || action === 'getPublicSchools') {
+      ensureProductionStaffSheetsExist(ss);
+      output.schools = getPublicActiveSchools(ss);
+      output.status = 'success';
+      return createJsonResponse(output, 200);
+    }
+
+    // Staff Login (School + Username + Password)
     if (action === 'login') {
+      var schoolId = String(postData.schoolId || (payload && payload.schoolId) || '').trim() || 'SCH-BADR';
       var username = String(postData.username || (payload && payload.username) || '').trim().toLowerCase();
       var password = String(postData.password || (payload && payload.password) || '').trim();
 
-      var authResult = handleStaffLogin(ss, username, password, requestId);
+      var authResult = handleStaffLogin(ss, username, password, requestId, schoolId);
       if (!authResult.success) {
         return createJsonResponse({
           status: 'error',
@@ -193,16 +214,18 @@ function doPost(e) {
       output.message = 'تم تسجيل الدخول وإنشاء جلسة عمل معتمدة بنجاح';
       output.sessionToken = authResult.sessionToken;
       output.expiresAt = authResult.expiresAt;
+      output.schoolId = authResult.schoolId;
       output.user = authResult.user;
       return createJsonResponse(output, 200);
     }
 
-    // Teacher Login (Username / Teacher Code + Password -> Opaque TeacherSessionToken)
+    // Teacher Login (School + Username/TeacherCode + Password -> Opaque TeacherSessionToken)
     if (action === 'teacherLogin') {
+      var teacherSchoolId = String(postData.schoolId || (payload && payload.schoolId) || '').trim() || 'SCH-BADR';
       var tUserOrCode = String(postData.username || postData.teacherCode || (payload && (payload.username || payload.teacherCode)) || '').trim();
       var tPass = String(postData.password || (payload && payload.password) || '').trim();
 
-      var teacherAuth = handleTeacherLogin(ss, tUserOrCode, tPass, requestId);
+      var teacherAuth = handleTeacherLogin(ss, tUserOrCode, tPass, requestId, teacherSchoolId);
       if (!teacherAuth.success) {
         return createJsonResponse({
           status: 'error',
@@ -215,8 +238,8 @@ function doPost(e) {
       output.message = 'تم تسجيل دخول المعلم بنجاح';
       output.teacherSessionToken = teacherAuth.teacherSessionToken;
       output.expiresAt = teacherAuth.expiresAt;
+      output.schoolId = teacherAuth.schoolId;
       output.teacher = teacherAuth.teacher;
-      output.mustChangePassword = teacherAuth.mustChangePassword;
       return createJsonResponse(output, 200);
     }
 
@@ -261,12 +284,39 @@ function doPost(e) {
       return createJsonResponse(output, 200);
     }
 
-    // Public Student Class Schedule (NO login, NO token, strictly published lessons only)
+    // Public Schools Registry List (School selection on Login Screen, NO auth required, returns active schools)
+    if (action === 'getPublicSchools' || action === 'getSchools') {
+      var masterSchoolsList = getSheetData(ss, SHEETS.MASTER_SCHOOLS);
+      if (!masterSchoolsList || masterSchoolsList.length === 0) {
+        masterSchoolsList = [{
+          schoolId: 'SCH-BADR',
+          schoolCode: 'BADR',
+          schoolName: 'مدرسة بدر الإعدادية بنين',
+          status: 'Active'
+        }];
+      }
+      var publicSchools = masterSchoolsList
+        .filter(function(s) { return String(s.status || 'Active').trim() === 'Active'; })
+        .map(function(s) {
+          return {
+            schoolId: String(s.schoolId || '').trim(),
+            schoolCode: String(s.schoolCode || '').trim(),
+            schoolName: String(s.schoolName || '').trim(),
+            status: 'Active'
+          };
+        });
+      output.schools = publicSchools;
+      return createJsonResponse(output, 200);
+    }
+
+    // Public Student Class Schedule (School-Scoped, NO login, NO token, strictly published lessons only)
     if (action === 'getPublicClassSchedule') {
+      var targetSchoolIdForSchedule = String(postData.schoolId || (payload && payload.schoolId) || '').trim() || 'SCH-BADR';
+      var scheduleSchoolSs = getSchoolSpreadsheet(targetSchoolIdForSchedule, ss);
       var gradeParam = String(postData.gradeId || postData.grade || postData.gradeName || (payload && (payload.gradeId || payload.grade || payload.gradeName)) || '').trim();
       var classroomParam = String(postData.classroomId || postData.classroom || postData.classroomName || (payload && (payload.classroomId || payload.classroom || payload.classroomName)) || '').trim();
       
-      var publicScheduleRes = getPublicClassSchedule(ss, gradeParam, classroomParam);
+      var publicScheduleRes = getPublicClassSchedule(scheduleSchoolSs, gradeParam, classroomParam);
       if (!publicScheduleRes.success) {
         return createJsonResponse({
           status: 'error',
@@ -279,26 +329,18 @@ function doPost(e) {
       output.gradeName = publicScheduleRes.gradeName;
       output.classroomName = publicScheduleRes.classroomName;
       output.schedule = publicScheduleRes.schedule;
+      output.schoolId = targetSchoolIdForSchedule;
       return createJsonResponse(output, 200);
     }
 
-    // First Login Password Setup (Single-use activation token verification)
-    if (action === 'firstLoginPasswordSetup') {
-      var setupResult = handleFirstLoginPasswordSetup(ss, payload || postData, requestId);
-      if (!setupResult.success) {
-        return createJsonResponse({
-          status: 'error',
-          code: setupResult.code || 'SETUP_FAILED',
-          message: setupResult.message,
-          requestId: requestId
-        }, 400);
-      }
-
-      output.message = setupResult.message;
-      output.sessionToken = setupResult.sessionToken;
-      output.expiresAt = setupResult.expiresAt;
-      output.user = setupResult.user;
-      return createJsonResponse(output, 200);
+    // First Login Password Setup & Activation Tokens (Permanently Decommissioned via MIG_SCOPE_015)
+    if (action === 'firstLoginPasswordSetup' || action === 'issueUserActivationToken') {
+      return createJsonResponse({
+        status: 'error',
+        code: 'FIRST_LOGIN_DECOMMISSIONED',
+        message: 'تم إلغاء نظام أول دخول وأكواد التفعيل نهائياً. يتم إنشاء وتعيين كلمات المرور مباشرة عبر إدارة النظام.',
+        requestId: requestId
+      }, 410);
     }
 
     // Bootstrap First Admin (Permitted only when no admins exist)
@@ -425,6 +467,129 @@ function doPost(e) {
     var authenticatedUserId = activeSession.userId;
     var authenticatedRole = activeSession.role;
     var authenticatedUsername = activeSession.username;
+    var sessionSchoolId = activeSession.schoolId || 'SCH-BADR';
+
+    // School Management for SystemAdmin
+    if (action === 'adminGetSchools' || action === 'adminCreateSchool' || action === 'adminUpdateSchool') {
+      if (authenticatedRole !== 'SystemAdmin') {
+        return createJsonResponse({
+          status: 'error',
+          code: 'FORBIDDEN_SYSTEM_ADMIN_ONLY',
+          message: 'صلاحية مرفوضة: هذا الإجراء مخصص حصرياً لمدير النظام الشامل (SystemAdmin).',
+          requestId: requestId
+        }, 403);
+      }
+
+      if (action === 'adminGetSchools') {
+        var allSchools = getSheetData(ss, SHEETS.MASTER_SCHOOLS);
+        var safeAll = allSchools.map(function(s) {
+          return {
+            schoolId: s.schoolId,
+            schoolCode: s.schoolCode,
+            schoolName: s.schoolName,
+            status: s.status || 'Active',
+            createdAt: s.createdAt,
+            updatedAt: s.updatedAt
+          };
+        });
+        output.schools = safeAll;
+        return createJsonResponse(output, 200);
+      }
+
+      if (action === 'adminCreateSchool') {
+        var schoolData = (payload && payload.school) || postData.school || {};
+        var newSchoolId = String(schoolData.schoolId || '').trim().toUpperCase();
+        var newSchoolCode = String(schoolData.schoolCode || '').trim().toUpperCase();
+        var newSchoolName = String(schoolData.schoolName || '').trim();
+        var newSsId = String(schoolData.spreadsheetId || '').trim();
+
+        if (!newSchoolId || !newSchoolCode || !newSchoolName) {
+          return createJsonResponse({
+            status: 'error',
+            code: 'INVALID_SCHOOL_DATA',
+            message: 'يرجى إدخال كود المدرسة ورمزها واسمها بالكامل',
+            requestId: requestId
+          }, 400);
+        }
+
+        var existingSchools = getSheetData(ss, SHEETS.MASTER_SCHOOLS);
+        for (var si = 0; si < existingSchools.length; si++) {
+          if (String(existingSchools[si].schoolId || '').toUpperCase() === newSchoolId ||
+              String(existingSchools[si].schoolCode || '').toUpperCase() === newSchoolCode) {
+            return createJsonResponse({
+              status: 'error',
+              code: 'SCHOOL_EXISTS',
+              message: 'المدرسة مسجلة مسبقاً بنفس المعرف أو الرمز',
+              requestId: requestId
+            }, 400);
+          }
+        }
+
+        var createdSchool = {
+          schoolId: newSchoolId,
+          schoolCode: newSchoolCode,
+          schoolName: newSchoolName,
+          spreadsheetId: newSsId,
+          status: 'Active',
+          createdAt: getCairoISOString(),
+          updatedAt: getCairoISOString()
+        };
+        upsertRecord(ss, SHEETS.MASTER_SCHOOLS, 'schoolId', createdSchool);
+        output.message = 'تم تسجيل المدرسة بنجاح';
+        output.school = {
+          schoolId: createdSchool.schoolId,
+          schoolCode: createdSchool.schoolCode,
+          schoolName: createdSchool.schoolName,
+          status: createdSchool.status
+        };
+        return createJsonResponse(output, 200);
+      }
+
+      if (action === 'adminUpdateSchool') {
+        var updSchoolId = String(postData.schoolId || (payload && payload.schoolId) || '').trim().toUpperCase();
+        var updates = (payload && payload.updates) || postData.updates || {};
+        var existingSchoolsList = getSheetData(ss, SHEETS.MASTER_SCHOOLS);
+        var targetSchool = null;
+        for (var sj = 0; sj < existingSchoolsList.length; sj++) {
+          if (String(existingSchoolsList[sj].schoolId || '').toUpperCase() === updSchoolId) {
+            targetSchool = existingSchoolsList[sj];
+            break;
+          }
+        }
+        if (!targetSchool) {
+          return createJsonResponse({
+            status: 'error',
+            code: 'SCHOOL_NOT_FOUND',
+            message: 'المدرسة المحددة غير موجودة',
+            requestId: requestId
+          }, 404);
+        }
+        if (updates.schoolName) targetSchool.schoolName = updates.schoolName;
+        if (updates.status) targetSchool.status = updates.status;
+        targetSchool.updatedAt = getCairoISOString();
+        upsertRecord(ss, SHEETS.MASTER_SCHOOLS, 'schoolId', targetSchool);
+        output.message = 'تم تحديث بيانات المدرسة بنجاح';
+        output.school = {
+          schoolId: targetSchool.schoolId,
+          schoolCode: targetSchool.schoolCode,
+          schoolName: targetSchool.schoolName,
+          status: targetSchool.status
+        };
+        return createJsonResponse(output, 200);
+      }
+    }
+
+    // Cross-School Access Security Gate:
+    // If request attempts to target another school than the session's bound school, REJECT immediately!
+    var requestedSchoolId = postData.schoolId || (payload && payload.schoolId);
+    if (requestedSchoolId && String(requestedSchoolId).trim().toUpperCase() !== String(sessionSchoolId).trim().toUpperCase()) {
+      return createJsonResponse({
+        status: 'error',
+        code: 'SCHOOL_MISMATCH_FORBIDDEN',
+        message: 'تم رفض الطلب: لا يمكن الوصول إلى بيانات مدرسة أخرى باستخدام هذه الجلسة.',
+        requestId: requestId
+      }, 403);
+    }
 
     // Central Role-Based Authorization Gate
     var authzResult = authorizeStaffAction(authenticatedRole, action);
@@ -1182,19 +1347,29 @@ function doPost(e) {
 // -------------------------------------------------------------
 
 /**
- * Handle staff login with salted PBKDF2/HMAC verification
+ * Handle staff login with salted PBKDF2/HMAC verification and school isolation
  */
-function handleStaffLogin(ss, inputUsername, inputPassword, requestId) {
+function handleStaffLogin(masterSs, inputUsername, inputPassword, requestId, schoolId) {
   if (!inputUsername || !inputPassword) {
     return { success: false, code: 'CREDENTIALS_REQUIRED', message: 'يرجى إدخال اسم المستخدم وكلمة المرور' };
   }
 
-  var users = getSheetData(ss, SHEETS.USERS);
+  var targetSchoolId = String(schoolId || 'SCH-BADR').trim().toUpperCase();
+  var schoolCtx = resolveSchoolContext(targetSchoolId, masterSs);
+  if (!schoolCtx) {
+    return { success: false, code: 'SCHOOL_NOT_FOUND', message: 'المدرسة المحددة غير مسجلة في النظام.' };
+  }
+  if (String(schoolCtx.status || 'Active').trim() !== 'Active') {
+    return { success: false, code: 'SCHOOL_INACTIVE', message: 'المدرسة المحددة غير مفعلة حالياً.' };
+  }
+
+  var targetSs = getSchoolSpreadsheet(targetSchoolId, masterSs);
+  var users = getSheetData(targetSs, SHEETS.USERS);
   if (!users || users.length === 0) {
     return {
       success: false,
       code: 'DATABASE_EMPTY',
-      message: 'قاعدة بيانات المستخدمين فارغة. يرجى تهيئة حساب المدير الأول عبر معالج التهيئة الآمن.'
+      message: 'قاعدة بيانات المستخدمين فارغة لهذه المدرسة. يرجى تهيئة حساب مدير النظام.'
     };
   }
 
@@ -1220,7 +1395,7 @@ function handleStaffLogin(ss, inputUsername, inputPassword, requestId) {
   // 1. Permanent Staff-Only Role Enforcement: Block Teacher, Parent, Student from staff login
   var role = String(matchedUser.role || '').trim();
   if (role === 'Teacher' || role === 'Parent' || role === 'Student') {
-    recordAuthoritativeAudit(ss, requestId, inputUsername, role, 'LOGIN_BLOCKED', 'AUTH', matchedUser.id || '', 'محاولة دخول بحساب دور ملغى (' + role + ')');
+    recordAuthoritativeAudit(targetSs, requestId, inputUsername, role, 'LOGIN_BLOCKED', 'AUTH', matchedUser.id || '', 'محاولة دخول بحساب دور ملغى (' + role + ')');
     return {
       success: false,
       code: 'ACCOUNT_ROLE_NOT_ALLOWED',
@@ -1235,15 +1410,11 @@ function handleStaffLogin(ss, inputUsername, inputPassword, requestId) {
     return { success: false, code: 'ACCOUNT_INACTIVE', message: 'هذا الحساب غير مفعل حالياً. يرجى مراجعة مدير النظام.' };
   }
 
-  // 2.5 First-Login Password Setup Check (No default passwords, requires one-time activation token)
-  var isPassInit = (matchedUser.passwordInitialized === true || matchedUser.passwordInitialized === 'true');
-  var hasPasswordHash = Boolean(matchedUser.passwordHash && String(matchedUser.passwordHash).trim().length > 10);
-  if (!isPassInit && !hasPasswordHash) {
+  if (status === 'needs setup' || (!matchedUser.passwordHash && !matchedUser.password)) {
     return {
       success: false,
-      code: 'PASSWORD_SETUP_REQUIRED',
-      loginNumber: matchedUser.loginNumber || '',
-      message: 'حسابك يتطلب إنشاء كلمة المرور لأول مرة. يرجى استخدام كود التفعيل الممنوح من إدارة المدرسة.'
+      code: 'ACCOUNT_NEEDS_SETUP',
+      message: 'الحساب بحاجة لتعيين كلمة مرور بواسطة إدارة النظام قبل تسجيل الدخول.'
     };
   }
 
@@ -1263,13 +1434,13 @@ function handleStaffLogin(ss, inputUsername, inputPassword, requestId) {
       try {
         var newSalt = Utilities.getUuid().replace(/-/g, '');
         var newHash = computeSaltedHash(inputPassword, newSalt, PBKDF2_ITERATIONS);
-        updateUserPasswordColumns(ss, userRowIndex, newHash, newSalt, 'PBKDF2-HMAC-SHA256', PBKDF2_ITERATIONS);
+        updateUserPasswordColumns(targetSs, userRowIndex, newHash, newSalt, 'PBKDF2-HMAC-SHA256', PBKDF2_ITERATIONS);
       } catch (upgradeErr) {}
     }
   }
 
   if (!passwordValid) {
-    recordAuthoritativeAudit(ss, requestId, inputUsername, role, 'LOGIN_FAILED', 'AUTH', matchedUser.id || '', 'محاولة تسجيل دخول بكلمة مرور خاطئة');
+    recordAuthoritativeAudit(targetSs, requestId, inputUsername, role, 'LOGIN_FAILED', 'AUTH', matchedUser.id || '', 'محاولة تسجيل دخول بكلمة مرور خاطئة');
     return { success: false, code: 'INVALID_CREDENTIALS', message: 'اسم المستخدم أو كلمة المرور غير صحيحة.' };
   }
 
@@ -1288,19 +1459,28 @@ function handleStaffLogin(ss, inputUsername, inputPassword, requestId) {
     matchedUser.username,
     matchedUser.fullName,
     matchedUser.role,
+    targetSchoolId,
     nowStr,
     expiresStr,
     'ACTIVE'
   ];
 
-  var sessionsSheet = ss.getSheetByName(SHEETS.SESSIONS);
+  var sessionsSheet = targetSs.getSheetByName(SHEETS.SESSIONS);
   if (sessionsSheet) {
+    ensureHeaderColumn(sessionsSheet, 'schoolId');
     sessionsSheet.appendRow(sessionRow);
+  }
+  if (masterSs.getId() !== targetSs.getId()) {
+    var masterSessions = masterSs.getSheetByName(SHEETS.SESSIONS);
+    if (masterSessions) {
+      ensureHeaderColumn(masterSessions, 'schoolId');
+      masterSessions.appendRow(sessionRow);
+    }
   }
 
   // Update lastLogin in Users sheet
   try {
-    var usersSheet = ss.getSheetByName(SHEETS.USERS);
+    var usersSheet = targetSs.getSheetByName(SHEETS.USERS);
     var headers = usersSheet.getRange(1, 1, 1, usersSheet.getLastColumn()).getValues()[0];
     var lastLoginCol = headers.indexOf('lastLogin') + 1;
     if (lastLoginCol > 0 && userRowIndex > 0) {
@@ -1308,13 +1488,14 @@ function handleStaffLogin(ss, inputUsername, inputPassword, requestId) {
     }
   } catch (uErr) {}
 
-  recordAuthoritativeAudit(ss, requestId, matchedUser.username, matchedUser.role, 'LOGIN_SUCCESS', 'AUTH', matchedUser.id, 'تسجيل دخول ناجح وإنشاء جلسة عمل');
+  recordAuthoritativeAudit(targetSs, requestId, matchedUser.username, matchedUser.role, 'LOGIN_SUCCESS', 'AUTH', matchedUser.id, 'تسجيل دخول ناجح وإنشاء جلسة عمل');
 
   var sanitizedUser = {
     id: matchedUser.id,
     username: matchedUser.username,
     fullName: matchedUser.fullName,
     role: matchedUser.role,
+    schoolId: targetSchoolId,
     department: String(matchedUser.department || ''),
     lastLogin: nowStr
   };
@@ -1323,15 +1504,16 @@ function handleStaffLogin(ss, inputUsername, inputPassword, requestId) {
     success: true,
     sessionToken: sessionToken,
     expiresAt: expiresStr,
+    schoolId: targetSchoolId,
     user: sanitizedUser
   };
 }
 
 /**
- * Handle Teacher Portal Login (Username / Teacher Code + Password -> Teacher Session Token)
+ * Handle Teacher Portal Login (School + Username / Teacher Code + Password -> Teacher Session Token)
  * Strictly password-based (PIN retired via MIG_SCOPE_013_RETIRE_TEACHER_PIN)
  */
-function handleTeacherLogin(ss, usernameOrCode, password, requestId) {
+function handleTeacherLogin(masterSs, usernameOrCode, password, requestId, schoolId) {
   var cleanInput = String(usernameOrCode || '').trim();
   var inputPassword = String(password || '').trim();
 
@@ -1339,10 +1521,20 @@ function handleTeacherLogin(ss, usernameOrCode, password, requestId) {
     return { success: false, code: 'INVALID_CREDENTIALS', message: 'اسم المستخدم أو كلمة المرور غير صحيحة' };
   }
 
+  var targetSchoolId = String(schoolId || 'SCH-BADR').trim().toUpperCase();
+  var schoolCtx = resolveSchoolContext(targetSchoolId, masterSs);
+  if (!schoolCtx) {
+    return { success: false, code: 'SCHOOL_NOT_FOUND', message: 'المدرسة المحددة غير مسجلة في النظام.' };
+  }
+  if (String(schoolCtx.status || 'Active').trim() !== 'Active') {
+    return { success: false, code: 'SCHOOL_INACTIVE', message: 'المدرسة المحددة غير مفعلة حالياً.' };
+  }
+
+  var targetSs = getSchoolSpreadsheet(targetSchoolId, masterSs);
   var lowerInput = cleanInput.toLowerCase();
   var upperInput = cleanInput.toUpperCase();
 
-  var credentials = getSheetData(ss, SHEETS.TEACHER_CREDENTIALS);
+  var credentials = getSheetData(targetSs, SHEETS.TEACHER_CREDENTIALS);
   var cred = null;
   for (var j = 0; j < credentials.length; j++) {
     var c = credentials[j];
@@ -1363,7 +1555,7 @@ function handleTeacherLogin(ss, usernameOrCode, password, requestId) {
     if (cred.lockedUntil) {
       var lockTime = new Date(cred.lockedUntil).getTime();
       if (lockTime > new Date().getTime()) {
-        recordAuthoritativeAudit(ss, requestId, cleanInput, 'Teacher', 'TEACHER_LOGIN_BLOCKED', 'TEACHER_CREDENTIALS', cred.employeeId || cred.teacherId || '', 'محاولة دخول بحساب مجمد مؤقتاً');
+        recordAuthoritativeAudit(targetSs, requestId, cleanInput, 'Teacher', 'TEACHER_LOGIN_BLOCKED', 'TEACHER_CREDENTIALS', cred.employeeId || cred.teacherId || '', 'محاولة دخول بحساب مجمد مؤقتاً');
         return {
           success: false,
           code: 'ACCOUNT_TEMPORARILY_LOCKED',
@@ -1377,8 +1569,8 @@ function handleTeacherLogin(ss, usernameOrCode, password, requestId) {
       return { success: false, code: 'TEACHER_INACTIVE', message: 'حساب المعلم غير نشط حالياً، يرجى مراجعة إدارة شؤون المعلمين' };
     }
 
-    if (credStatus === 'needs setup' || credStatus === 'passwordresetrequired') {
-      return { success: false, code: 'PASSWORD_RESET_REQUIRED', message: 'الحساب يتطلب تعيين كلمة مرور من قبل إدارة المدرسة قبل تسجيل الدخول' };
+    if (credStatus === 'needs setup' || !cred.passwordHash) {
+      return { success: false, code: 'ACCOUNT_NEEDS_SETUP', message: 'حساب المعلم بحاجة لتعيين كلمة مرور بواسطة إدارة شؤون المعلمين' };
     }
 
     // Verify password ONLY (PIN system retired - no pinHash fallback allowed)
@@ -1400,9 +1592,9 @@ function handleTeacherLogin(ss, usernameOrCode, password, requestId) {
       if (failedCount >= 5) {
         cred.lockedUntil = new Date(Date.now() + 15 * 60 * 1000).toISOString();
       }
-      upsertRecord(ss, SHEETS.TEACHER_CREDENTIALS, 'employeeId', cred);
+      upsertRecord(targetSs, SHEETS.TEACHER_CREDENTIALS, 'employeeId', cred);
 
-      recordAuthoritativeAudit(ss, requestId, cleanInput, 'Teacher', 'TEACHER_LOGIN_FAIL', 'TEACHER_CREDENTIALS', cred.employeeId || cred.teacherId || '', 'محاولة دخول معلم فاشلة');
+      recordAuthoritativeAudit(targetSs, requestId, cleanInput, 'Teacher', 'TEACHER_LOGIN_FAIL', 'TEACHER_CREDENTIALS', cred.employeeId || cred.teacherId || '', 'محاولة دخول معلم فاشلة');
       return { success: false, code: 'INVALID_CREDENTIALS', message: 'اسم المستخدم أو كلمة المرور غير صحيحة' };
     }
 
@@ -1410,10 +1602,10 @@ function handleTeacherLogin(ss, usernameOrCode, password, requestId) {
     cred.failedLoginAttempts = 0;
     cred.lockedUntil = '';
     cred.lastLoginAt = getCairoISOString();
-    upsertRecord(ss, SHEETS.TEACHER_CREDENTIALS, 'employeeId', cred);
+    upsertRecord(targetSs, SHEETS.TEACHER_CREDENTIALS, 'employeeId', cred);
 
     // Retrieve employee info
-    var employees = getSheetData(ss, SHEETS.EMPLOYEES);
+    var employees = getSheetData(targetSs, SHEETS.EMPLOYEES);
     var targetEmpId = cred.employeeId || cred.teacherId;
     var teacher = employees.find(function(e) { return e.id === targetEmpId; });
     var teacherName = teacher ? teacher.name : (cred.username || 'المعلم');
@@ -1433,55 +1625,43 @@ function handleTeacherLogin(ss, usernameOrCode, password, requestId) {
       targetEmpId,
       teacherCode,
       teacherName,
+      targetSchoolId,
       nowStr,
       expiresStr,
       'ACTIVE'
     ];
 
-    var tSheet = ss.getSheetByName(SHEETS.TEACHER_SESSIONS);
+    var tSheet = targetSs.getSheetByName(SHEETS.TEACHER_SESSIONS);
     if (tSheet) {
+      ensureHeaderColumn(tSheet, 'schoolId');
       tSheet.appendRow(sessionRow);
     }
+    if (masterSs.getId() !== targetSs.getId()) {
+      var masterTSessions = masterSs.getSheetByName(SHEETS.TEACHER_SESSIONS);
+      if (masterTSessions) {
+        ensureHeaderColumn(masterTSessions, 'schoolId');
+        masterTSessions.appendRow(sessionRow);
+      }
+    }
 
-    recordAuthoritativeAudit(ss, requestId, cred.username || teacherCode, 'Teacher', 'TEACHER_LOGIN_SUCCESS', 'TEACHER_AUTH', targetEmpId, 'تسجيل دخول معلم وإنشاء جلسة');
+    recordAuthoritativeAudit(targetSs, requestId, cred.username || teacherCode, 'Teacher', 'TEACHER_LOGIN_SUCCESS', 'TEACHER_AUTH', targetEmpId, 'تسجيل دخول معلم وإنشاء جلسة');
 
     return {
       success: true,
       teacherSessionToken: token,
       expiresAt: expiresStr,
-      mustChangePassword: (cred.mustChangePassword === true || cred.mustChangePassword === 'true'),
+      schoolId: targetSchoolId,
       teacher: {
         teacherId: targetEmpId,
         employeeId: targetEmpId,
         teacherCode: teacherCode,
         teacherName: teacherName,
+        schoolId: targetSchoolId,
         department: (teacher && teacher.department) || 'الهيئة التعليمية',
         teachingSubjects: teacher && teacher.teachingSubjects ? (Array.isArray(teacher.teachingSubjects) ? teacher.teachingSubjects : String(teacher.teachingSubjects).split(',').map(function(s){return s.trim();})) : [],
         weeklyPeriodLimit: parseInt((teacher && teacher.weeklyPeriodLimit) || '30', 10)
       }
     };
-  }
-
-  // Fallback: check Employees sheet for legacy loginNumber or teacherCode
-  var allEmployees = getSheetData(ss, SHEETS.EMPLOYEES);
-  var legacyTeacher = null;
-  for (var i = 0; i < allEmployees.length; i++) {
-    var emp = allEmployees[i];
-    var empCode = String(emp.teacherCode || '').trim().toUpperCase();
-    var empLogin = String(emp.loginNumber || '').trim();
-    if (empCode === upperInput || empLogin === cleanInput || (emp.id && emp.id.toUpperCase() === upperInput)) {
-      legacyTeacher = emp;
-      break;
-    }
-  }
-
-  if (!legacyTeacher) {
-    return { success: false, code: 'INVALID_CREDENTIALS', message: 'اسم المستخدم أو كلمة المرور غير صحيحة' };
-  }
-
-  var legStatus = String(legacyTeacher.status || 'Active').trim().toLowerCase();
-  if (legStatus === 'inactive' || legStatus === 'suspended') {
-    return { success: false, code: 'TEACHER_INACTIVE', message: 'حساب المعلم غير نشط حالياً، يرجى مراجعة إدارة شؤون المعلمين' };
   }
 
   return { success: false, code: 'INVALID_CREDENTIALS', message: 'اسم المستخدم أو كلمة المرور غير صحيحة' };
@@ -1736,6 +1916,7 @@ function validateSessionToken(ss, token) {
       username: matched.username,
       fullName: matched.fullName,
       role: matched.role,
+      schoolId: matched.schoolId || 'SCH-BADR',
       expiresAt: matched.expiresAt
     }
   };
@@ -1770,10 +1951,13 @@ function validateTeacherSessionToken(ss, token) {
   return {
     valid: true,
     session: {
+      sessionId: matched.sessionId,
       teacherId: matched.teacherId,
       employeeId: matched.employeeId,
       teacherCode: matched.teacherCode,
-      teacherName: matched.teacherName
+      teacherName: matched.teacherName,
+      schoolId: matched.schoolId || 'SCH-BADR',
+      expiresAt: matched.expiresAt
     }
   };
 }
@@ -2699,235 +2883,22 @@ function saveUserSecure(ss, payload, authenticatedUsername, requestId) {
   return sanitized;
 }
 
+/**
+ * MIG_SCOPE_015: First-Login & Activation System Permanently Decommissioned
+ */
 function handleFirstLoginPasswordSetup(ss, payload, requestId) {
-  if (!payload) {
-    return { success: false, code: 'INVALID_PAYLOAD', message: 'البيانات المرسلة غير مكتملة' };
-  }
-
-  var inputLoginNumber = String(payload.loginNumber || payload.username || '').trim();
-  var activationToken = String(payload.activationToken || payload.token || '').trim();
-  var newPassword = String(payload.newPassword || '').trim();
-  var confirmPassword = String(payload.confirmPassword || '').trim();
-
-  if (!inputLoginNumber || !activationToken || !newPassword) {
-    return { success: false, code: 'FIELDS_REQUIRED', message: 'يرجى إدخال رقم الدخول وكود التفعيل وكلمة المرور الجديدة' };
-  }
-
-  if (newPassword.length < 8) {
-    return { success: false, code: 'PASSWORD_TOO_SHORT', message: 'كلمة المرور يجب ألا تقل عن 8 أحرف' };
-  }
-
-  // Must contain letters and numbers
-  if (!/[A-Za-z\u0600-\u06FF]/.test(newPassword) || !/[0-9]/.test(newPassword)) {
-    return { success: false, code: 'PASSWORD_COMPLEXITY_FAILED', message: 'كلمة المرور يجب أن تحتوي على أحرف وأرقام معاً' };
-  }
-
-  if (confirmPassword && newPassword !== confirmPassword) {
-    return { success: false, code: 'PASSWORDS_DO_NOT_MATCH', message: 'كلمة المرور وتأكيدها غير متطابقين' };
-  }
-
-  // Find user in Users sheet
-  var usersSheet = ss.getSheetByName(SHEETS.USERS);
-  if (!usersSheet) {
-    return { success: false, code: 'USERS_SHEET_MISSING', message: 'جدول المستخدمين غير متوفر' };
-  }
-
-  var data = usersSheet.getDataRange().getValues();
-  if (data.length <= 1) {
-    return { success: false, code: 'USER_NOT_FOUND', message: 'بيانات الدخول غير صحيحة أو الحساب غير موجود' };
-  }
-
-  var headers = data[0];
-  var idCol = headers.indexOf('id');
-  var userCol = headers.indexOf('username');
-  var loginNumCol = headers.indexOf('loginNumber');
-  var statusCol = headers.indexOf('status');
-  var tokenHashCol = headers.indexOf('activationTokenHash');
-  var expiresAtCol = headers.indexOf('activationExpiresAt');
-  var passInitCol = headers.indexOf('passwordInitialized');
-  var passHashCol = headers.indexOf('passwordHash');
-  var saltCol = headers.indexOf('passwordSalt');
-  var algoCol = headers.indexOf('passwordAlgorithm');
-  var iterCol = headers.indexOf('passwordIterations');
-  var passChangedCol = headers.indexOf('passwordChangedAt');
-
-  var matchedRow = -1;
-  var userRecord = null;
-
-  for (var i = 1; i < data.length; i++) {
-    var row = data[i];
-    var uId = idCol >= 0 ? String(row[idCol] || '').trim() : '';
-    var uName = userCol >= 0 ? String(row[userCol] || '').trim().toLowerCase() : '';
-    var uLogin = loginNumCol >= 0 ? String(row[loginNumCol] || '').trim() : '';
-
-    if (uLogin === inputLoginNumber || uName === inputLoginNumber.toLowerCase() || uId === inputLoginNumber) {
-      matchedRow = i + 1;
-      userRecord = row;
-      break;
-    }
-  }
-
-  if (matchedRow === -1 || !userRecord) {
-    return { success: false, code: 'USER_NOT_FOUND', message: 'بيانات الدخول غير صحيحة أو الحساب غير موجود' };
-  }
-
-  // Check user status
-  var status = statusCol >= 0 ? String(userRecord[statusCol] || 'Active').trim().toLowerCase() : 'active';
-  if (status === 'inactive' || status === 'suspended' || status === 'disabled') {
-    return { success: false, code: 'ACCOUNT_INACTIVE', message: 'هذا الحساب غير نشط حالياً. يرجى مراجعة إدارة المدرسة.' };
-  }
-
-  // Validate activation token hash
-  var storedTokenHash = tokenHashCol >= 0 ? String(userRecord[tokenHashCol] || '').trim() : '';
-  if (!storedTokenHash) {
-    return { success: false, code: 'NO_ACTIVATION_TOKEN', message: 'لم يتم إصدار كود تفعيل لهذا الحساب أو تم استخدامه بالفعل. يرجى مراجعة إدارة المدرسة.' };
-  }
-
-  var providedTokenHash = hashStringSHA256(activationToken);
-  if (providedTokenHash !== storedTokenHash) {
-    recordAuthoritativeAudit(ss, requestId, inputLoginNumber, 'AUTH', 'ACTIVATION_FAIL', 'AUTH', '', 'فشل تفعيل الحساب بكود غير صحيح');
-    return { success: false, code: 'INVALID_ACTIVATION_TOKEN', message: 'كود التفعيل غير صحيح' };
-  }
-
-  // Check expiration
-  var expiresAtVal = expiresAtCol >= 0 ? userRecord[expiresAtCol] : '';
-  if (expiresAtVal) {
-    var expDate = new Date(expiresAtVal);
-    if (!isNaN(expDate.getTime()) && new Date() > expDate) {
-      return { success: false, code: 'ACTIVATION_TOKEN_EXPIRED', message: 'انتهت صلاحية كود التفعيل. يرجى طلب كود تفعيل جديد من الإدارة.' };
-    }
-  }
-
-  // Set new password
-  var salt = Utilities.getUuid().replace(/-/g, '');
-  var newHash = computeSaltedHash(newPassword, salt, PBKDF2_ITERATIONS);
-  var nowStr = getCairoISOString();
-
-  if (passHashCol >= 0) usersSheet.getRange(matchedRow, passHashCol + 1).setValue(newHash);
-  if (saltCol >= 0) usersSheet.getRange(matchedRow, saltCol + 1).setValue(salt);
-  if (algoCol >= 0) usersSheet.getRange(matchedRow, algoCol + 1).setValue('PBKDF2-HMAC-SHA256');
-  if (iterCol >= 0) usersSheet.getRange(matchedRow, iterCol + 1).setValue(PBKDF2_ITERATIONS);
-  if (passInitCol >= 0) usersSheet.getRange(matchedRow, passInitCol + 1).setValue(true);
-  if (passChangedCol >= 0) usersSheet.getRange(matchedRow, passChangedCol + 1).setValue(nowStr);
-
-  // Clear activation token immediately (SINGLE USE GUARANTEE!)
-  if (tokenHashCol >= 0) usersSheet.getRange(matchedRow, tokenHashCol + 1).setValue('');
-  if (expiresAtCol >= 0) usersSheet.getRange(matchedRow, expiresAtCol + 1).setValue('');
-
-  // Issue session token
-  var sessionToken = generateSecureRandomToken(48);
-  var tokenHash = hashStringSHA256(sessionToken);
-  var expiresDate = new Date(Date.now() + (24 * 60 * 60 * 1000));
-  var expiresStr = Utilities.formatDate(expiresDate, 'Africa/Cairo', "yyyy-MM-dd'T'HH:mm:ssXXX");
-
-  var uObjId = idCol >= 0 ? userRecord[idCol] : '';
-  var uObjName = userCol >= 0 ? userRecord[userCol] : '';
-  var fullNameCol = headers.indexOf('fullName');
-  var uFullName = fullNameCol >= 0 ? userRecord[fullNameCol] : uObjName;
-  var roleCol = headers.indexOf('role');
-  var uRole = roleCol >= 0 ? userRecord[roleCol] : 'Viewer';
-
-  upsertRecord(ss, SHEETS.SESSIONS, 'sessionId', {
-    sessionId: 'SES_' + Utilities.getUuid().substring(0, 10),
-    userId: uObjId,
-    username: uObjName,
-    fullName: uFullName,
-    role: uRole,
-    tokenHash: tokenHash,
-    status: 'ACTIVE',
-    ipAddress: '',
-    userAgent: '',
-    createdAt: nowStr,
-    expiresAt: expiresStr
-  });
-
-  recordAuthoritativeAudit(ss, requestId, uObjName, uRole, 'FIRST_LOGIN_SUCCESS', 'AUTH', uObjId, 'تم إعداد كلمة المرور وتفعيل الحساب لأول مرة بنجاح');
-
   return {
-    success: true,
-    sessionToken: sessionToken,
-    expiresAt: expiresStr,
-    user: {
-      id: uObjId,
-      username: uObjName,
-      fullName: uFullName,
-      role: uRole,
-      loginNumber: loginNumCol >= 0 ? userRecord[loginNumCol] : '',
-      passwordInitialized: true
-    },
-    message: 'تم إنشاء كلمة المرور وتفعيل الحساب بنجاح'
+    success: false,
+    code: 'FIRST_LOGIN_DECOMMISSIONED',
+    message: 'تم إلغاء نظام أول دخول وأكواد التفعيل نهائياً. يتم إنشاء وتعيين كلمات المرور مباشرة عبر إدارة النظام.'
   };
 }
 
 function issueUserActivationTokenSecure(ss, targetUserId, authenticatedUsername, requestId) {
-  var usersSheet = ss.getSheetByName(SHEETS.USERS);
-  if (!usersSheet) return { success: false, message: 'جدول المستخدمين غير متوفر' };
-
-  var data = usersSheet.getDataRange().getValues();
-  if (data.length <= 1) return { success: false, message: 'المستخدم غير موجود' };
-
-  var headers = data[0];
-  var idCol = headers.indexOf('id');
-  var loginNumCol = headers.indexOf('loginNumber');
-  var tokenHashCol = headers.indexOf('activationTokenHash');
-  var expiresAtCol = headers.indexOf('activationExpiresAt');
-  var passInitCol = headers.indexOf('passwordInitialized');
-
-  var lastCol = headers.length;
-  if (loginNumCol < 0) {
-    usersSheet.getRange(1, lastCol + 1).setValue('loginNumber');
-    loginNumCol = lastCol++;
-  }
-  if (tokenHashCol < 0) {
-    usersSheet.getRange(1, lastCol + 1).setValue('activationTokenHash');
-    tokenHashCol = lastCol++;
-  }
-  if (expiresAtCol < 0) {
-    usersSheet.getRange(1, lastCol + 1).setValue('activationExpiresAt');
-    expiresAtCol = lastCol++;
-  }
-  if (passInitCol < 0) {
-    usersSheet.getRange(1, lastCol + 1).setValue('passwordInitialized');
-    passInitCol = lastCol++;
-  }
-
-  var targetRow = -1;
-  var targetUser = null;
-  for (var i = 1; i < data.length; i++) {
-    if (data[i][idCol] === targetUserId) {
-      targetRow = i + 1;
-      targetUser = data[i];
-      break;
-    }
-  }
-
-  if (targetRow === -1) return { success: false, message: 'المستخدم غير موجود' };
-
-  var userLoginNum = loginNumCol >= 0 ? targetUser[loginNumCol] : '';
-  if (!userLoginNum) {
-    userLoginNum = getNextLoginNumber(ss);
-    usersSheet.getRange(targetRow, loginNumCol + 1).setValue(userLoginNum);
-  }
-
-  // Cryptographically strong uppercase 8-char alphanumeric token
-  var rawToken = Utilities.getUuid().replace(/-/g, '').substring(0, 8).toUpperCase();
-  var tokenHash = hashStringSHA256(rawToken);
-
-  var expiryDate = new Date(Date.now() + (7 * 24 * 60 * 60 * 1000));
-  var expiryStr = Utilities.formatDate(expiryDate, 'Africa/Cairo', "yyyy-MM-dd'T'HH:mm:ssXXX");
-
-  usersSheet.getRange(targetRow, tokenHashCol + 1).setValue(tokenHash);
-  usersSheet.getRange(targetRow, expiresAtCol + 1).setValue(expiryStr);
-  usersSheet.getRange(targetRow, passInitCol + 1).setValue(false);
-
-  recordAuthoritativeAudit(ss, requestId, authenticatedUsername, 'Admin', 'ISSUE_ACTIVATION_TOKEN', 'USERS', targetUserId, 'إصدار كود تفعيل لمرة واحدة للمستخدم');
-
   return {
-    success: true,
-    loginNumber: userLoginNum,
-    activationToken: rawToken,
-    expiresAt: expiryStr,
-    message: 'تم إصدار كود التفعيل لمرة واحدة بنجاح'
+    success: false,
+    code: 'ACTIVATION_DECOMMISSIONED',
+    message: 'تم إلغاء نظام أكواد التفعيل نهائياً. يتم تعيين كلمة المرور مباشرة عبر إدارة النظام.'
   };
 }
 
@@ -3272,8 +3243,9 @@ function executeServerSideArchive(ss, authenticatedUsername, requestId) {
 
 function ensureProductionStaffSheetsExist(ss) {
   var sheetDefinitions = {
+    Master_Schools: ['schoolId', 'schoolCode', 'schoolName', 'spreadsheetId', 'status', 'createdAt', 'updatedAt'],
     Users: ['id', 'username', 'passwordHash', 'passwordSalt', 'passwordAlgorithm', 'passwordIterations', 'fullName', 'role', 'status', 'department', 'email', 'createdAt', 'lastLogin', 'passwordChangedAt'],
-    Sessions: ['sessionId', 'tokenHash', 'userId', 'username', 'fullName', 'role', 'createdAt', 'expiresAt', 'status'],
+    Sessions: ['sessionId', 'tokenHash', 'userId', 'username', 'fullName', 'role', 'schoolId', 'createdAt', 'expiresAt', 'status'],
     Employees: ['id', 'employeeNumber', 'name', 'nationalId', 'department', 'jobTitle', 'teacherCode', 'hireDate', 'workingHours', 'workStartTime', 'workEndTime', 'daysOff', 'status', 'phone', 'email'],
     Attendance: ['id', 'employeeId', 'employeeName', 'department', 'date', 'dayName', 'checkIn', 'checkOut', 'workingHours', 'lateMinutes', 'earlyLeaveMinutes', 'overtimeHours', 'status', 'notes', 'checkInTimestamp', 'checkOutTimestamp', 'updatedAt'],
     Leaves: ['id', 'employeeId', 'employeeName', 'department', 'leaveType', 'startDate', 'endDate', 'daysCount', 'status', 'reason', 'createdAt', 'approvedBy'],
@@ -3303,7 +3275,7 @@ function ensureProductionStaffSheetsExist(ss) {
     Teacher_Resources: ['id', 'title', 'topic', 'subject', 'classroom', 'classroomId', 'teacherId', 'teacherName', 'studentResourceUrl', 'presentationUrl', 'preparationNotesUrl', 'visibility', 'createdAt', 'updatedAt'],
     Exam_Schedules: ['id', 'academicYearId', 'termId', 'examType', 'subjectId', 'subjectName', 'gradeId', 'gradeName', 'classroomId', 'classroomName', 'examDate', 'startTime', 'durationMinutes', 'roomId', 'roomName', 'chiefInvigilatorId', 'chiefInvigilatorName', 'instructions', 'status', 'createdAt', 'updatedAt'],
     Student_Access_Tokens: ['id', 'studentId', 'studentCode', 'tokenHash', 'issuedAt', 'expiresAt', 'revokedAt', 'status', 'lastAccessedAt', 'createdBy'],
-    Teacher_Sessions: ['sessionId', 'tokenHash', 'teacherId', 'employeeId', 'teacherCode', 'teacherName', 'createdAt', 'expiresAt', 'status'],
+    Teacher_Sessions: ['sessionId', 'tokenHash', 'teacherId', 'employeeId', 'teacherCode', 'teacherName', 'schoolId', 'createdAt', 'expiresAt', 'status'],
     Teacher_Credentials: ['id', 'employeeId', 'teacherCode', 'username', 'usernameNormalized', 'passwordHash', 'passwordSalt', 'passwordAlgorithm', 'passwordIterations', 'status', 'mustChangePassword', 'failedLoginAttempts', 'lockedUntil', 'lastLoginAt', 'createdAt', 'updatedAt', 'teacherId', 'pinHash', 'salt']
   };
 
@@ -3327,6 +3299,9 @@ function ensureProductionStaffSheetsExist(ss) {
 
   // Idempotent migration MIG_SCOPE_013: safely retire legacy PIN support from Teacher_Credentials
   runMigrationScope013RetireTeacherPin(ss);
+
+  // Idempotent migration MIG_SCOPE_015: multi-school isolation & decommission activation
+  runMigrationScope015MultiSchoolAndDecommissionActivation(ss);
 }
 
 function getSheetData(ss, sheetName) {
@@ -4013,3 +3988,197 @@ function runMigrationScope013RetireTeacherPin(ss) {
     message: 'Migration MIG_SCOPE_013_RETIRE_TEACHER_PIN completed for ' + updatedCount + ' accounts'
   };
 }
+
+/**
+ * Ensures a column header exists in a sheet. If missing, appends it.
+ * Returns 1-based column index.
+ */
+function ensureHeaderColumn(sheet, columnName) {
+  if (!sheet) return -1;
+  var lastCol = sheet.getLastColumn();
+  if (lastCol === 0) {
+    sheet.getRange(1, 1).setValue(columnName);
+    return 1;
+  }
+  var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  var colIdx = headers.indexOf(columnName);
+  if (colIdx !== -1) return colIdx + 1;
+  sheet.getRange(1, lastCol + 1).setValue(columnName);
+  return lastCol + 1;
+}
+
+/**
+ * Idempotent Migration: MIG_SCOPE_015_MULTI_SCHOOL_AND_DECOMMISSION_ACTIVATION
+ * 1. Ensures Master_Schools registry exists with default school.
+ * 2. Ensures Sessions and Teacher_Sessions contain schoolId column.
+ * 3. Decommissions activation token columns from Users sheet.
+ */
+function runMigrationScope015MultiSchoolAndDecommissionActivation(ss) {
+  var masterSheet = ss.getSheetByName(SHEETS.MASTER_SCHOOLS);
+  if (!masterSheet) {
+    masterSheet = ss.insertSheet(SHEETS.MASTER_SCHOOLS);
+    var mHeaders = ['schoolId', 'schoolCode', 'schoolName', 'spreadsheetId', 'status', 'createdAt', 'updatedAt'];
+    masterSheet.getRange(1, 1, 1, mHeaders.length).setValues([mHeaders]);
+    styleHeaderRow(masterSheet, mHeaders.length);
+  }
+
+  // Seed default school if empty
+  if (masterSheet.getLastRow() <= 1) {
+    var nowIso = getCairoISOString();
+    masterSheet.appendRow([
+      'SCH-BADR',
+      'BADR',
+      'مدرسة بدر الحديثة',
+      ss.getId(),
+      'Active',
+      nowIso,
+      nowIso
+    ]);
+  }
+
+  // Ensure Sessions has schoolId column
+  var sessionsSheet = ss.getSheetByName(SHEETS.SESSIONS);
+  if (sessionsSheet) {
+    var sCol = ensureHeaderColumn(sessionsSheet, 'schoolId');
+    if (sessionsSheet.getLastRow() > 1 && sCol > 0) {
+      var sData = sessionsSheet.getRange(2, sCol, sessionsSheet.getLastRow() - 1, 1).getValues();
+      var sNeedsUpdate = false;
+      for (var si = 0; si < sData.length; si++) {
+        if (!sData[si][0]) {
+          sData[si][0] = 'SCH-BADR';
+          sNeedsUpdate = true;
+        }
+      }
+      if (sNeedsUpdate) {
+        sessionsSheet.getRange(2, sCol, sData.length, 1).setValues(sData);
+      }
+    }
+  }
+
+  // Ensure Teacher_Sessions has schoolId column
+  var teacherSessionsSheet = ss.getSheetByName(SHEETS.TEACHER_SESSIONS);
+  if (teacherSessionsSheet) {
+    var tsCol = ensureHeaderColumn(teacherSessionsSheet, 'schoolId');
+    if (teacherSessionsSheet.getLastRow() > 1 && tsCol > 0) {
+      var tsData = teacherSessionsSheet.getRange(2, tsCol, teacherSessionsSheet.getLastRow() - 1, 1).getValues();
+      var tsNeedsUpdate = false;
+      for (var tsi = 0; tsi < tsData.length; tsi++) {
+        if (!tsData[tsi][0]) {
+          tsData[tsi][0] = 'SCH-BADR';
+          tsNeedsUpdate = true;
+        }
+      }
+      if (tsNeedsUpdate) {
+        teacherSessionsSheet.getRange(2, tsCol, tsData.length, 1).setValues(tsData);
+      }
+    }
+  }
+
+  // Clear legacy activation tokens from Users sheet
+  var usersSheet = ss.getSheetByName(SHEETS.USERS);
+  if (usersSheet && usersSheet.getLastRow() > 1) {
+    var uData = usersSheet.getDataRange().getValues();
+    var uHeaders = uData[0];
+    var actTokenCol = uHeaders.indexOf('activationTokenHash');
+    var actExpCol = uHeaders.indexOf('activationExpiresAt');
+    if (actTokenCol >= 0) {
+      for (var ur = 1; ur < uData.length; ur++) {
+        if (uData[ur][actTokenCol]) {
+          usersSheet.getRange(ur + 1, actTokenCol + 1).setValue('');
+        }
+      }
+    }
+    if (actExpCol >= 0) {
+      for (var ur2 = 1; ur2 < uData.length; ur2++) {
+        if (uData[ur2][actExpCol]) {
+          usersSheet.getRange(ur2 + 1, actExpCol + 1).setValue('');
+        }
+      }
+    }
+  }
+
+  return { success: true, message: 'Migration MIG_SCOPE_015 completed successfully' };
+}
+
+/**
+ * Resolves a school context from Master_Schools in masterSs.
+ * @param {string} schoolId
+ * @param {Spreadsheet} masterSs
+ * @returns {Object|null}
+ */
+function resolveSchoolContext(schoolId, masterSs) {
+  if (!schoolId) return null;
+  var cleanId = String(schoolId).trim().toUpperCase();
+  var masterSheet = masterSs.getSheetByName(SHEETS.MASTER_SCHOOLS);
+  if (!masterSheet) {
+    runMigrationScope015MultiSchoolAndDecommissionActivation(masterSs);
+    masterSheet = masterSs.getSheetByName(SHEETS.MASTER_SCHOOLS);
+  }
+
+  var schools = getSheetData(masterSs, SHEETS.MASTER_SCHOOLS);
+  if (!schools || schools.length === 0) {
+    if (cleanId === 'SCH-BADR' || cleanId === 'BADR') {
+      return {
+        schoolId: 'SCH-BADR',
+        schoolCode: 'BADR',
+        schoolName: 'مدرسة بدر الإعدادية بنين',
+        spreadsheetId: masterSs.getId(),
+        status: 'Active'
+      };
+    }
+    return null;
+  }
+
+  for (var i = 0; i < schools.length; i++) {
+    var s = schools[i];
+    if (
+      String(s.schoolId || '').trim().toUpperCase() === cleanId ||
+      String(s.schoolCode || '').trim().toUpperCase() === cleanId
+    ) {
+      return {
+        schoolId: String(s.schoolId || '').trim(),
+        schoolCode: String(s.schoolCode || '').trim(),
+        schoolName: String(s.schoolName || '').trim(),
+        spreadsheetId: String(s.spreadsheetId || '').trim(),
+        status: String(s.status || 'Active').trim(),
+        createdAt: s.createdAt,
+        updatedAt: s.updatedAt
+      };
+    }
+  }
+
+  // Fallback for default primary school
+  if (cleanId === 'SCH-BADR' || cleanId === 'BADR') {
+    return {
+      schoolId: 'SCH-BADR',
+      schoolCode: 'BADR',
+      schoolName: 'مدرسة بدر الإعدادية بنين',
+      spreadsheetId: masterSs.getId(),
+      status: 'Active'
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Returns the isolated Google Spreadsheet instance for a given school.
+ * Each school has its own independent Google Spreadsheet.
+ * @param {string} schoolId
+ * @param {Spreadsheet} masterSs
+ * @returns {Spreadsheet}
+ */
+function getSchoolSpreadsheet(schoolId, masterSs) {
+  var ctx = resolveSchoolContext(schoolId, masterSs);
+  if (!ctx || !ctx.spreadsheetId || ctx.spreadsheetId === masterSs.getId()) {
+    return masterSs;
+  }
+
+  try {
+    return SpreadsheetApp.openById(ctx.spreadsheetId);
+  } catch (err) {
+    console.error('Failed to open spreadsheet for school ' + schoolId + ': ' + err);
+    return masterSs;
+  }
+}
+
