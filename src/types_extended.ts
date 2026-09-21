@@ -528,6 +528,7 @@ export interface SalaryHistoryEntry {
  * ========================================================================= */
 export interface EmployeePermissionRecord {
   id: string;
+  schoolId?: string;
   employeeId: string;
   employeeName: string;
   department: string;
@@ -537,6 +538,8 @@ export interface EmployeePermissionRecord {
   endTime: string; // HH:mm
   durationHours: number;
   reason: string;
+  notes?: string;
+  attachment?: string;
   status: 'معلقة' | 'مقبولة' | 'مرفوضة';
   approvedBy?: string;
   rejectionReason?: string;

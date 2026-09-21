@@ -723,7 +723,7 @@ function doPost(e) {
       return createJsonResponse(output, 200);
     }
 
-    // E. Staff & Employees (Financial fields stripped)
+    // E. Staff & Employees (Financial fields stripped, Phase 2 model enforced)
     if (action === 'getEmployees') {
       var rawEmployees = getSheetData(ss, SHEETS.EMPLOYEES);
       output.data = rawEmployees.map(function(emp) {
@@ -731,6 +731,9 @@ function doPost(e) {
         delete cleanEmp.basicSalary;
         delete cleanEmp.allowances;
         delete cleanEmp.netSalary;
+        delete cleanEmp.salary;
+        cleanEmp.employeeType = cleanEmp.employeeType || (cleanEmp.isTeacher || cleanEmp.teacherCode ? 'Teacher' : 'Administrative');
+        cleanEmp.specialization = cleanEmp.specialization || cleanEmp.department || 'عام';
         return cleanEmp;
       });
       return createJsonResponse(output, 200);
@@ -740,9 +743,77 @@ function doPost(e) {
       var sanitizedEmp = Object.assign({}, payload);
       delete sanitizedEmp.basicSalary;
       delete sanitizedEmp.allowances;
+      delete sanitizedEmp.netSalary;
+      delete sanitizedEmp.salary;
+      delete sanitizedEmp.password;
+      delete sanitizedEmp.passwordHash;
+      delete sanitizedEmp.passwordSalt;
+      sanitizedEmp.employeeType = sanitizedEmp.employeeType === 'Teacher' ? 'Teacher' : 'Administrative';
+      if (sanitizedEmp.employeeType === 'Teacher' && !sanitizedEmp.teacherCode && sanitizedEmp.id) {
+        sanitizedEmp.teacherCode = sanitizedEmp.id;
+      }
       upsertRecord(ss, SHEETS.EMPLOYEES, 'id', sanitizedEmp);
       recordAuthoritativeAudit(ss, requestId, authenticatedUsername, authenticatedRole, 'SAVE', 'EMPLOYEES', payload.id || '', 'حفظ سجل موظف');
       output.message = 'تم حفظ بيانات الموظف بنجاح';
+      return createJsonResponse(output, 200);
+    }
+
+    if (action === 'bulkSaveEmployees' && payload && Array.isArray(payload)) {
+      var addedCount = 0;
+      var updatedCount = 0;
+      var existingEmps = getSheetData(ss, SHEETS.EMPLOYEES);
+
+      payload.forEach(function(emp) {
+        var clean = Object.assign({}, emp);
+        delete clean.basicSalary;
+        delete clean.allowances;
+        delete clean.netSalary;
+        delete clean.salary;
+        delete clean.password;
+        delete clean.passwordHash;
+        delete clean.passwordSalt;
+
+        clean.employeeType = clean.employeeType === 'Teacher' ? 'Teacher' : 'Administrative';
+        if (clean.employeeType === 'Teacher' && !clean.teacherCode && clean.id) {
+          clean.teacherCode = clean.id;
+        }
+
+        // Match existing by immutable id, or by unique nationalId if present
+        var matchIdx = -1;
+        if (clean.id) {
+          for (var i = 0; i < existingEmps.length; i++) {
+            if (existingEmps[i].id === clean.id) {
+              matchIdx = i;
+              break;
+            }
+          }
+        }
+        if (matchIdx === -1 && clean.nationalId) {
+          for (var j = 0; j < existingEmps.length; j++) {
+            if (existingEmps[j].nationalId && String(existingEmps[j].nationalId).trim() === String(clean.nationalId).trim()) {
+              matchIdx = j;
+              break;
+            }
+          }
+        }
+
+        if (matchIdx >= 0) {
+          clean.id = existingEmps[matchIdx].id;
+          upsertRecord(ss, SHEETS.EMPLOYEES, 'id', clean);
+          updatedCount++;
+        } else {
+          if (!clean.id) {
+            clean.id = 'EMP' + Utilities.getUuid().substring(0, 6).toUpperCase();
+          }
+          upsertRecord(ss, SHEETS.EMPLOYEES, 'id', clean);
+          existingEmps.push(clean);
+          addedCount++;
+        }
+      });
+
+      recordAuthoritativeAudit(ss, requestId, authenticatedUsername, authenticatedRole, 'BULK_SAVE', 'EMPLOYEES', payload.length + ' records', 'استيراد وحفظ دفعة عاملين ومدرسين');
+      output.message = 'تم حفظ واستيراد ' + payload.length + ' سجل بنجاح (' + addedCount + ' جديد، ' + updatedCount + ' تحديث)';
+      output.stats = { added: addedCount, updated: updatedCount };
       return createJsonResponse(output, 200);
     }
 

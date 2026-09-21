@@ -2,32 +2,27 @@ import React, { useMemo, useState } from 'react';
 import {
   AlertCircle,
   Briefcase,
-  Building,
   CheckCircle2,
   Clock,
-  Coins,
-  DollarSign,
   Download,
   Edit2,
-  Eye,
-  History,
+  FileSpreadsheet,
   Mail,
   Phone,
   Plus,
   Search,
-  ShieldAlert,
   Trash2,
+  UploadCloud,
   UserCheck,
   UserPlus,
   Users,
   UserX,
   X,
 } from 'lucide-react';
-import { Employee, SalaryHistoryEntry, SystemSettings, User } from '../../types';
+import { Employee, EmployeeType, SystemSettings, User } from '../../types';
 import { storageService } from '../../services/storageService';
 import { ExportService } from '../../services/exportService';
-import { HRPayrollService } from '../../services/hrService';
-import { formatEgyptianCurrency, formatEgyptianDate } from '../../utils/egyptianTime';
+import { StaffImportModal } from './StaffImportModal';
 
 interface EmployeesViewProps {
   employees: Employee[];
@@ -41,29 +36,24 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
   currentUser,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
-  const [deptFilter, setDeptFilter] = useState('الكل');
+  const [typeFilter, setTypeFilter] = useState<'الكل' | 'معلم' | 'إداري'>('الكل');
+  const [jobTitleFilter, setJobTitleFilter] = useState('الكل');
+  const [specializationFilter, setSpecializationFilter] = useState('الكل');
   const [statusFilter, setStatusFilter] = useState('الكل');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [editingEmp, setEditingEmp] = useState<Employee | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
 
-  // Salary Adjustment Modal for Admins
-  const [salaryModalEmp, setSalaryModalEmp] = useState<Employee | null>(null);
-  const [newBasicSalary, setNewBasicSalary] = useState<number>(0);
-  const [newAllowances, setNewAllowances] = useState<number>(0);
-  const [effectiveDate, setEffectiveDate] = useState<string>(new Date().toISOString().split('T')[0]);
-  const [adjustmentReason, setAdjustmentReason] = useState<string>('');
-  const [salaryHistoryList, setSalaryHistoryList] = useState<SalaryHistoryEntry[]>([]);
-
-  // Form Fields
+  // Form Fields - Phase 2 (Salary strictly removed)
   const [id, setId] = useState('');
   const [name, setName] = useState('');
-  const [nationalId, setNationalId] = useState('');
-  const [department, setDepartment] = useState('');
+  const [employeeType, setEmployeeType] = useState<EmployeeType>('Teacher');
   const [jobTitle, setJobTitle] = useState('');
+  const [specialization, setSpecialization] = useState('');
+  const [teacherCode, setTeacherCode] = useState('');
+  const [nationalId, setNationalId] = useState('');
   const [hireDate, setHireDate] = useState(new Date().toISOString().split('T')[0]);
-  const [basicSalary, setBasicSalary] = useState<number>(10000);
-  const [allowances, setAllowances] = useState<number>(0);
   const [workingHours, setWorkingHours] = useState<number>(8);
   const [workStartTime, setWorkStartTime] = useState('07:30');
   const [workEndTime, setWorkEndTime] = useState('14:30');
@@ -75,50 +65,58 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
   const isAdmin = currentUser?.role === 'Admin';
   const canManage = isAdmin || currentUser?.role === 'HR';
 
-  // Dynamic Departments & Job Titles from Settings & Master Data
-  const configuredDepts = useMemo(() => {
-    const fromSettings = (settings.departments || []).map(d => d.name);
-    const fromEmps = employees.map(e => e.department).filter(Boolean);
-    return Array.from(new Set([...fromSettings, ...fromEmps]));
-  }, [settings.departments, employees]);
+  // Dynamic Distinct Values for Filters
+  const distinctJobTitles = useMemo(() => {
+    const list = employees.map(e => e.jobTitle).filter(Boolean);
+    return Array.from(new Set(list));
+  }, [employees]);
 
-  const configuredJobTitles = useMemo(() => {
-    const fromSettings = (settings.jobTitles || []).map(j => j.name);
-    const fromEmps = employees.map(e => e.jobTitle).filter(Boolean);
-    return Array.from(new Set([...fromSettings, ...fromEmps]));
-  }, [settings.jobTitles, employees]);
+  const distinctSpecializations = useMemo(() => {
+    const list = employees.map(e => e.specialization).filter(Boolean);
+    return Array.from(new Set(list));
+  }, [employees]);
 
-  const departmentsFilterList = ['الكل', ...configuredDepts];
-
+  // Filtering Logic - Driven by employeeType, jobTitle, and specialization
   const filteredEmployees = useMemo(() => {
     return employees.filter(emp => {
-      const matchDept = deptFilter === 'الكل' || emp.department === deptFilter;
+      const matchType =
+        typeFilter === 'الكل' ||
+        (typeFilter === 'معلم' && emp.employeeType === 'Teacher') ||
+        (typeFilter === 'إداري' && emp.employeeType === 'Administrative');
+
+      const matchJob = jobTitleFilter === 'الكل' || emp.jobTitle === jobTitleFilter;
+      const matchSpec = specializationFilter === 'الكل' || emp.specialization === specializationFilter;
       const matchStatus = statusFilter === 'الكل' || emp.status === statusFilter;
+
       const q = (searchQuery || '').trim().toLowerCase();
       const matchSearch =
         !q ||
         (emp.name || '').toLowerCase().includes(q) ||
         (emp.id || '').toLowerCase().includes(q) ||
         (emp.jobTitle || '').toLowerCase().includes(q) ||
-        (emp.department || '').toLowerCase().includes(q) ||
-        (emp.nationalId ? emp.nationalId.includes(q) : false);
-      return matchDept && matchStatus && matchSearch;
+        (emp.specialization || '').toLowerCase().includes(q) ||
+        (emp.teacherCode || '').toLowerCase().includes(q) ||
+        (emp.nationalId ? emp.nationalId.includes(q) : false) ||
+        (emp.phone ? emp.phone.includes(q) : false);
+
+      return matchType && matchJob && matchSpec && matchStatus && matchSearch;
     });
-  }, [employees, deptFilter, statusFilter, searchQuery]);
+  }, [employees, typeFilter, jobTitleFilter, specializationFilter, statusFilter, searchQuery]);
 
   const openAddModal = () => {
     const nextNum = employees.length + 1;
     const nextId = `EMP${String(nextNum).padStart(3, '0')}`;
+    const nextTeacherCode = `T-${String(nextNum).padStart(3, '0')}`;
 
     setEditingEmp(null);
     setId(nextId);
     setName('');
+    setEmployeeType('Teacher');
+    setJobTitle('معلم');
+    setSpecialization('رياضيات');
+    setTeacherCode(nextTeacherCode);
     setNationalId('');
-    setDepartment(configuredDepts[0] || 'الموارد البشرية');
-    setJobTitle(configuredJobTitles[0] || 'معلم');
     setHireDate(new Date().toISOString().split('T')[0]);
-    setBasicSalary(10000);
-    setAllowances(1500);
     setWorkingHours(settings.standardDailyHours || 7);
     setWorkStartTime(settings.officialStartTime || '07:30');
     setWorkEndTime(settings.officialEndTime || '14:30');
@@ -134,12 +132,12 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
     setEditingEmp(emp);
     setId(emp.id);
     setName(emp.name);
+    setEmployeeType(emp.employeeType || (emp.isTeacher ? 'Teacher' : 'Administrative'));
+    setJobTitle(emp.jobTitle || 'موظف');
+    setSpecialization(emp.specialization || emp.department || 'عام');
+    setTeacherCode(emp.teacherCode || '');
     setNationalId(emp.nationalId || '');
-    setDepartment(emp.department);
-    setJobTitle(emp.jobTitle);
-    setHireDate(emp.hireDate);
-    setBasicSalary(emp.basicSalary || 0);
-    setAllowances(emp.allowances || 0);
+    setHireDate(emp.hireDate || new Date().toISOString().split('T')[0]);
     setWorkingHours(emp.workingHours || settings.standardDailyHours || 7);
     setWorkStartTime(emp.workStartTime || settings.officialStartTime || '07:30');
     setWorkEndTime(emp.workEndTime || settings.officialEndTime || '14:30');
@@ -158,16 +156,21 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
       return;
     }
 
+    if (employeeType === 'Teacher' && !teacherCode.trim()) {
+      setErrorMessage('كود المعلم مطلوب للمعلمين لربطه بالجدول المدرسي');
+      return;
+    }
+
     const empToSave: Employee = {
       id: id.trim().toUpperCase(),
       name: name.trim(),
+      fullName: name.trim(),
+      employeeType,
+      jobTitle: jobTitle.trim() || (employeeType === 'Teacher' ? 'معلم' : 'إداري'),
+      specialization: specialization.trim() || (employeeType === 'Teacher' ? 'تعليم عام' : 'إدارة عامة'),
+      teacherCode: employeeType === 'Teacher' ? teacherCode.trim().toUpperCase() : undefined,
       nationalId: nationalId.trim(),
-      department: department.trim() || 'الإدارة العامة',
-      jobTitle: jobTitle.trim() || 'موظف',
       hireDate,
-      // If non-admin is editing, preserve existing salary values
-      basicSalary: isAdmin ? Number(basicSalary) || 0 : editingEmp?.basicSalary || 0,
-      allowances: isAdmin ? Number(allowances) || 0 : editingEmp?.allowances || 0,
       workingHours: Number(workingHours) || 7,
       workStartTime,
       workEndTime,
@@ -175,6 +178,8 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
       status,
       phone: phone.trim(),
       email: email.trim(),
+      isTeacher: employeeType === 'Teacher',
+      isTeachingStaff: employeeType === 'Teacher',
     };
 
     const res = storageService.saveEmployee(empToSave);
@@ -196,36 +201,6 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
     }
   };
 
-  const handleOpenSalaryAdjustmentModal = (emp: Employee) => {
-    if (!isAdmin) return;
-    setSalaryModalEmp(emp);
-    setNewBasicSalary(emp.basicSalary || 0);
-    setNewAllowances(emp.allowances || 0);
-    setEffectiveDate(new Date().toISOString().split('T')[0]);
-    setAdjustmentReason('');
-    setSalaryHistoryList(HRPayrollService.getSalaryHistory(emp.id));
-  };
-
-  const handleSaveSalaryAdjustment = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!salaryModalEmp) return;
-
-    const res = HRPayrollService.recordSalaryAdjustment(
-      salaryModalEmp,
-      newBasicSalary,
-      newAllowances,
-      effectiveDate,
-      adjustmentReason,
-      currentUser
-    );
-
-    if (res.success) {
-      setSalaryHistoryList(HRPayrollService.getSalaryHistory(salaryModalEmp.id));
-      setSalaryModalEmp(null);
-      alert(`تم بنجاح تثبيت وتطبيق التعديل المالي بسريان من تاريخ ${effectiveDate}`);
-    }
-  };
-
   const handleExport = () => {
     ExportService.exportFullDatabaseToExcel(
       employees,
@@ -242,26 +217,37 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
       <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+            <div className="w-10 h-10 rounded-2xl bg-teal-50 text-teal-600 flex items-center justify-center">
               <Users className="w-5 h-5" />
             </div>
-            <span>دليل وهيكل المعلمين والموظفين (HR Structure)</span>
+            <span>دليل وهيكل المعلمين والموظفين (Staff Structure)</span>
           </h2>
           <p className="text-xs text-slate-500 mt-1">
-            إدارة بطاقات الموظفين، مواعيد الدوام وساعات العمل، والأقسام والمسميات الوظيفية
+            إدارة الكادر التعليمي والإداري، المسميات الوظيفية، التخصصات، وأكواد التدريس
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           {canManage && (
-            <button
-              id="btn-add-new-employee"
-              onClick={openAddModal}
-              className="text-xs font-bold bg-[#008e8b] hover:bg-teal-700 text-white px-4 py-2.5 rounded-2xl shadow-sm transition-colors flex items-center gap-1.5"
-            >
-              <UserPlus className="w-4 h-4" />
-              <span>إضافة موظف / معلم جديد</span>
-            </button>
+            <>
+              <button
+                id="btn-import-staff-data"
+                onClick={() => setIsImportModalOpen(true)}
+                className="text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2.5 rounded-2xl transition-colors flex items-center gap-1.5 border border-slate-200 shadow-xs"
+              >
+                <UploadCloud className="w-4 h-4 text-teal-700" />
+                <span>استيراد بيانات العاملين</span>
+              </button>
+
+              <button
+                id="btn-add-new-employee"
+                onClick={openAddModal}
+                className="text-xs font-bold bg-[#008e8b] hover:bg-teal-700 text-white px-4 py-2.5 rounded-2xl shadow-sm transition-colors flex items-center gap-1.5"
+              >
+                <UserPlus className="w-4 h-4" />
+                <span>إضافة موظف / معلم جديد</span>
+              </button>
+            </>
           )}
 
           <button
@@ -274,39 +260,71 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
         </div>
       </div>
 
-      {/* Filter and Search Bar */}
-      <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3">
-        <div className="w-full sm:w-80 relative">
+      {/* Filter and Search Bar - Phase 2: employeeType, jobTitle, specialization */}
+      <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-xs flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+        <div className="w-full lg:w-72 relative">
           <Search className="w-4 h-4 text-slate-400 absolute right-3 top-2.5" />
           <input
             type="text"
-            placeholder="بحث بالاسم، الرقم الوظيفي، أو المسمى..."
+            placeholder="بحث بالاسم، الكود، التخصص، أو الهاتف..."
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl pr-9 pl-3 py-2 text-slate-900 focus:outline-hidden focus:border-[#008e8b]"
           />
         </div>
 
-        <div className="flex flex-wrap items-center gap-3 text-xs font-medium text-slate-700">
+        <div className="flex flex-wrap items-center gap-2.5 text-xs font-medium text-slate-700">
+          {/* Employee Type Filter */}
           <div className="flex items-center gap-1.5">
-            <span className="font-bold">القسم / التخصص:</span>
+            <span className="font-bold text-slate-600">النوع:</span>
             <select
-              value={deptFilter}
-              onChange={e => setDeptFilter(e.target.value)}
-              className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-800 focus:outline-hidden focus:border-[#008e8b]"
+              value={typeFilter}
+              onChange={e => setTypeFilter(e.target.value as any)}
+              className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-slate-800 focus:outline-hidden focus:border-[#008e8b]"
             >
-              {departmentsFilterList.map(d => (
-                <option key={d} value={d}>{d}</option>
+              <option value="الكل">الكل (معلم وإداري)</option>
+              <option value="معلم">معلمون فقط</option>
+              <option value="إداري">إداريون فقط</option>
+            </select>
+          </div>
+
+          {/* Job Title Filter */}
+          <div className="flex items-center gap-1.5">
+            <span className="font-bold text-slate-600">المسمى الوظيفي:</span>
+            <select
+              value={jobTitleFilter}
+              onChange={e => setJobTitleFilter(e.target.value)}
+              className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-slate-800 focus:outline-hidden focus:border-[#008e8b]"
+            >
+              <option value="الكل">جميع المسميات</option>
+              {distinctJobTitles.map(j => (
+                <option key={j} value={j}>{j}</option>
               ))}
             </select>
           </div>
 
+          {/* Specialization Filter */}
           <div className="flex items-center gap-1.5">
-            <span className="font-bold">الحالة:</span>
+            <span className="font-bold text-slate-600">التخصص:</span>
+            <select
+              value={specializationFilter}
+              onChange={e => setSpecializationFilter(e.target.value)}
+              className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-slate-800 focus:outline-hidden focus:border-[#008e8b]"
+            >
+              <option value="الكل">جميع التخصصات</option>
+              {distinctSpecializations.map(s => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Status Filter */}
+          <div className="flex items-center gap-1.5">
+            <span className="font-bold text-slate-600">الحالة:</span>
             <select
               value={statusFilter}
               onChange={e => setStatusFilter(e.target.value)}
-              className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-800 focus:outline-hidden focus:border-[#008e8b]"
+              className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-slate-800 focus:outline-hidden focus:border-[#008e8b]"
             >
               <option value="الكل">جميع الحالات</option>
               <option value="Active">نشط بالخدمة</option>
@@ -324,10 +342,11 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
               <tr>
                 <th className="py-3.5 px-4">رقم الموظف</th>
                 <th className="py-3.5 px-4">الاسم الكامل</th>
-                <th className="py-3.5 px-4">القسم</th>
+                <th className="py-3.5 px-4">النوع الوظيفي</th>
                 <th className="py-3.5 px-4">المسمى الوظيفي</th>
-                <th className="py-3.5 px-4">مواعيد العمل الرسمية</th>
-                {isAdmin && <th className="py-3.5 px-4">الراتب الأساسي (EGP)</th>}
+                <th className="py-3.5 px-4">التخصص</th>
+                <th className="py-3.5 px-4">كود المعلم</th>
+                <th className="py-3.5 px-4">مواعيد العمل</th>
                 <th className="py-3.5 px-4">الحالة</th>
                 {canManage && <th className="py-3.5 px-4 text-center">إجراءات</th>}
               </tr>
@@ -335,7 +354,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
             <tbody className="divide-y divide-slate-100 font-medium">
               {filteredEmployees.length === 0 ? (
                 <tr>
-                  <td colSpan={isAdmin ? 8 : 7} className="py-16 text-center">
+                  <td colSpan={9} className="py-16 text-center">
                     <div className="flex flex-col items-center justify-center space-y-3 max-w-sm mx-auto">
                       <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400">
                         <Users className="w-6 h-6" />
@@ -346,18 +365,27 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                         </p>
                         <p className="text-xs text-slate-500">
                           {employees.length === 0
-                            ? 'ابدأ بإضافة موظفي ومعلمي المدرسة لتفعيل تسجيل الحضور ومسير الرواتب.'
+                            ? 'ابدأ بإضافة موظفي ومعلمي المدرسة أو استيرادهم من ملف Excel.'
                             : 'جرّب تغيير كلمات البحث أو إعادة تعيين الفلاتر.'}
                         </p>
                       </div>
                       {canManage && employees.length === 0 && (
-                        <button
-                          onClick={openAddModal}
-                          className="mt-2 text-xs font-bold bg-[#008e8b] hover:bg-teal-700 text-white px-4 py-2 rounded-xl transition-all shadow-xs inline-flex items-center gap-1.5"
-                        >
-                          <UserPlus className="w-4 h-4" />
-                          <span>إضافة أول موظف الآن</span>
-                        </button>
+                        <div className="flex items-center gap-2 mt-2">
+                          <button
+                            onClick={openAddModal}
+                            className="text-xs font-bold bg-[#008e8b] hover:bg-teal-700 text-white px-4 py-2 rounded-xl transition-all shadow-xs inline-flex items-center gap-1.5"
+                          >
+                            <UserPlus className="w-4 h-4" />
+                            <span>إضافة أول موظف الآن</span>
+                          </button>
+                          <button
+                            onClick={() => setIsImportModalOpen(true)}
+                            className="text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-xl transition-all inline-flex items-center gap-1.5"
+                          >
+                            <UploadCloud className="w-4 h-4 text-teal-600" />
+                            <span>استيراد ملف Excel</span>
+                          </button>
+                        </div>
                       )}
                     </div>
                   </td>
@@ -371,11 +399,25 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                       {emp.phone && <div className="text-[10px] text-slate-400 mt-0.5">{emp.phone}</div>}
                     </td>
                     <td className="py-3.5 px-4">
-                      <span className="inline-block px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 font-bold text-[11px]">
-                        {emp.department}
+                      <span
+                        className={`inline-block px-2.5 py-1 rounded-lg font-bold text-[11px] ${
+                          emp.employeeType === 'Teacher'
+                            ? 'bg-indigo-50 text-indigo-700'
+                            : 'bg-slate-100 text-slate-700'
+                        }`}
+                      >
+                        {emp.employeeType === 'Teacher' ? 'معلم' : 'إداري'}
                       </span>
                     </td>
-                    <td className="py-3.5 px-4 text-slate-600">{emp.jobTitle}</td>
+                    <td className="py-3.5 px-4 text-slate-700 font-medium">{emp.jobTitle}</td>
+                    <td className="py-3.5 px-4">
+                      <span className="inline-block px-2 py-0.5 rounded-md bg-teal-50 text-teal-800 font-bold text-[11px]">
+                        {emp.specialization || 'عام'}
+                      </span>
+                    </td>
+                    <td className="py-3.5 px-4 font-mono font-bold text-indigo-600">
+                      {emp.teacherCode || '-'}
+                    </td>
                     <td className="py-3.5 px-4">
                       <div className="text-slate-700 font-mono text-[11px]">
                         {emp.workStartTime || '07:30'} - {emp.workEndTime || '14:30'}
@@ -384,20 +426,6 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                         {emp.workingHours || 7} ساعات يومياً
                       </div>
                     </td>
-                    {isAdmin && (
-                      <td className="py-3.5 px-4 font-mono font-bold text-emerald-700">
-                        <div className="flex items-center gap-2">
-                          <span>{formatEgyptianCurrency(emp.basicSalary || 0)}</span>
-                          <button
-                            onClick={() => handleOpenSalaryAdjustmentModal(emp)}
-                            className="p-1 text-slate-400 hover:text-emerald-600 rounded-md hover:bg-emerald-50 transition-colors"
-                            title="تعديل الراتب مع تاريخ السريان"
-                          >
-                            <History className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </td>
-                    )}
                     <td className="py-3.5 px-4">
                       <span
                         className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold ${
@@ -450,7 +478,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
         </div>
       </div>
 
-      {/* Add / Edit Employee Modal */}
+      {/* Add / Edit Employee Modal - Phase 2 */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs overflow-y-auto">
           <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-2xl overflow-hidden my-8">
@@ -498,29 +526,54 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="font-bold text-slate-700 block mb-1">القسم / الإدارة</label>
+                  <label className="font-bold text-slate-700 block mb-1">نوع الموظف *</label>
                   <select
-                    value={department}
-                    onChange={e => setDepartment(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-800"
+                    value={employeeType}
+                    onChange={e => setEmployeeType(e.target.value as EmployeeType)}
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-800 font-bold"
                   >
-                    {configuredDepts.map(d => (
-                      <option key={d} value={d}>{d}</option>
-                    ))}
+                    <option value="Teacher">معلم (كادر تعليمي)</option>
+                    <option value="Administrative">إداري (شؤون / خدمات)</option>
                   </select>
                 </div>
 
                 <div>
-                  <label className="font-bold text-slate-700 block mb-1">المسمى الوظيفي</label>
-                  <select
+                  <label className="font-bold text-slate-700 block mb-1">
+                    كود المعلم {employeeType === 'Teacher' ? '*' : '(اختياري)'}
+                  </label>
+                  <input
+                    type="text"
+                    value={teacherCode}
+                    onChange={e => setTeacherCode(e.target.value)}
+                    required={employeeType === 'Teacher'}
+                    disabled={employeeType !== 'Teacher'}
+                    placeholder="مثال: T-101"
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-800 font-mono font-bold disabled:opacity-50"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">المسمى الوظيفي *</label>
+                  <input
+                    type="text"
+                    required
                     value={jobTitle}
                     onChange={e => setJobTitle(e.target.value)}
+                    placeholder="مثال: معلم أول، أخصائي شؤون طلاب، سكرتير..."
                     className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-800"
-                  >
-                    {configuredJobTitles.map(j => (
-                      <option key={j} value={j}>{j}</option>
-                    ))}
-                  </select>
+                  />
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">التخصص *</label>
+                  <input
+                    type="text"
+                    required
+                    value={specialization}
+                    onChange={e => setSpecialization(e.target.value)}
+                    placeholder="مثال: رياضيات، لغة إنجليزية، ذكاء اصطناعي، شؤون طلاب، موارد بشرية، حسابات"
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-800"
+                  />
                 </div>
 
                 <div>
@@ -534,13 +587,13 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="font-bold text-slate-700 block mb-1">الرقم القومي</label>
+                  <label className="font-bold text-slate-700 block mb-1">الرقم القومي (14 رقم)</label>
                   <input
                     type="text"
                     value={nationalId}
                     onChange={e => setNationalId(e.target.value)}
                     className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-800 font-mono"
-                    placeholder="14 رقم"
+                    placeholder="14 رقم قومي"
                   />
                 </div>
 
@@ -587,29 +640,28 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                   />
                 </div>
 
-                {/* Salary inputs only visible to Admin */}
-                {isAdmin && (
-                  <>
-                    <div className="bg-emerald-50/60 p-3 rounded-2xl border border-emerald-200">
-                      <label className="font-bold text-emerald-900 block mb-1">الراتب الأساسي (ج.م) *</label>
-                      <input
-                        type="number"
-                        value={basicSalary}
-                        onChange={e => setBasicSalary(Number(e.target.value))}
-                        className="w-full bg-white border border-emerald-300 rounded-xl px-3 py-2 text-slate-800 font-mono font-bold"
-                      />
-                    </div>
-                    <div className="bg-emerald-50/60 p-3 rounded-2xl border border-emerald-200">
-                      <label className="font-bold text-emerald-900 block mb-1">البدلات الشهرية (ج.م)</label>
-                      <input
-                        type="number"
-                        value={allowances}
-                        onChange={e => setAllowances(Number(e.target.value))}
-                        className="w-full bg-white border border-emerald-300 rounded-xl px-3 py-2 text-slate-800 font-mono font-bold"
-                      />
-                    </div>
-                  </>
-                )}
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">البريد الإلكتروني</label>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-800"
+                    placeholder="emp@school.edu.eg"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">حالة الحساب</label>
+                  <select
+                    value={status}
+                    onChange={e => setStatus(e.target.value as 'Active' | 'Inactive')}
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-800 font-bold"
+                  >
+                    <option value="Active">نشط بالخدمة</option>
+                    <option value="Inactive">معطل / غير نشط</option>
+                  </select>
+                </div>
               </div>
 
               <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2 -mx-6 -mb-6 mt-4">
@@ -632,125 +684,14 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
         </div>
       )}
 
-      {/* Salary Adjustment & Effective Dating Modal (Admin Only) */}
-      {salaryModalEmp && isAdmin && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs overflow-y-auto">
-          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-2xl overflow-hidden my-8">
-            <div className="p-6 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-              <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
-                <Coins className="w-5 h-5 text-emerald-600" />
-                <span>تعديل الراتب وسجل السريان (Effective Salary) - {salaryModalEmp.name}</span>
-              </h3>
-              <button onClick={() => setSalaryModalEmp(null)} className="text-slate-400 hover:text-slate-700">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveSalaryAdjustment} className="p-6 space-y-5">
-              <div className="grid grid-cols-2 gap-4 text-xs bg-slate-50 p-4 rounded-2xl border border-slate-200">
-                <div>
-                  <span className="text-slate-500 block">الراتب الأساسي الحالي:</span>
-                  <span className="font-bold text-slate-800 font-mono text-sm">
-                    {formatEgyptianCurrency(salaryModalEmp.basicSalary || 0)}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-slate-500 block">البدلات الحالية:</span>
-                  <span className="font-bold text-slate-800 font-mono text-sm">
-                    {formatEgyptianCurrency(salaryModalEmp.allowances || 0)}
-                  </span>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">الراتب الأساسي الجديد (ج.م) *</label>
-                  <input
-                    type="number"
-                    required
-                    value={newBasicSalary}
-                    onChange={e => setNewBasicSalary(Number(e.target.value))}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-800 font-mono font-bold"
-                  />
-                </div>
-
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">البدلات الجديدة (ج.م) *</label>
-                  <input
-                    type="number"
-                    required
-                    value={newAllowances}
-                    onChange={e => setNewAllowances(Number(e.target.value))}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-800 font-mono font-bold"
-                  />
-                </div>
-
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">تاريخ سريان التعديل (Effective Date) *</label>
-                  <input
-                    type="date"
-                    required
-                    value={effectiveDate}
-                    onChange={e => setEffectiveDate(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-800"
-                  />
-                </div>
-
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">سبب التعديل / القرار الإداري *</label>
-                  <input
-                    type="text"
-                    required
-                    value={adjustmentReason}
-                    onChange={e => setAdjustmentReason(e.target.value)}
-                    placeholder="مثال: ترقية سنوية، علاوة تميز، تعديل هيكل الأجور"
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-800"
-                  />
-                </div>
-              </div>
-
-              {/* Historical Log */}
-              {salaryHistoryList.length > 0 && (
-                <div className="space-y-2 pt-3 border-t border-slate-200">
-                  <h4 className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                    <History className="w-4 h-4 text-slate-400" />
-                    <span>سجل التعديلات السابقة لهذا الموظف</span>
-                  </h4>
-                  <div className="max-h-40 overflow-y-auto space-y-2">
-                    {salaryHistoryList.map(h => (
-                      <div key={h.id} className="text-[11px] p-2.5 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between">
-                        <div>
-                          <span className="font-bold text-slate-800">{h.reason}</span>
-                          <span className="text-slate-400 block">سريان: {h.effectiveDate} - معتمد بواسطة: {h.approvedBy}</span>
-                        </div>
-                        <div className="font-mono text-emerald-700 font-bold">
-                          {formatEgyptianCurrency(h.newBasicSalary)}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2 -mx-6 -mb-6 mt-4">
-                <button
-                  type="button"
-                  onClick={() => setSalaryModalEmp(null)}
-                  className="px-4 py-2 text-slate-600 hover:bg-slate-200 rounded-xl text-xs font-bold"
-                >
-                  إلغاء
-                </button>
-                <button
-                  type="submit"
-                  className="px-6 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md"
-                >
-                  تثبيت وتطبيق التعديل المالي
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* Staff Bulk Import Modal */}
+      <StaffImportModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        onImportComplete={() => {
+          setIsImportModalOpen(false);
+        }}
+      />
     </div>
   );
 };

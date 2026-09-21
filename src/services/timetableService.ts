@@ -1195,16 +1195,23 @@ class TimetableService {
     date?: string;
     teacherId?: string;
     locationId?: string;
+    schoolId?: string;
+    supervisionMode?: SupervisionMode;
   }): SupervisionAssignment[] {
     const raw = localStorage.getItem(STORAGE_KEYS.SUPERVISION_ASSIGNMENTS);
     if (!raw) return [];
     try {
-      const list: SupervisionAssignment[] = JSON.parse(raw);
+      let list: SupervisionAssignment[] = JSON.parse(raw);
+      const activeSchoolId = (filters?.schoolId || storageService.getActiveSchoolId()).trim();
+      // School isolation
+      list = list.filter(a => !a.schoolId || a.schoolId.trim() === activeSchoolId);
+
       if (!filters) return list;
       return list.filter(a => {
         if (filters.date && a.date !== filters.date) return false;
         if (filters.teacherId && a.teacherId !== filters.teacherId) return false;
         if (filters.locationId && a.locationId !== filters.locationId) return false;
+        if (filters.supervisionMode && a.supervisionMode !== filters.supervisionMode) return false;
         return true;
       });
     } catch {
@@ -1213,12 +1220,22 @@ class TimetableService {
   }
 
   public saveSupervisionAssignment(assignment: SupervisionAssignment): { success: boolean; message?: string } {
-    const list = this.getSupervisionAssignments();
+    const raw = localStorage.getItem(STORAGE_KEYS.SUPERVISION_ASSIGNMENTS);
+    let list: SupervisionAssignment[] = [];
+    if (raw) {
+      try {
+        list = JSON.parse(raw);
+      } catch {
+        list = [];
+      }
+    }
+
     const idx = list.findIndex(a => a.id === assignment.id);
     const now = getCairoNowISO();
     const teacher = this.findTeacherById(assignment.teacherId);
     const locations = this.getSupervisionLocations();
     const loc = locations.find(l => l.id === assignment.locationId);
+    const activeSchoolId = (assignment.schoolId || storageService.getActiveSchoolId()).trim();
 
     // Validate supervision conflicts (double booking, lesson conflict, reserve conflict)
     const conflictCheck = this.validateSupervisionConflict({
@@ -1228,6 +1245,8 @@ class TimetableService {
       timeSlot: assignment.timeSlot,
       periodNumber: assignment.periodNumber,
       dayOfWeek: assignment.dayOfWeek,
+      supervisionMode: assignment.supervisionMode,
+      assignmentId: assignment.id,
     });
 
     if (conflictCheck.hasConflict) {
@@ -1240,6 +1259,8 @@ class TimetableService {
     const prepared: SupervisionAssignment = {
       ...assignment,
       id: assignment.id || `SUP-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+      schoolId: activeSchoolId,
+      supervisionMode: assignment.supervisionMode || (assignment.shift === 'FULL_DAY' ? 'FULL_DAY' : 'TIME_SLOT'),
       teacherName: assignment.teacherName || teacher?.name,
       locationName: assignment.locationName || loc?.name,
       status: assignment.status || 'Scheduled',
@@ -1858,6 +1879,8 @@ class TimetableService {
           timeSlot?: string;
           shift?: string;
           periodNumber?: number;
+          supervisionMode?: SupervisionMode;
+          assignmentId?: string;
         },
     dateParam?: string,
     shiftParam?: string,
@@ -1869,6 +1892,8 @@ class TimetableService {
     let timeSlot = '';
     let periodNumber: number | undefined;
     let dayOfWeek = '';
+    let supervisionMode: SupervisionMode | undefined;
+    let assignmentId: string | undefined;
 
     if (typeof teacherIdOrParams === 'object') {
       teacherId = teacherIdOrParams.teacherId;
@@ -1877,6 +1902,8 @@ class TimetableService {
       timeSlot = teacherIdOrParams.timeSlot || '';
       periodNumber = teacherIdOrParams.periodNumber;
       dayOfWeek = teacherIdOrParams.dayOfWeek || '';
+      supervisionMode = teacherIdOrParams.supervisionMode;
+      assignmentId = teacherIdOrParams.assignmentId;
     } else {
       teacherId = teacherIdOrParams;
       date = dateParam || '';
@@ -1892,54 +1919,65 @@ class TimetableService {
       }
     }
 
+    const isFullDay = supervisionMode === 'FULL_DAY' || shift === 'FULL_DAY';
+
     // 1. Prevent teacher double booking in supervision
     const list = this.getSupervisionAssignments({ date });
-    const match = list.find(
-      s =>
-        s.teacherId === teacherId &&
-        s.status !== 'Cancelled' &&
-        ((shift && s.shift === shift) ||
-          (timeSlot && s.timeSlot === timeSlot) ||
-          (periodNumber && s.periodNumber === periodNumber) ||
-          (!shift && !timeSlot && !periodNumber))
-    );
+    const match = list.find(s => {
+      if (s.teacherId !== teacherId || s.status === 'Cancelled') return false;
+      if (assignmentId && s.id === assignmentId) return false;
+
+      // If either assignment is FULL_DAY, they cover the same day
+      if (isFullDay || s.supervisionMode === 'FULL_DAY' || s.shift === 'FULL_DAY') {
+        return true;
+      }
+
+      if (shift && s.shift === shift) return true;
+      if (timeSlot && s.timeSlot === timeSlot) return true;
+      if (periodNumber && s.periodNumber === periodNumber) return true;
+      if (!shift && !timeSlot && !periodNumber) return true;
+      return false;
+    });
+
     if (match) {
       return {
         hasConflict: true,
-        reason: `المعلم معين بالفعل في الإشراف (${match.shift || match.timeSlot || 'نفس اليوم'}) بموقع: ${match.locationName}`,
+        reason: `المعلم معين بالفعل في الإشراف (${match.supervisionMode === 'FULL_DAY' || match.shift === 'FULL_DAY' ? 'إشراف يوم كامل' : (match.shift || match.timeSlot || 'نفس اليوم')}) بموقع: ${match.locationName}`,
       };
     }
 
-    // 2. Prevent teacher having lesson at supervision time
-    const schedule = storageService.getSchedule();
-    const lessonConflict = schedule.find(s => {
-      if (s.teacherId !== teacherId || s.isActive === false || s.isCancelled) return false;
-      const sameDay = dayOfWeek && (s.dayOfWeek === dayOfWeek || s.dayName === dayOfWeek);
-      if (!sameDay) return false;
-      if (periodNumber && s.periodNumber === periodNumber) return true;
-      if (timeSlot && s.periodNumber && timeSlot.includes(s.periodNumber.toString())) return true;
-      return false;
-    });
-    if (lessonConflict) {
-      return {
-        hasConflict: true,
-        reason: `تعارض مع جدول الحصص: المعلم لديه حصة دراسية مجدولة (${lessonConflict.subject} - ${lessonConflict.classroom}) في نفس توقيت الإشراف.`,
-      };
-    }
+    // 2. Prevent teacher having lesson at supervision time (For non-full-day slots or full-day without overrides)
+    if (!isFullDay) {
+      const schedule = storageService.getSchedule();
+      const lessonConflict = schedule.find(s => {
+        if (s.teacherId !== teacherId || s.isActive === false || s.isCancelled) return false;
+        const sameDay = dayOfWeek && (s.dayOfWeek === dayOfWeek || s.dayName === dayOfWeek);
+        if (!sameDay) return false;
+        if (periodNumber && s.periodNumber === periodNumber) return true;
+        if (timeSlot && s.periodNumber && timeSlot.includes(s.periodNumber.toString())) return true;
+        return false;
+      });
+      if (lessonConflict) {
+        return {
+          hasConflict: true,
+          reason: `تعارض مع جدول الحصص: المعلم لديه حصة دراسية مجدولة (${lessonConflict.subject} - ${lessonConflict.classroom}) في نفس توقيت الإشراف.`,
+        };
+      }
 
-    // 3. Prevent teacher having reserve substitution at supervision time
-    const subs = storageService.getSubstitutions();
-    const subConflict = subs.find(s => {
-      if (s.substituteTeacherId !== teacherId || s.status === 'CANCELLED') return false;
-      if (s.date !== date) return false;
-      if (periodNumber && s.periodNumber === periodNumber) return true;
-      return false;
-    });
-    if (subConflict) {
-      return {
-        hasConflict: true,
-        reason: `تعارض مع حصص الاحتياطي: المعلم مسند إليه حصة احتياطي بالفصل (${subConflict.classroom}) في نفس توقيت الإشراف.`,
-      };
+      // 3. Prevent teacher having reserve substitution at supervision time
+      const subs = storageService.getSubstitutions();
+      const subConflict = subs.find(s => {
+        if (s.substituteTeacherId !== teacherId || s.status === 'CANCELLED') return false;
+        if (s.date !== date) return false;
+        if (periodNumber && s.periodNumber === periodNumber) return true;
+        return false;
+      });
+      if (subConflict) {
+        return {
+          hasConflict: true,
+          reason: `تعارض مع حصص الاحتياطي: المعلم مسند إليه حصة احتياطي بالفصل (${subConflict.classroom}) في نفس توقيت الإشراف.`,
+        };
+      }
     }
 
     return { hasConflict: false };

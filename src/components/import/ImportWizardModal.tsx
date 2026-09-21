@@ -12,7 +12,7 @@ import {
   X,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { Employee, Student } from '../../types';
+import { Employee, EmployeeType, Student, normalizeStudentGender, normalizeStudentReligion, normalizeStudentEnrollmentState } from '../../types';
 import { storageService } from '../../services/storageService';
 
 interface ImportWizardModalProps {
@@ -47,7 +47,7 @@ export const ImportWizardModal: React.FC<ImportWizardModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Student Fields
+  // Student Fields - Phase 2
   const studentFieldDefs = [
     { key: 'name', label: 'اسم الطالب رباعي', required: true, aliases: ['الاسم', 'اسم الطالب', 'اسم الطالب رباعي', 'student name', 'name'] },
     { key: 'studentCode', label: 'كود الطالب / رقم الجلوس', required: false, aliases: ['الكود', 'كود الطالب', 'رقم الجلوس', 'code', 'student code', 'id'] },
@@ -55,7 +55,9 @@ export const ImportWizardModal: React.FC<ImportWizardModalProps> = ({
     { key: 'stage', label: 'المرحلة الدراسية', required: false, aliases: ['المرحلة', 'المرحلة الدراسية', 'stage'] },
     { key: 'grade', label: 'الصف الدراسي', required: true, aliases: ['الصف', 'الصف الدراسي', 'السنة', 'grade'] },
     { key: 'classroom', label: 'الفصل / الشعبة', required: true, aliases: ['الفصل', 'الشعبة', 'القاعة', 'classroom', 'class'] },
-    { key: 'gender', label: 'النوع (ذكر / أنثى)', required: false, aliases: ['النوع', 'الجنس', 'gender'] },
+    { key: 'gender', label: 'النوع (ذكر / أنثى)', required: false, aliases: ['النوع', 'الجنس', 'gender', 'sex'] },
+    { key: 'religion', label: 'الديانة (مسلم / مسيحي)', required: false, aliases: ['الديانة', 'ديانة', 'دين', 'religion'] },
+    { key: 'studentStatus', label: 'حالة القيد (مستجد / باقي)', required: false, aliases: ['حالة القيد', 'القيد', 'نوع القيد', 'student status', 'enrollment status'] },
     { key: 'parentName', label: 'اسم ولي الأمر', required: false, aliases: ['ولي الأمر', 'اسم ولي الأمر', 'parent name', 'guardian'] },
     { key: 'parentPhone', label: 'رقم هاتف ولي الأمر', required: false, aliases: ['تليفون ولي الأمر', 'موبايل ولي الأمر', 'هاتف ولي الأمر', 'parent phone', 'phone'] },
     { key: 'phone', label: 'هاتف الطالب', required: false, aliases: ['هاتف الطالب', 'موبايل الطالب', 'student phone'] },
@@ -63,14 +65,15 @@ export const ImportWizardModal: React.FC<ImportWizardModalProps> = ({
     { key: 'notes', label: 'ملاحظات', required: false, aliases: ['ملاحظات', 'notes', 'بيان'] },
   ];
 
-  // Employee/Teacher Fields
+  // Employee/Teacher Fields - Phase 2 (Salary strictly removed)
   const employeeFieldDefs = [
     { key: 'name', label: 'اسم الموظف / المعلم', required: true, aliases: ['الاسم', 'اسم الموظف', 'اسم المعلم', 'name', 'full name'] },
     { key: 'id', label: 'الرقم الوظيفي / الكود', required: false, aliases: ['الكود', 'الرقم الوظيفي', 'كود الموظف', 'emp id', 'code', 'id'] },
-    { key: 'jobTitle', label: 'المسمى الوظيفي / التخصص', required: true, aliases: ['الوظيفة', 'المسمى الوظيفي', 'التخصص', 'المادة', 'job title', 'role'] },
-    { key: 'department', label: 'القسم / الإدارة', required: true, aliases: ['القسم', 'الإدارة', 'department', 'dept'] },
+    { key: 'employeeType', label: 'نوع الموظف (معلم / إداري)', required: false, aliases: ['نوع الموظف', 'النوع الوظيفي', 'الكادر', 'الفئة', 'employee type', 'type'] },
+    { key: 'jobTitle', label: 'المسمى الوظيفي', required: true, aliases: ['الوظيفة', 'المسمى الوظيفي', 'job title', 'role'] },
+    { key: 'specialization', label: 'التخصص', required: false, aliases: ['التخصص', 'المادة', 'القسم', 'specialization', 'subject'] },
+    { key: 'teacherCode', label: 'كود المعلم', required: false, aliases: ['كود المعلم', 'كود التدريس', 'teacher code'] },
     { key: 'nationalId', label: 'الرقم القومي', required: false, aliases: ['الرقم القومي', 'بطاقة الرقم القومي', 'national id'] },
-    { key: 'basicSalary', label: 'الراتب الأساسي (ج.م)', required: false, aliases: ['الراتب', 'المرتب', 'الأساسي', 'الراتب الأساسي', 'salary', 'basic salary'] },
     { key: 'phone', label: 'رقم الهاتف', required: false, aliases: ['الهاتف', 'الموبايل', 'رقم الهاتف', 'phone', 'mobile'] },
     { key: 'email', label: 'البريد الإلكتروني', required: false, aliases: ['البريد', 'الإيميل', 'email'] },
     { key: 'hireDate', label: 'تاريخ التعيين', required: false, aliases: ['تاريخ التعيين', 'التعيين', 'hire date'] },
@@ -152,6 +155,8 @@ export const ImportWizardModal: React.FC<ImportWizardModalProps> = ({
           'الصف الدراسي': firstGrade?.name || 'الصف الأول الثانوي',
           'الفصل': firstGrade?.classrooms[0] || '1/1',
           'النوع': 'ذكر',
+          'الديانة': 'مسلم',
+          'حالة القيد': 'مستجد',
           'اسم ولي الأمر': 'محمد إبراهيم حسن',
           'رقم هاتف ولي الأمر': '01012345678',
           'هاتف الطالب': '01123456789',
@@ -166,6 +171,8 @@ export const ImportWizardModal: React.FC<ImportWizardModalProps> = ({
           'الصف الدراسي': secondGrade?.name || 'الصف الثاني الثانوي',
           'الفصل': secondGrade?.classrooms[0] || '2/1',
           'النوع': 'أنثى',
+          'الديانة': 'مسيحي',
+          'حالة القيد': 'باقي',
           'اسم ولي الأمر': 'طارق عبد الله علي',
           'رقم هاتف ولي الأمر': '01298765432',
           'هاتف الطالب': '',
@@ -182,13 +189,26 @@ export const ImportWizardModal: React.FC<ImportWizardModalProps> = ({
         {
           'اسم الموظف': 'محمود عبد الرحمن سيد',
           'الرقم الوظيفي': 'EMP-201',
-          'المسمى الوظيفي': jobTitles[0]?.title || 'معلم أول لغة عربية',
-          'القسم': departments[0]?.name || 'هيئة التدريس والتعليم',
+          'نوع الموظف': 'معلم',
+          'المسمى الوظيفي': 'معلم أول لغة عربية',
+          'التخصص': 'لغة عربية',
+          'كود المعلم': 'T-201',
           'الرقم القومي': '28509140101234',
-          'الراتب الأساسي': '12500',
           'رقم الهاتف': '01098765432',
           'البريد الإلكتروني': 'mahmoud@school.edu.eg',
           'تاريخ التعيين': '2022-09-01',
+        },
+        {
+          'اسم الموظف': 'سميحة كمال أحمد',
+          'الرقم الوظيفي': 'EMP-202',
+          'نوع الموظف': 'إداري',
+          'المسمى الوظيفي': 'أخصائي شؤون طلاب',
+          'التخصص': 'شؤون طلاب',
+          'كود المعلم': '',
+          'الرقم القومي': '28905180109876',
+          'رقم الهاتف': '01123456789',
+          'البريد الإلكتروني': 'samiha@school.edu.eg',
+          'تاريخ التعيين': '2023-01-15',
         },
       ];
       const ws = XLSX.utils.json_to_sheet(sampleData);
@@ -238,7 +258,12 @@ export const ImportWizardModal: React.FC<ImportWizardModalProps> = ({
             };
 
             const rawGender = getVal('gender');
-            const gender = rawGender.includes('أنثى') || rawGender.toLowerCase() === 'female' || rawGender.toLowerCase() === 'f' ? 'أنثى' : 'ذكر';
+            const rawReligion = getVal('religion');
+            const rawStatus = getVal('studentStatus');
+
+            const gender = rawGender ? (normalizeStudentGender(rawGender) === 'غير محدد' ? undefined : normalizeStudentGender(rawGender)) : undefined;
+            const religion = rawReligion ? (normalizeStudentReligion(rawReligion) === 'غير محدد' ? undefined : normalizeStudentReligion(rawReligion)) : undefined;
+            const studentStatus = rawStatus ? (normalizeStudentEnrollmentState(rawStatus) === 'غير محدد' ? undefined : normalizeStudentEnrollmentState(rawStatus)) : undefined;
 
             return {
               id: getVal('studentCode') || `STD-${Date.now().toString().slice(-6)}-${idx + 1}`,
@@ -246,6 +271,8 @@ export const ImportWizardModal: React.FC<ImportWizardModalProps> = ({
               name: getVal('name'),
               nationalId: getVal('nationalId') || undefined,
               gender,
+              religion,
+              studentStatus,
               stage: getVal('stage') || 'المرحلة العامة',
               grade: getVal('grade'),
               classroom: getVal('classroom'),
@@ -270,30 +297,29 @@ export const ImportWizardModal: React.FC<ImportWizardModalProps> = ({
             errors: result.errors.length,
           });
         } else {
-          // Employee mode
-          let added = 0;
-          let updated = 0;
-          const currentEmployees = storageService.getEmployees();
-
-          rawRows.forEach((row, idx) => {
+          // Employee mode - Phase 2 (Salary strictly removed)
+          const employeesToImport: Employee[] = rawRows.map((row, idx) => {
             const getVal = (key: string) => {
               const col = columnMapping[key];
               return col && row[col] !== undefined ? String(row[col]).trim() : '';
             };
 
             const name = getVal('name');
-            if (!name) return;
+            if (!name) return null;
 
-            const id = getVal('id') || `EMP-${Date.now().toString().slice(-4)}-${idx + 1}`;
-            const existingIdx = currentEmployees.findIndex(e => e.id === id || (getVal('nationalId') && e.nationalId === getVal('nationalId')));
+            const rawType = getVal('employeeType').toLowerCase();
+            const employeeType: EmployeeType = rawType.includes('إدار') || rawType.includes('admin') ? 'Administrative' : 'Teacher';
+            const teacherCode = getVal('teacherCode') || (employeeType === 'Teacher' ? `T-${String(idx + 1).padStart(3, '0')}` : undefined);
 
             const empObj: Employee = {
-              id,
+              id: getVal('id') || `EMP-${Date.now().toString().slice(-4)}-${idx + 1}`,
               name,
-              jobTitle: getVal('jobTitle') || 'معلم / موظف',
-              department: getVal('department') || 'هيئة التدريس والتعليم',
+              fullName: name,
+              employeeType,
+              jobTitle: getVal('jobTitle') || (employeeType === 'Teacher' ? 'معلم' : 'إداري'),
+              specialization: getVal('specialization') || (employeeType === 'Teacher' ? 'تعليم عام' : 'إدارة عامة'),
+              teacherCode,
               nationalId: getVal('nationalId') || undefined,
-              basicSalary: Number(getVal('basicSalary')) || 8000,
               phone: getVal('phone') || undefined,
               email: getVal('email') || undefined,
               hireDate: getVal('hireDate') || new Date().toISOString().split('T')[0],
@@ -302,21 +328,16 @@ export const ImportWizardModal: React.FC<ImportWizardModalProps> = ({
               workStartTime: '07:30',
               workEndTime: '14:30',
               daysOff: ['الجمعة', 'السبت'],
+              isTeacher: employeeType === 'Teacher',
+              isTeachingStaff: employeeType === 'Teacher',
             };
+            return empObj;
+          }).filter(Boolean) as Employee[];
 
-            if (existingIdx >= 0) {
-              currentEmployees[existingIdx] = { ...currentEmployees[existingIdx], ...empObj };
-              updated++;
-            } else {
-              currentEmployees.push(empObj);
-              added++;
-            }
-            storageService.saveEmployee(empObj);
-          });
-
+          const res = storageService.bulkSaveEmployees(employeesToImport);
           setImportStats({
-            added,
-            updated,
+            added: res.added,
+            updated: res.updated,
             ignored: 0,
             errors: 0,
           });

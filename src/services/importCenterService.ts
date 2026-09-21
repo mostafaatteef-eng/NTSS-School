@@ -343,11 +343,13 @@ export class ImportCenterService {
           }
         } else if (entityType === 'EMPLOYEES' || entityType === 'TEACHERS') {
           if (diff.classification === 'NEW') {
+            const isTeacher = entityType === 'TEACHERS' || (diff.incomingData.jobTitle || '').includes('معلم');
             const newEmp: Employee = {
               id: diff.incomingData.id || `EMP-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
               name: diff.incomingData.name,
               nationalId: diff.incomingData.nationalId || '',
-              department: diff.incomingData.department,
+              employeeType: diff.incomingData.employeeType || (isTeacher ? 'Teacher' : 'Administrative'),
+              specialization: diff.incomingData.specialization || diff.incomingData.department || 'عام',
               jobTitle: diff.incomingData.jobTitle,
               phone: diff.incomingData.phone || '',
               hireDate: diff.incomingData.hireDate || getCairoNowISO().split('T')[0],

@@ -22,7 +22,14 @@ import {
   Sparkles
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { Student, StudentEnrollment, StudentTransferHistory } from '../../types';
+import {
+  Student,
+  StudentEnrollment,
+  StudentTransferHistory,
+  normalizeStudentGender,
+  normalizeStudentReligion,
+  normalizeStudentEnrollmentState,
+} from '../../types';
 import { storageService } from '../../services/storageService';
 import { ImportWizardModal } from '../import/ImportWizardModal';
 import { StudentProfileModal } from './StudentProfileModal';
@@ -36,6 +43,9 @@ export const StudentsView: React.FC = () => {
   const [selectedGrade, setSelectedGrade] = useState('ALL');
   const [selectedClassroom, setSelectedClassroom] = useState('ALL');
   const [selectedStatus, setSelectedStatus] = useState('ALL');
+  const [genderFilter, setGenderFilter] = useState<'ALL' | 'ذكر' | 'أنثى' | 'غير محدد'>('ALL');
+  const [religionFilter, setReligionFilter] = useState<'ALL' | 'مسلم' | 'مسيحي' | 'غير محدد'>('ALL');
+  const [studentStatusFilter, setStudentStatusFilter] = useState<'ALL' | 'مستجد' | 'باقي' | 'غير محدد'>('ALL');
 
   // Modals state
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
@@ -116,10 +126,13 @@ export const StudentsView: React.FC = () => {
       const matchGrade = selectedGrade === 'ALL' || s.grade === selectedGrade;
       const matchClassroom = selectedClassroom === 'ALL' || s.classroom === selectedClassroom;
       const matchStatus = selectedStatus === 'ALL' || s.status === selectedStatus;
+      const matchGender = genderFilter === 'ALL' || normalizeStudentGender(s.gender) === genderFilter;
+      const matchReligion = religionFilter === 'ALL' || normalizeStudentReligion(s.religion) === religionFilter;
+      const matchStudentStatus = studentStatusFilter === 'ALL' || normalizeStudentEnrollmentState(s.studentStatus) === studentStatusFilter;
 
-      return matchSearch && matchStage && matchGrade && matchClassroom && matchStatus;
+      return matchSearch && matchStage && matchGrade && matchClassroom && matchStatus && matchGender && matchReligion && matchStudentStatus;
     });
-  }, [students, searchTerm, selectedStage, selectedGrade, selectedClassroom, selectedStatus]);
+  }, [students, searchTerm, selectedStage, selectedGrade, selectedClassroom, selectedStatus, genderFilter, religionFilter, studentStatusFilter]);
 
   const handleOpenAdd = () => {
     setEditingStudent(null);
@@ -128,7 +141,9 @@ export const StudentsView: React.FC = () => {
       name: '',
       studentCode: `STD-${Date.now().toString().slice(-5)}`,
       nationalId: '',
-      gender: 'ذكر',
+      gender: undefined,
+      religion: undefined,
+      studentStatus: undefined,
       stage: stages[0]?.name || 'المرحلة الثانوية',
       grade: stages[0]?.grades[0]?.name || 'الصف الأول الثانوي',
       classroom: stages[0]?.grades[0]?.classrooms[0] || '1/1',
@@ -164,12 +179,18 @@ export const StudentsView: React.FC = () => {
     const studentId = editingStudent ? editingStudent.id : `STU-${Date.now().toString().slice(-6)}`;
     const now = getCairoNowISO();
 
+    const normalizedG = formData.gender ? normalizeStudentGender(formData.gender) : undefined;
+    const normalizedR = formData.religion ? normalizeStudentReligion(formData.religion) : undefined;
+    const normalizedS = formData.studentStatus ? normalizeStudentEnrollmentState(formData.studentStatus) : undefined;
+
     const studentRecord: Student = {
       id: studentId,
       studentCode: formData.studentCode || `STD-${Math.floor(1000 + Math.random() * 9000)}`,
       name: formData.name.trim(),
       nationalId: formData.nationalId?.trim() || undefined,
-      gender: (formData.gender as any) || 'ذكر',
+      gender: normalizedG === 'غير محدد' ? undefined : normalizedG,
+      religion: normalizedR === 'غير محدد' ? undefined : normalizedR,
+      studentStatus: normalizedS === 'غير محدد' ? undefined : normalizedS,
       stage: formData.stage || 'المرحلة الثانوية',
       grade: formData.grade,
       classroom: formData.classroom,
@@ -274,11 +295,13 @@ export const StudentsView: React.FC = () => {
       'كود الطالب': s.studentCode,
       'اسم الطالب رباعي': s.name,
       'الرقم القومي': s.nationalId || '—',
-      'النوع': s.gender,
+      'النوع': normalizeStudentGender(s.gender),
+      'الديانة': normalizeStudentReligion(s.religion),
+      'حالة القيد': normalizeStudentEnrollmentState(s.studentStatus),
       'المرحلة': s.stage,
       'الصف الدراسي': s.grade,
       'الفصل': s.classroom,
-      'حالة القيد': s.status,
+      'الحالة': s.status,
       'اسم ولي الأمر': s.parentName,
       'صلة القرابة': s.relationship,
       'هاتف ولي الأمر': s.parentPhone,
@@ -357,6 +380,9 @@ export const StudentsView: React.FC = () => {
               setSelectedGrade('ALL');
               setSelectedClassroom('ALL');
               setSelectedStatus('ALL');
+              setGenderFilter('ALL');
+              setReligionFilter('ALL');
+              setStudentStatusFilter('ALL');
             }}
             className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-[#008e8b] transition-colors cursor-pointer"
           >
@@ -365,7 +391,7 @@ export const StudentsView: React.FC = () => {
           </button>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
           {/* Search box */}
           <div className="relative md:col-span-2">
             <Search className="w-4 h-4 text-slate-400 absolute right-3.5 top-3" />
@@ -427,19 +453,45 @@ export const StudentsView: React.FC = () => {
             </select>
           </div>
 
-          {/* Status Filter */}
+          {/* Gender Filter */}
           <div>
             <select
-              value={selectedStatus}
-              onChange={(e) => setSelectedStatus(e.target.value)}
+              value={genderFilter}
+              onChange={(e) => setGenderFilter(e.target.value as any)}
               className="w-full text-xs bg-slate-50 border border-slate-300 rounded-xl px-3 py-2.5 text-slate-700 focus:outline-hidden focus:border-[#008e8b]"
             >
-              <option value="ALL">جميع الحالات</option>
-              <option value="نشط">نشط</option>
-              <option value="موقوف">موقوف</option>
-              <option value="منقول">منقول</option>
-              <option value="متخرج">متخرج</option>
-              <option value="غير نشط">غير نشط</option>
+              <option value="ALL">النوع (الكل)</option>
+              <option value="ذكر">ذكر</option>
+              <option value="أنثى">أنثى</option>
+              <option value="غير محدد">غير محدد</option>
+            </select>
+          </div>
+
+          {/* Religion Filter */}
+          <div>
+            <select
+              value={religionFilter}
+              onChange={(e) => setReligionFilter(e.target.value as any)}
+              className="w-full text-xs bg-slate-50 border border-slate-300 rounded-xl px-3 py-2.5 text-slate-700 focus:outline-hidden focus:border-[#008e8b]"
+            >
+              <option value="ALL">الديانة (الكل)</option>
+              <option value="مسلم">مسلم</option>
+              <option value="مسيحي">مسيحي</option>
+              <option value="غير محدد">غير محدد</option>
+            </select>
+          </div>
+
+          {/* Student Status Filter */}
+          <div>
+            <select
+              value={studentStatusFilter}
+              onChange={(e) => setStudentStatusFilter(e.target.value as any)}
+              className="w-full text-xs bg-slate-50 border border-slate-300 rounded-xl px-3 py-2.5 text-slate-700 focus:outline-hidden focus:border-[#008e8b]"
+            >
+              <option value="ALL">حالة القيد (الكل)</option>
+              <option value="مستجد">مستجد</option>
+              <option value="باقي">باقي</option>
+              <option value="غير محدد">غير محدد</option>
             </select>
           </div>
         </div>
@@ -462,70 +514,105 @@ export const StudentsView: React.FC = () => {
               <tr>
                 <th className="p-4">كود الطالب</th>
                 <th className="p-4">اسم الطالب رباعي</th>
+                <th className="p-4">النوع</th>
+                <th className="p-4">الديانة</th>
+                <th className="p-4">حالة القيد</th>
                 <th className="p-4">الصف / الفصل</th>
                 <th className="p-4">المرحلة</th>
                 <th className="p-4">ولي الأمر</th>
                 <th className="p-4">هاتف ولي الأمر</th>
-                <th className="p-4">حالة القيد</th>
+                <th className="p-4">حالة الحساب</th>
                 <th className="p-4 text-center">الإجراءات والتحكم</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filteredStudents.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="p-12 text-center text-slate-400">
+                  <td colSpan={11} className="p-12 text-center text-slate-400">
                     <Users className="w-12 h-12 mx-auto mb-2 text-slate-300" />
                     <p className="text-sm font-semibold text-slate-600">لا يوجد طلاب مطابقين للبحث أو الفلتر المختار</p>
                     <p className="text-xs text-slate-400 mt-1">يمكنك إضافة طالب جديد أو استيراد ملف Excel</p>
                   </td>
                 </tr>
               ) : (
-                filteredStudents.map(student => (
-                  <tr key={student.id} className="hover:bg-teal-50/30 transition-colors">
-                    <td className="p-4 font-mono font-bold text-[#008e8b]">
-                      {student.studentCode}
-                    </td>
-                    <td className="p-4">
-                      <div className="font-bold text-slate-800">{student.name}</div>
-                      {student.nationalId && (
-                        <div className="text-[10px] text-slate-400 font-mono mt-0.5">الرقم القومي: {student.nationalId}</div>
-                      )}
-                    </td>
-                    <td className="p-4">
-                      <div className="font-semibold text-slate-800">{student.grade}</div>
-                      <span className="inline-block bg-teal-100 text-[#008e8b] font-bold px-2 py-0.5 rounded-md text-[11px] mt-0.5">
-                        فصل: {student.classroom} {student.section ? `(شعبة ${student.section})` : ''}
-                      </span>
-                    </td>
-                    <td className="p-4 text-slate-600">{student.stage}</td>
-                    <td className="p-4">
-                      <div className="text-slate-800 font-medium">{student.parentName}</div>
-                      <div className="text-[10px] text-slate-400">({student.relationship || 'ولي أمر'})</div>
-                    </td>
-                    <td className="p-4 font-mono text-slate-700">
-                      {student.parentPhone ? (
-                        <a href={`tel:${student.parentPhone}`} className="hover:text-[#008e8b] hover:underline flex items-center gap-1">
-                          <Phone className="w-3 h-3 text-slate-400" />
-                          <span>{student.parentPhone}</span>
-                        </a>
-                      ) : (
-                        '—'
-                      )}
-                    </td>
-                    <td className="p-4">
-                      <span
-                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold ${
-                          student.status === 'نشط'
-                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                            : student.status === 'موقوف'
-                            ? 'bg-amber-50 text-amber-700 border border-amber-200'
-                            : 'bg-rose-50 text-rose-700 border border-rose-200'
-                        }`}
-                      >
-                        {student.status === 'نشط' ? <UserCheck className="w-3 h-3" /> : <UserX className="w-3 h-3" />}
-                        <span>{student.status}</span>
-                      </span>
-                    </td>
+                filteredStudents.map(student => {
+                  const gVal = normalizeStudentGender(student.gender);
+                  const rVal = normalizeStudentReligion(student.religion);
+                  const sVal = normalizeStudentEnrollmentState(student.studentStatus);
+
+                  return (
+                    <tr key={student.id} className="hover:bg-teal-50/30 transition-colors">
+                      <td className="p-4 font-mono font-bold text-[#008e8b]">
+                        {student.studentCode}
+                      </td>
+                      <td className="p-4">
+                        <div className="font-bold text-slate-800">{student.name}</div>
+                        {student.nationalId && (
+                          <div className="text-[10px] text-slate-400 font-mono mt-0.5">الرقم القومي: {student.nationalId}</div>
+                        )}
+                      </td>
+                      <td className="p-4">
+                        <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-bold ${
+                          gVal === 'ذكر' ? 'bg-blue-50 text-blue-700' :
+                          gVal === 'أنثى' ? 'bg-pink-50 text-pink-700' :
+                          'bg-slate-100 text-slate-500'
+                        }`}>
+                          {gVal}
+                        </span>
+                      </td>
+                      <td className="p-4">
+                        <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-medium ${
+                          rVal === 'مسلم' ? 'bg-emerald-50 text-emerald-700' :
+                          rVal === 'مسيحي' ? 'bg-indigo-50 text-indigo-700' :
+                          'bg-slate-100 text-slate-500'
+                        }`}>
+                          {rVal}
+                        </span>
+                      </td>
+                      <td className="p-4">
+                        <span className={`inline-block px-2.5 py-0.5 rounded text-[11px] font-bold ${
+                          sVal === 'مستجد' ? 'bg-teal-50 text-teal-700 border border-teal-200' :
+                          sVal === 'باقي' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
+                          'bg-slate-100 text-slate-500 border border-slate-200'
+                        }`}>
+                          {sVal}
+                        </span>
+                      </td>
+                      <td className="p-4">
+                        <div className="font-semibold text-slate-800">{student.grade}</div>
+                        <span className="inline-block bg-teal-100 text-[#008e8b] font-bold px-2 py-0.5 rounded-md text-[11px] mt-0.5">
+                          فصل: {student.classroom} {student.section ? `(شعبة ${student.section})` : ''}
+                        </span>
+                      </td>
+                      <td className="p-4 text-slate-600">{student.stage}</td>
+                      <td className="p-4">
+                        <div className="text-slate-800 font-medium">{student.parentName}</div>
+                        <div className="text-[10px] text-slate-400">({student.relationship || 'ولي أمر'})</div>
+                      </td>
+                      <td className="p-4 font-mono text-slate-700">
+                        {student.parentPhone ? (
+                          <a href={`tel:${student.parentPhone}`} className="hover:text-[#008e8b] hover:underline flex items-center gap-1">
+                            <Phone className="w-3 h-3 text-slate-400" />
+                            <span>{student.parentPhone}</span>
+                          </a>
+                        ) : (
+                          '—'
+                        )}
+                      </td>
+                      <td className="p-4">
+                        <span
+                          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold ${
+                            student.status === 'نشط'
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                              : student.status === 'موقوف'
+                              ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                              : 'bg-rose-50 text-rose-700 border border-rose-200'
+                          }`}
+                        >
+                          {student.status === 'نشط' ? <UserCheck className="w-3 h-3" /> : <UserX className="w-3 h-3" />}
+                          <span>{student.status}</span>
+                        </span>
+                      </td>
                     <td className="p-4">
                       <div className="flex items-center justify-center gap-1.5">
                         <button
@@ -562,9 +649,10 @@ export const StudentsView: React.FC = () => {
                       </div>
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
+                );
+              })
+            )}
+          </tbody>
           </table>
         </div>
       </div>
@@ -710,14 +798,41 @@ export const StudentsView: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">النوع</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">النوع (Gender)</label>
                   <select
-                    value={formData.gender || 'ذكر'}
+                    value={formData.gender || ''}
                     onChange={(e) => setFormData({ ...formData, gender: e.target.value as any })}
                     className="w-full text-xs bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-800 focus:outline-hidden focus:border-[#008e8b]"
                   >
-                    <option value="ذكر">ذكر</option>
-                    <option value="أنثى">أنثى</option>
+                    <option value="">غير محدد</option>
+                    <option value="ذكر">ذكر (Male)</option>
+                    <option value="أنثى">أنثى (Female)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">الديانة (Religion)</label>
+                  <select
+                    value={formData.religion || ''}
+                    onChange={(e) => setFormData({ ...formData, religion: e.target.value as any })}
+                    className="w-full text-xs bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-800 focus:outline-hidden focus:border-[#008e8b]"
+                  >
+                    <option value="">غير محدد</option>
+                    <option value="مسلم">مسلم (Muslim)</option>
+                    <option value="مسيحي">مسيحي (Christian)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">حالة القيد (Enrollment Status)</label>
+                  <select
+                    value={formData.studentStatus || ''}
+                    onChange={(e) => setFormData({ ...formData, studentStatus: e.target.value as any })}
+                    className="w-full text-xs bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-800 focus:outline-hidden focus:border-[#008e8b]"
+                  >
+                    <option value="">غير محدد</option>
+                    <option value="مستجد">مستجد (New)</option>
+                    <option value="باقي">باقي (Remaining)</option>
                   </select>
                 </div>
 
@@ -793,7 +908,7 @@ export const StudentsView: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">حالة القيد</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">حالة الحساب / النشاط</label>
                   <select
                     value={formData.status || 'نشط'}
                     onChange={(e) => setFormData({ ...formData, status: e.target.value as any })}

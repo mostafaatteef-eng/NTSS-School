@@ -6,6 +6,9 @@ import {
   StudentAttendanceRecord,
   SystemSettings,
   User,
+  normalizeStudentGender,
+  normalizeStudentReligion,
+  normalizeStudentEnrollmentState,
 } from '../types';
 import {
   ReportColumn,
@@ -39,7 +42,10 @@ export class ReportService {
         { key: 'academicYear', label: 'العام الدراسي', type: 'select', defaultValue: '2025/2026' },
         { key: 'grade', label: 'الصف الدراسي', type: 'select', defaultValue: 'ALL' },
         { key: 'classroom', label: 'الفصل / الشعبة', type: 'select', defaultValue: 'ALL' },
-        { key: 'status', label: 'حالة الطالب', type: 'select', defaultValue: 'ALL', options: [{ value: 'ALL', label: 'الكل' }, { value: 'نشط', label: 'نشط ومقيد' }, { value: 'منقول', label: 'منقول' }, { value: 'مفصول', label: 'مفصول' }] },
+        { key: 'gender', label: 'النوع', type: 'select', defaultValue: 'ALL', options: [{ value: 'ALL', label: 'الكل' }, { value: 'ذكر', label: 'ذكر' }, { value: 'أنثى', label: 'أنثى' }, { value: 'غير محدد', label: 'غير محدد' }] },
+        { key: 'religion', label: 'الديانة', type: 'select', defaultValue: 'ALL', options: [{ value: 'ALL', label: 'الكل' }, { value: 'مسلم', label: 'مسلم' }, { value: 'مسيحي', label: 'مسيحي' }, { value: 'غير محدد', label: 'غير محدد' }] },
+        { key: 'studentStatus', label: 'حالة القيد', type: 'select', defaultValue: 'ALL', options: [{ value: 'ALL', label: 'الكل' }, { value: 'مستجد', label: 'مستجد' }, { value: 'باقي', label: 'باقي' }, { value: 'غير محدد', label: 'غير محدد' }] },
+        { key: 'status', label: 'حالة الحساب', type: 'select', defaultValue: 'ALL', options: [{ value: 'ALL', label: 'الكل' }, { value: 'نشط', label: 'نشط ومقيد' }, { value: 'منقول', label: 'منقول' }, { value: 'مفصول', label: 'مفصول' }] },
         { key: 'search', label: 'بحث بالاسم / الكود', type: 'text', placeholder: 'اسم الطالب أو كود الطالب...' },
       ],
       availableColumns: [
@@ -49,9 +55,11 @@ export class ReportService {
         { key: 'grade', label: 'الصف', isDefaultVisible: true, align: 'center' },
         { key: 'classroom', label: 'الفصل', isDefaultVisible: true, align: 'center' },
         { key: 'gender', label: 'النوع', isDefaultVisible: true, align: 'center' },
+        { key: 'religion', label: 'الديانة', isDefaultVisible: true, align: 'center' },
+        { key: 'studentStatus', label: 'حالة القيد', isDefaultVisible: true, align: 'center' },
         { key: 'parentName', label: 'ولي الأمر', isDefaultVisible: true },
         { key: 'parentPhone', label: 'هاتف التواصل', isDefaultVisible: true, align: 'center' },
-        { key: 'status', label: 'الحالة', isDefaultVisible: true, align: 'center' },
+        { key: 'status', label: 'حالة الحساب', isDefaultVisible: true, align: 'center' },
       ],
       exportFormats: ['EXCEL', 'PDF', 'CSV', 'PRINT'],
       defaultSort: { column: 'name', direction: 'asc' },
@@ -442,15 +450,20 @@ export class ReportService {
             const matchGrade = !filters.grade || filters.grade === 'ALL' || s.grade === filters.grade;
             const matchClass = !filters.classroom || filters.classroom === 'ALL' || s.classroom === filters.classroom;
             const matchStatus = !filters.status || filters.status === 'ALL' || s.status === filters.status;
+            const matchGender = !filters.gender || filters.gender === 'ALL' || normalizeStudentGender(s.gender) === filters.gender;
+            const matchReligion = !filters.religion || filters.religion === 'ALL' || normalizeStudentReligion(s.religion) === filters.religion;
+            const matchStudentStatus = !filters.studentStatus || filters.studentStatus === 'ALL' || normalizeStudentEnrollmentState(s.studentStatus) === filters.studentStatus;
             const matchSearch = !filters.search || s.name.includes(filters.search) || s.studentCode.includes(filters.search);
-            return matchGrade && matchClass && matchStatus && matchSearch;
+            return matchGrade && matchClass && matchStatus && matchGender && matchReligion && matchStudentStatus && matchSearch;
           })
           .map(s => ({
             studentCode: s.studentCode,
             name: s.name,
             grade: s.grade,
             classroom: s.classroom,
-            gender: s.gender || 'غير محدد',
+            gender: normalizeStudentGender(s.gender),
+            religion: normalizeStudentReligion(s.religion),
+            studentStatus: normalizeStudentEnrollmentState(s.studentStatus),
             parentName: s.parentName || 'ولي الأمر',
             parentPhone: s.parentPhone || s.phone || '-',
             status: s.status,

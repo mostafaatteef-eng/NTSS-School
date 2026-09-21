@@ -29,7 +29,7 @@ import {
   PhoneCall,
   ArrowRightLeft
 } from 'lucide-react';
-import { Student, ParentCommunicationLog, BehaviorScoreLedger, BehaviorViolation, CommunicationType, User as AppUser } from '../../types';
+import { Student, ParentCommunicationLog, BehaviorScoreLedger, BehaviorViolation, CommunicationType, User as AppUser, normalizeStudentGender, normalizeStudentReligion, normalizeStudentEnrollmentState } from '../../types';
 import { storageService } from '../../services/storageService';
 import { formatEgyptianDate, getCairoNowISO } from '../../utils/egyptianTime';
 
@@ -384,7 +384,23 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
                   </div>
                   <div className="flex justify-between py-1 border-b border-slate-200">
                     <span className="text-slate-500">النوع:</span>
-                    <span className="text-slate-800">{student.gender}</span>
+                    <span className="text-slate-800 font-medium">{normalizeStudentGender(student.gender)}</span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-slate-200">
+                    <span className="text-slate-500">الديانة:</span>
+                    <span className="text-slate-800 font-medium">{normalizeStudentReligion(student.religion)}</span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-slate-200">
+                    <span className="text-slate-500">حالة القيد:</span>
+                    <span className={`font-bold px-2 py-0.5 rounded text-[11px] ${
+                      normalizeStudentEnrollmentState(student.studentStatus) === 'مستجد'
+                        ? 'bg-emerald-50 text-emerald-700'
+                        : normalizeStudentEnrollmentState(student.studentStatus) === 'باقي'
+                        ? 'bg-amber-50 text-amber-700'
+                        : 'bg-slate-100 text-slate-600'
+                    }`}>
+                      {normalizeStudentEnrollmentState(student.studentStatus)}
+                    </span>
                   </div>
                   <div className="flex justify-between py-1 border-b border-slate-200">
                     <span className="text-slate-500">المرحلة والصف:</span>

@@ -246,9 +246,9 @@ export interface Employee {
   nationalId?: string;
   
   // Phase 2 Active Model
-  employeeType: EmployeeType; // 'Teacher' | 'Administrative' (معلم | إداري)
+  employeeType?: EmployeeType; // 'Teacher' | 'Administrative' (معلم | إداري)
   jobTitle: string;
-  specialization: string; // e.g. رياضيات، لغة إنجليزية، ذكاء اصطناعي، شؤون طلاب، موارد بشرية، حسابات
+  specialization?: string; // e.g. رياضيات، لغة إنجليزية، ذكاء اصطناعي، شؤون طلاب، موارد بشرية، حسابات
   
   // Retired fields for backward compatibility with historical spreadsheets/archives (Do NOT use in active UI/DTO)
   /** @deprecated Retired in Phase 2 - use employeeType & specialization */
@@ -315,6 +315,7 @@ export interface AttendanceRecord {
 
 export interface LeaveRecord {
   id: string;
+  schoolId?: string;
   employeeId: string;
   employeeName: string;
   department: string;
@@ -324,6 +325,9 @@ export interface LeaveRecord {
   daysCount: number;
   status: LeaveStatus;
   reason: string;
+  notes?: string;
+  attachment?: string;
+  rejectionReason?: string;
   approvedBy?: string;
   createdAt: string;
 }
@@ -1123,8 +1127,12 @@ export type SupervisionType =
   | 'EXAM'
   | 'GENERAL';
 
+export type SupervisionMode = 'FULL_DAY' | 'TIME_SLOT';
+
 export interface SupervisionAssignment {
   id: string;
+  schoolId?: string;
+  supervisionMode?: SupervisionMode; // 'FULL_DAY' | 'TIME_SLOT'
   teacherId: string;
   teacherCode?: string;
   teacherName?: string;

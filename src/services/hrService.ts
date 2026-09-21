@@ -34,6 +34,7 @@ export class HRService {
    * ========================================================================= */
   public static getPermissions(filters?: {
     employeeId?: string;
+    schoolId?: string;
     date?: string;
     month?: number;
     year?: number;
@@ -48,6 +49,10 @@ export class HRService {
         list = [];
       }
     }
+
+    const activeSchoolId = (filters?.schoolId || storageService.getActiveSchoolId()).trim();
+    // School isolation: filter records matching active school
+    list = list.filter(p => !p.schoolId || p.schoolId.trim() === activeSchoolId);
 
     if (!filters) return list;
 
@@ -67,14 +72,34 @@ export class HRService {
     perm: Partial<EmployeePermissionRecord>,
     currentUser?: User | null
   ): { success: boolean; data?: EmployeePermissionRecord; message?: string } {
-    const list = this.getPermissions();
+    const raw = localStorage.getItem(STORAGE_KEYS_EXTRA.PERMISSIONS);
+    let allPermissions: EmployeePermissionRecord[] = [];
+    if (raw) {
+      try {
+        allPermissions = JSON.parse(raw);
+      } catch {
+        allPermissions = [];
+      }
+    }
+
     const now = getCairoNowISO();
     const user = currentUser || storageService.getCurrentUser();
-    const isPermAdmin = user?.role === 'Admin' || (user?.role as string) === 'HR' || user?.role === 'TeacherAffairs';
+    if (!user) {
+      return { success: false, message: 'يجب تسجيل الدخول لتقديم طلب الإذن.' };
+    }
 
-    let targetEmpId = perm.employeeId;
-    if (user && !isPermAdmin) {
-      targetEmpId = user.employeeId || user.id;
+    const isPermAdmin = user.role === 'Admin' || (user.role as string) === 'HR' || user.role === 'TeacherAffairs';
+    const activeSchoolId = (user.schoolId || storageService.getActiveSchoolId()).trim();
+
+    // Strict identity enforcement from session:
+    let targetEmpId = user.employeeId || user.id;
+    if (isPermAdmin && perm.employeeId) {
+      targetEmpId = perm.employeeId;
+    }
+
+    // Security check: non-admin attempting to set another employee's ID
+    if (!isPermAdmin && perm.employeeId && perm.employeeId !== targetEmpId) {
+      return { success: false, message: 'أمنياً: لا يمكنك إنشاء طلب إذن لموظف آخر.' };
     }
 
     if (!targetEmpId || !perm.date) {
@@ -86,6 +111,7 @@ export class HRService {
 
     const prepared: EmployeePermissionRecord = {
       id: perm.id || `PERM-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      schoolId: activeSchoolId,
       employeeId: targetEmpId,
       employeeName: (user && !isPermAdmin) ? (emp?.name || user.fullName) : (perm.employeeName || emp?.name || 'موظف'),
       department: (user && !isPermAdmin) ? (emp?.department || 'هيئة التدريس') : (perm.department || emp?.department || ''),
@@ -95,19 +121,28 @@ export class HRService {
       endTime: perm.endTime || '12:00',
       durationHours,
       reason: perm.reason || 'ظرف شخصي',
-      status: isPermAdmin ? (perm.status || 'مقبولة') : 'معلقة',
-      approvedBy: isPermAdmin ? (perm.approvedBy || user?.fullName) : undefined,
+      notes: perm.notes || '',
+      attachment: perm.attachment || '',
+      status: isPermAdmin ? (perm.status || 'معلقة') : 'معلقة',
+      approvedBy: isPermAdmin && perm.status === 'مقبولة' ? (perm.approvedBy || user.fullName) : undefined,
       createdAt: perm.createdAt || now,
     };
 
-    const idx = list.findIndex(p => p.id === prepared.id);
+    const idx = allPermissions.findIndex(p => p.id === prepared.id);
     if (idx >= 0) {
-      list[idx] = prepared;
+      const existing = allPermissions[idx];
+      if (existing.schoolId && existing.schoolId.trim() !== activeSchoolId) {
+        return { success: false, message: 'غير مصرح لك بتعديل إذن بمدرسة أخرى.' };
+      }
+      if (!isPermAdmin && existing.employeeId !== targetEmpId) {
+        return { success: false, message: 'غير مصرح لك بتعديل إذن موظف آخر.' };
+      }
+      allPermissions[idx] = { ...existing, ...prepared, schoolId: activeSchoolId };
     } else {
-      list.unshift(prepared);
+      allPermissions.unshift(prepared);
     }
 
-    localStorage.setItem(STORAGE_KEYS_EXTRA.PERMISSIONS, JSON.stringify(list));
+    localStorage.setItem(STORAGE_KEYS_EXTRA.PERMISSIONS, JSON.stringify(allPermissions));
 
     if (prepared.status === 'مقبولة') {
       this.syncPermissionToAttendance(prepared);

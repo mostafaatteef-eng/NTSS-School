@@ -2277,7 +2277,7 @@ class StorageService {
   }
 
   // ---------------- Employees & Teachers ----------------
-  public getEmployees(options?: { includeFinancials?: boolean }): Employee[] {
+  public getEmployees(_options?: { includeFinancials?: boolean }): Employee[] {
     let raw = localStorage.getItem(STORAGE_KEYS.EMPLOYEES);
     if (!raw) {
       const legacyRaw = localStorage.getItem('ntss_employees');
@@ -2288,18 +2288,35 @@ class StorageService {
     }
     if (!raw) return [];
     try {
-      const list: Employee[] = JSON.parse(raw);
-      const user = this.getCurrentUser();
-      const isAdmin = !user || user.role === 'Admin';
-      if (!isAdmin && !options?.includeFinancials) {
-        // Red-Team Guard: Sanitize sensitive payroll compensation for non-admin callers
-        return list.map(e => ({
+      const list: any[] = JSON.parse(raw);
+      // Phase 2: Salary fields are retired and strictly forbidden from active UI/DTO/Local Cache
+      return list.map(e => {
+        const isTeacher = Boolean(
+          e.employeeType === 'Teacher' ||
+          e.isTeacher ||
+          e.teacherCode ||
+          e.isTeachingStaff ||
+          (e.jobTitle && String(e.jobTitle).includes('معلم'))
+        );
+        const empType: 'Teacher' | 'Administrative' = e.employeeType === 'Teacher' || isTeacher ? 'Teacher' : 'Administrative';
+        const specialization = e.specialization || e.department || (empType === 'Teacher' ? 'تعليم عام' : 'إدارة عامة');
+
+        const clean: Employee = {
           ...e,
-          basicSalary: 0,
-          allowances: 0,
-        }));
-      }
-      return list;
+          employeeType: empType,
+          specialization,
+          isTeacher,
+          isTeachingStaff: isTeacher,
+        };
+
+        // Strictly delete retired financial fields from memory and active DTOs
+        delete clean.basicSalary;
+        delete clean.allowances;
+        delete clean.salary;
+        delete (clean as any).netSalary;
+
+        return clean;
+      });
     } catch {
       return [];
     }
@@ -2369,10 +2386,17 @@ class StorageService {
   }
 
   public saveEmployee(emp: Employee): { success: boolean; message?: string } {
-    const list = this.getEmployees({ includeFinancials: true });
+    const list = this.getEmployees();
     const idx = list.findIndex(e => e.id === emp.id);
 
-    const isTeacher = Boolean(emp.isTeacher || emp.teacherCode || emp.isTeachingStaff || (emp.jobTitle && emp.jobTitle.includes('معلم')));
+    const isTeacher = Boolean(
+      emp.employeeType === 'Teacher' ||
+      emp.isTeacher ||
+      emp.teacherCode ||
+      emp.isTeachingStaff ||
+      (emp.jobTitle && emp.jobTitle.includes('معلم'))
+    );
+    const empType: 'Teacher' | 'Administrative' = emp.employeeType === 'Teacher' || isTeacher ? 'Teacher' : 'Administrative';
     const assignedLoginNumber = emp.loginNumber || this.getNextLoginNumber();
     let teacherCode = emp.teacherCode;
     if (isTeacher && !teacherCode) {
@@ -2384,6 +2408,8 @@ class StorageService {
       employeeId: emp.employeeId || emp.id,
       fullName: emp.fullName || emp.name,
       name: emp.fullName || emp.name,
+      employeeType: empType,
+      specialization: emp.specialization || (empType === 'Teacher' ? 'تعليم عام' : 'إدارة عامة'),
       isTeachingStaff: isTeacher,
       isTeacher: isTeacher,
       teacherId: isTeacher ? (emp.teacherId || emp.id) : emp.teacherId,
@@ -2391,18 +2417,117 @@ class StorageService {
       loginNumber: assignedLoginNumber,
     };
 
+    // Phase 2: Strictly eliminate salary fields before persisting
+    delete normalizedEmp.basicSalary;
+    delete normalizedEmp.allowances;
+    delete normalizedEmp.salary;
+    delete (normalizedEmp as any).netSalary;
+    delete (normalizedEmp as any).password;
+    delete (normalizedEmp as any).passwordHash;
+
     if (idx >= 0) {
       const old = list[idx];
       list[idx] = normalizedEmp;
-      this.logAudit('UPDATE', 'EMPLOYEE', `تعديل بيانات الموظف/المعلم: ${normalizedEmp.name} (${normalizedEmp.department})`, JSON.stringify(old), JSON.stringify(normalizedEmp), normalizedEmp.id);
+      this.logAudit('UPDATE', 'EMPLOYEE', `تعديل بيانات الموظف/المعلم: ${normalizedEmp.name} (${normalizedEmp.specialization})`, JSON.stringify(old), JSON.stringify(normalizedEmp), normalizedEmp.id);
     } else {
       list.push(normalizedEmp);
-      this.logAudit('CREATE', 'EMPLOYEE', `إضافة موظف/معلم جديد: ${normalizedEmp.name} (${normalizedEmp.jobTitle})`, '', JSON.stringify(normalizedEmp), normalizedEmp.id);
+      this.logAudit('CREATE', 'EMPLOYEE', `إضافة موظف/معلم جديد: ${normalizedEmp.name} (${normalizedEmp.jobTitle} - ${normalizedEmp.specialization})`, '', JSON.stringify(normalizedEmp), normalizedEmp.id);
     }
     localStorage.setItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify(list));
     this.notifyChange();
     this.pushPost('saveEmployee', normalizedEmp).catch(() => {});
     return { success: true, message: 'تم حفظ بيانات الموظف بنجاح' };
+  }
+
+  public bulkSaveEmployees(importedEmployees: Partial<Employee>[]): { success: boolean; added: number; updated: number; message: string } {
+    const list = this.getEmployees();
+    let added = 0;
+    let updated = 0;
+    const sanitizedListToPush: Employee[] = [];
+
+    importedEmployees.forEach(rawEmp => {
+      if (!rawEmp.name || !rawEmp.name.trim()) return;
+
+      const isTeacher = Boolean(
+        rawEmp.employeeType === 'Teacher' ||
+        rawEmp.isTeacher ||
+        rawEmp.teacherCode ||
+        (rawEmp.jobTitle && rawEmp.jobTitle.includes('معلم'))
+      );
+      const empType: 'Teacher' | 'Administrative' = rawEmp.employeeType === 'Teacher' || isTeacher ? 'Teacher' : 'Administrative';
+
+      // Match strategy: 1) immutable id/employeeId if present, 2) unique nationalId if present
+      let existingIdx = -1;
+      if (rawEmp.id) {
+        existingIdx = list.findIndex(e => e.id === rawEmp.id || e.employeeId === rawEmp.id);
+      }
+      if (existingIdx === -1 && rawEmp.nationalId && rawEmp.nationalId.trim()) {
+        const cleanNid = rawEmp.nationalId.trim();
+        existingIdx = list.findIndex(e => e.nationalId && e.nationalId.trim() === cleanNid);
+      }
+
+      const assignedLoginNumber = rawEmp.loginNumber || (existingIdx >= 0 ? list[existingIdx].loginNumber : this.getNextLoginNumber());
+      let teacherCode = rawEmp.teacherCode;
+      if (isTeacher && !teacherCode) {
+        teacherCode = existingIdx >= 0 && list[existingIdx].teacherCode ? list[existingIdx].teacherCode : `T-${String(assignedLoginNumber).padStart(3, '0')}`;
+      }
+
+      const id = existingIdx >= 0 ? list[existingIdx].id : (rawEmp.id || `EMP${String(list.length + added + 1).padStart(3, '0')}`);
+
+      const emp: Employee = {
+        ...(existingIdx >= 0 ? list[existingIdx] : {}),
+        ...rawEmp,
+        id,
+        employeeId: id,
+        name: rawEmp.name.trim(),
+        fullName: rawEmp.name.trim(),
+        employeeType: empType,
+        jobTitle: rawEmp.jobTitle || (empType === 'Teacher' ? 'معلم' : 'إداري'),
+        specialization: rawEmp.specialization || (existingIdx >= 0 ? list[existingIdx].specialization : (empType === 'Teacher' ? 'تعليم عام' : 'إدارة عامة')),
+        teacherCode: isTeacher ? teacherCode : undefined,
+        nationalId: rawEmp.nationalId || (existingIdx >= 0 ? list[existingIdx].nationalId : ''),
+        phone: rawEmp.phone || (existingIdx >= 0 ? list[existingIdx].phone : ''),
+        email: rawEmp.email || (existingIdx >= 0 ? list[existingIdx].email : ''),
+        hireDate: rawEmp.hireDate || (existingIdx >= 0 ? list[existingIdx].hireDate : new Date().toISOString().split('T')[0]),
+        status: rawEmp.status || (existingIdx >= 0 ? list[existingIdx].status : 'Active'),
+        workingHours: rawEmp.workingHours || (existingIdx >= 0 ? list[existingIdx].workingHours : 8),
+        workStartTime: rawEmp.workStartTime || (existingIdx >= 0 ? list[existingIdx].workStartTime : '07:30'),
+        workEndTime: rawEmp.workEndTime || (existingIdx >= 0 ? list[existingIdx].workEndTime : '14:30'),
+        daysOff: rawEmp.daysOff || (existingIdx >= 0 ? list[existingIdx].daysOff : ['الجمعة', 'السبت']),
+        loginNumber: assignedLoginNumber,
+        isTeacher,
+        isTeachingStaff: isTeacher,
+      };
+
+      // Ensure forbidden fields are purged
+      delete emp.basicSalary;
+      delete emp.allowances;
+      delete emp.salary;
+      delete (emp as any).netSalary;
+      delete (emp as any).password;
+      delete (emp as any).passwordHash;
+
+      if (existingIdx >= 0) {
+        list[existingIdx] = emp;
+        updated++;
+      } else {
+        list.push(emp);
+        added++;
+      }
+      sanitizedListToPush.push(emp);
+    });
+
+    localStorage.setItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify(list));
+    this.logAudit('BULK_IMPORT', 'EMPLOYEE', `استيراد جماعي لبيانات العاملين: ${added} جديد، ${updated} تم تحديثه`, '', `${added + updated} records`, 'BULK');
+    this.notifyChange();
+    this.pushPost('bulkSaveEmployees', sanitizedListToPush).catch(() => {});
+
+    return {
+      success: true,
+      added,
+      updated,
+      message: `تم استيراد ${added + updated} موظف بنجاح (${added} جديد، ${updated} تحديث)`,
+    };
   }
 
   public deleteEmployee(id: string): { success: boolean; message?: string } {
@@ -2797,48 +2922,90 @@ class StorageService {
   }
 
   // ---------------- Leaves & Permissions ----------------
-  public getLeaves(): LeaveRecord[] {
+  public getLeaves(schoolIdParam?: string): LeaveRecord[] {
     const raw = localStorage.getItem(STORAGE_KEYS.LEAVES);
     if (!raw) return [];
     try {
-      return JSON.parse(raw);
+      const all: LeaveRecord[] = JSON.parse(raw);
+      const activeSchoolId = (schoolIdParam || this.getActiveSchoolId()).trim();
+      return all.filter(l => !l.schoolId || l.schoolId.trim() === activeSchoolId);
     } catch {
       return [];
     }
   }
 
   public saveLeave(leave: LeaveRecord, callerUser?: User | null): { success: boolean; message?: string } {
-    const list = this.getLeaves();
     const caller = callerUser || this.getCurrentUser();
-    const isLeaveAdmin = caller?.role === 'Admin' || caller?.role === 'TeacherAffairs' || (caller?.role as string) === 'HR';
-
-    // Strict Identity Ownership Enforce:
-    let preparedLeave = { ...leave };
-    if (caller && !isLeaveAdmin) {
-      // Non-admins can only submit for themselves and status must be 'معلقة'
-      const ownEmpId = caller.employeeId || caller.id;
-      const ownEmployee = this.getEmployees().find(e => e.id === ownEmpId || e.employeeNumber === ownEmpId);
-      preparedLeave.employeeId = ownEmpId;
-      preparedLeave.employeeName = ownEmployee?.name || caller.fullName;
-      preparedLeave.department = ownEmployee?.department || 'هيئة التدريس';
-      preparedLeave.status = 'معلقة';
+    if (!caller) {
+      return { success: false, message: 'يجب تسجيل الدخول لإتمام العملية.' };
     }
 
-    const idx = list.findIndex(l => l.id === preparedLeave.id);
+    const isLeaveAdmin = caller.role === 'Admin' || caller.role === 'TeacherAffairs' || (caller.role as string) === 'HR';
+    const activeSchoolId = (caller.schoolId || this.getActiveSchoolId()).trim();
+
+    // Strict Identity & School Authority Enforcement:
+    // Frontend is NOT trusted for employeeId or schoolId.
+    let targetEmpId = caller.employeeId || caller.id;
+    if (isLeaveAdmin && leave.employeeId) {
+      // Admin/HR may manage leaves for employees within the school
+      targetEmpId = leave.employeeId;
+    }
+
+    // Security Check: If a non-admin attempted to tamper with or send a different employeeId, reject or override:
+    if (!isLeaveAdmin && leave.employeeId && leave.employeeId !== targetEmpId) {
+      return { success: false, message: 'أمنياً: غير مصرح لك بإنشاء أو تعديل طلب لموظف آخر.' };
+    }
+
+    const emp = this.getEmployees().find(e => e.id === targetEmpId || e.employeeNumber === targetEmpId);
+    if (!emp && !isLeaveAdmin) {
+      // Use caller info as fallback
+    }
+
+    let preparedLeave: LeaveRecord = {
+      ...leave,
+      schoolId: activeSchoolId,
+      employeeId: targetEmpId,
+      employeeName: (!isLeaveAdmin ? (emp?.name || caller.fullName) : (leave.employeeName || emp?.name || caller.fullName)),
+      department: (!isLeaveAdmin ? (emp?.department || 'هيئة التدريس') : (leave.department || emp?.department || 'هيئة التدريس')),
+      status: !isLeaveAdmin ? 'معلقة' : (leave.status || 'معلقة'),
+      notes: leave.notes || '',
+      attachment: leave.attachment || '',
+    };
+
+    const raw = localStorage.getItem(STORAGE_KEYS.LEAVES);
+    let allLeaves: LeaveRecord[] = [];
+    try {
+      allLeaves = raw ? JSON.parse(raw) : [];
+    } catch {
+      allLeaves = [];
+    }
+
+    const idx = allLeaves.findIndex(l => l.id === preparedLeave.id);
     if (idx >= 0) {
-      if (caller && !isLeaveAdmin && list[idx].employeeId !== (caller.employeeId || caller.id)) {
+      const existing = allLeaves[idx];
+      // Multi-school isolation check
+      if (existing.schoolId && existing.schoolId.trim() !== activeSchoolId) {
+        return { success: false, message: 'غير مصرح لك بتعديل سجل يتبع مدرسة أخرى.' };
+      }
+      if (!isLeaveAdmin && existing.employeeId !== targetEmpId) {
         return { success: false, message: 'غير مصرح لك بتعديل إجازة موظف آخر.' };
       }
-      list[idx] = preparedLeave;
+      allLeaves[idx] = {
+        ...existing,
+        ...preparedLeave,
+        schoolId: activeSchoolId,
+      };
     } else {
       preparedLeave = {
         ...preparedLeave,
-        id: preparedLeave.id || `LEV-${Date.now()}`,
+        id: preparedLeave.id || `LEV-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        schoolId: activeSchoolId,
         createdAt: getCairoNowISO(),
       };
-      list.unshift(preparedLeave);
+      allLeaves.unshift(preparedLeave);
     }
-    localStorage.setItem(STORAGE_KEYS.LEAVES, JSON.stringify(list));
+
+    localStorage.setItem(STORAGE_KEYS.LEAVES, JSON.stringify(allLeaves));
     this.logAudit(
       idx >= 0 ? 'UPDATE' : 'CREATE',
       'LEAVE',
@@ -3448,6 +3615,7 @@ class StorageService {
         ...student,
         grade: item.targetGrade,
         classroom: item.targetClassroom,
+        studentStatus: item.decision === 'RETAINED' ? 'باقي' : item.decision === 'PROMOTED' ? 'مستجد' : student.studentStatus,
         status: item.decision === 'TRANSFERRED_OUT' ? 'منقول' : item.decision === 'GRADUATED' ? 'متخرج' : 'نشط',
         updatedAt: now,
       });
