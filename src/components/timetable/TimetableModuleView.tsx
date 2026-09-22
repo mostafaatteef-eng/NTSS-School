@@ -12,6 +12,7 @@ import {
   FileText,
   GraduationCap,
   Eye,
+  Layers,
 } from 'lucide-react';
 import { User } from '../../types';
 import { TimetableWeeklyMatrixView } from './TimetableWeeklyMatrixView';
@@ -26,10 +27,12 @@ import { TimetableSettingsView } from './TimetableSettingsView';
 import { TimetableReportsView } from './TimetableReportsView';
 import { TeacherPortalView } from './TeacherPortalView';
 import { StudentScheduleAccessView } from './StudentScheduleAccessView';
+import { CurriculumPlansView } from './CurriculumPlansView';
 
 export type TimetableSubTab =
   | 'weekly'
   | 'import'
+  | 'curriculum_plans'
   | 'coverage'
   | 'load'
   | 'reserve'
@@ -60,7 +63,8 @@ export const TimetableModuleView: React.FC<TimetableModuleViewProps> = ({
 
   const navTabs = [
     { id: 'weekly', label: 'الجدول الأسبوعي', icon: Calendar },
-    { id: 'import', label: 'استيراد الجدول', icon: FileSpreadsheet, adminOnly: true },
+    { id: 'import', label: 'استيراد aSc والجدول', icon: FileSpreadsheet, adminOnly: true },
+    { id: 'curriculum_plans', label: 'خطط المناهج وتوزيع الحصص', icon: Layers },
     { id: 'coverage', label: 'مطابقة الخطة (39 حصة)', icon: BookOpen },
     { id: 'load', label: 'أنصبة المعلمين (30 حصة)', icon: UserCheck },
     { id: 'reserve', label: 'حصص الاحتياطي', icon: Clock },
@@ -106,6 +110,7 @@ export const TimetableModuleView: React.FC<TimetableModuleViewProps> = ({
       <div>
         {activeSubTab === 'weekly' && <TimetableWeeklyMatrixView currentUser={currentUser} />}
         {activeSubTab === 'import' && <TimetableImportWizardView />}
+        {activeSubTab === 'curriculum_plans' && <CurriculumPlansView currentUser={currentUser || null} />}
         {activeSubTab === 'coverage' && <CurriculumCoverageView />}
         {activeSubTab === 'load' && <TeacherLoadView />}
         {activeSubTab === 'reserve' && <ReserveManagementView />}

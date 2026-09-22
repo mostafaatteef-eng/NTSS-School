@@ -396,3 +396,4 @@ export class HRService {
 
 // Backward compatibility alias
 export const HRPayrollService = HRService;
+export const hrService = HRService;

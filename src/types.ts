@@ -140,7 +140,13 @@ export type PermissionKey =
   | 'settings.manage'
   | 'users.manage'
   | 'audit.view'
-  | 'reports.view';
+  | 'reports.view'
+  | 'quality.view'
+  | 'quality.create'
+  | 'quality.evaluate'
+  | 'quality.manageStandards'
+  | 'quality.approve'
+  | 'quality.viewDashboard';
 
 export type AttendanceStatus =
   | 'حاضر'
@@ -170,6 +176,7 @@ export type AbsenceReasonCategory =
 
 export type LeaveType =
   | 'سنوية'
+  | 'اعتيادية'
   | 'مرضية'
   | 'طارئة'
   | 'عارضة'
@@ -232,6 +239,7 @@ export interface User {
   sessionToken?: string;
   sessionExpiresAt?: string;
   mustChangePassword?: boolean;
+  permissions?: PermissionKey[];
 }
 
 export type EmployeeType = 'Teacher' | 'Administrative';
@@ -317,19 +325,19 @@ export interface LeaveRecord {
   id: string;
   schoolId?: string;
   employeeId: string;
-  employeeName: string;
-  department: string;
+  employeeName?: string;
+  department?: string;
   leaveType: LeaveType;
   startDate: string; // YYYY-MM-DD
   endDate: string; // YYYY-MM-DD
   daysCount: number;
   status: LeaveStatus;
-  reason: string;
+  reason?: string;
   notes?: string;
   attachment?: string;
   rejectionReason?: string;
   approvedBy?: string;
-  createdAt: string;
+  createdAt?: string;
 }
 
 /* =========================================================================
@@ -2213,7 +2221,8 @@ export interface AuditLogEntry {
     | 'SAMAT_ROLE_ASSIGNMENT'
     | 'SAMAT_MIGRATION'
     | 'SAMAT_SECURITY'
-    | 'SAMAT_ASSESSMENT';
+    | 'SAMAT_ASSESSMENT'
+    | 'QUALITY';
   targetEntity?: string;
   targetId?: string;
   details: string;
@@ -2270,6 +2279,7 @@ export type SyncState = SyncStatus;
 
 // Re-export extended modern entities
 export * from './types_extended';
+export * from './types_quality';
 
 export type TeacherAccountSafeDTO = Omit<TeacherAccount, 'passwordHash' | 'passwordSalt' | 'passwordAlgorithm' | 'passwordIterations'>;
 
@@ -2314,5 +2324,311 @@ export interface SaveDailyStaffAttendanceBatchRequest {
     leaveType?: string;
     permissionType?: string;
   }>;
+}
+
+// ============================================================================
+// CURRICULUM PLANS & DISTRIBUTION TYPES (PHASE 4)
+// ============================================================================
+
+export type CurriculumPlanStatus = 'Draft' | 'Approved' | 'Archived';
+export type CurriculumDistributionStatus = 'Planned' | 'Delivered' | 'Deferred' | 'Cancelled';
+
+export interface CurriculumPlanItem {
+  id: string;
+  planId: string;
+  week: number;
+  unit: string;
+  lessonTitle: string;
+  objectives?: string;
+  resources?: string;
+  assessment?: string;
+  estimatedPeriods: number;
+  notes?: string;
+  order: number;
+}
+
+export interface CurriculumPlanFileMeta {
+  fileId: string; // opaque Google Drive reference ID
+  fileName: string;
+  mimeType: string;
+  fileSize?: number;
+  uploadedAt: string;
+  version: number;
+}
+
+export interface CurriculumMasterPlan {
+  id: string;
+  schoolId: string;
+  academicYear: string;
+  term: string; // 'الفصل الدراسي الأول' | 'الفصل الدراسي الثاني'
+  grade: string;
+  gradeId?: string;
+  subject: string;
+  subjectId?: string;
+  version: number;
+  status: CurriculumPlanStatus;
+  uploadedBy: string; // userId or employeeId
+  uploadedByName?: string;
+  uploadedAt: string;
+  updatedAt: string;
+  fileMeta?: CurriculumPlanFileMeta;
+  items: CurriculumPlanItem[];
+}
+
+export interface CurriculumLessonDistribution {
+  id: string;
+  schoolId: string;
+  planId: string;
+  planItemId: string;
+  scheduleItemId?: string; // Links to ScheduleItem
+  teacherId: string;
+  teacherName?: string;
+  grade: string;
+  classroom: string;
+  subject: string;
+  dayOfWeek: string;
+  periodNumber: number;
+  targetDate?: string; // YYYY-MM-DD
+  status: CurriculumDistributionStatus;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CurriculumProgressSummary {
+  totalItems: number;
+  plannedCount: number;
+  deliveredCount: number;
+  deferredCount: number;
+  cancelledCount: number;
+  unassignedCount: number;
+  completionRate: number;
+}
+
+// ============================================================================
+// QUALITY ASSURANCE & ETQAN STANDARDS TYPES (PHASE 5)
+// ============================================================================
+
+export type QualityApplicableTo = 'DAILY_REPORT' | 'TEACHER_VISIT' | 'COMPREHENSIVE_EVALUATION';
+
+export interface QualityStandard {
+  id: string;
+  schoolId: string;
+  code: string;
+  domain: string;
+  standard: string;
+  indicator: string;
+  description: string;
+  weight: number; // e.g., 1 to 100
+  evaluationScale: number; // e.g., 4 (1-4) or 5 (1-5) or 100
+  evidenceRequired: boolean;
+  applicableTo: QualityApplicableTo[];
+  isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export type CorrectiveActionStatus =
+  | 'Open'
+  | 'In Progress'
+  | 'Closed'
+  | 'Overdue'
+  | 'OPEN'
+  | 'IN_PROGRESS'
+  | 'RESOLVED'
+  | 'CLOSED'
+  | 'OVERDUE';
+export type CorrectiveActionPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+
+export interface CorrectiveAction {
+  id: string;
+  schoolId: string;
+  sourceType: 'DAILY_REPORT' | 'TEACHER_VISIT' | 'COMPREHENSIVE_EVALUATION' | 'GENERAL';
+  sourceId: string;
+  standardId?: string;
+  standardCode?: string;
+  title?: string;
+  description: string;
+  ownerEmployeeId: string;
+  ownerName?: string;
+  assignedToName?: string;
+  dueDate: string; // YYYY-MM-DD
+  priority?: CorrectiveActionPriority;
+  status: CorrectiveActionStatus;
+  closedAt?: string;
+  resolvedAt?: string;
+  closureEvidence?: string;
+  resolutionNotes?: string;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface IndicatorEvaluation {
+  standardId: string;
+  indicatorCode?: string;
+  indicatorText?: string;
+  score: number; // Raw score on the standard's evaluationScale
+  weight?: number;
+  evidence?: string;
+  comment?: string;
+}
+
+export interface StandardScore {
+  standardId: string;
+  standardCode: string;
+  score: number;
+  maxScore: number;
+  weight: number;
+  notes?: string;
+}
+
+export interface DomainScore {
+  domain: string;
+  earnedScore: number;
+  totalScore: number;
+  weight: number;
+  percentage: number;
+}
+
+export type QualityReportStatus =
+  | 'Draft'
+  | 'Submitted'
+  | 'Approved'
+  | 'RequiresRevision'
+  | 'DRAFT'
+  | 'SUBMITTED'
+  | 'APPROVED'
+  | 'REQUIRES_REVISION';
+export type EvaluationScope = 'SCHOOL_WIDE' | 'DEPARTMENT' | 'GRADE_LEVEL';
+export type VisitType = 'DIAGNOSTIC' | 'DEVELOPMENTAL' | 'EVALUATIVE' | 'FOLLOW_UP';
+
+export interface DailyQualityReport {
+  id: string;
+  schoolId: string;
+  date: string; // YYYY-MM-DD
+  reportDate?: string;
+  evaluatorId: string;
+  evaluatorName: string;
+  evaluatorRole?: string;
+  domain?: string;
+  evaluations: IndicatorEvaluation[];
+  standardScores?: StandardScore[];
+  totalScore?: number;
+  earnedScore?: number;
+  percentage?: number;
+  observations?: string;
+  strengths: string[];
+  improvementAreas: string[];
+  positiveObservations?: string[];
+  recommendations?: string[];
+  executiveSummary?: string;
+  generalNotes?: string;
+  correctiveActionsSummary?: string;
+  correctiveActionOwnerId?: string;
+  correctiveActionDueDate?: string;
+  correctiveActionCreatedId?: string;
+  evidenceNotes?: string;
+  status: QualityReportStatus;
+  approvedBy?: string;
+  approvedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TeacherVisitReport {
+  id: string;
+  schoolId: string;
+  teacherId: string;
+  teacherName?: string;
+  date?: string; // YYYY-MM-DD
+  visitDate?: string;
+  period?: number;
+  periodNumber?: number;
+  visitType?: VisitType;
+  classroom: string;
+  subject: string;
+  grade?: string;
+  lessonTopic?: string;
+  visitorId?: string;
+  visitorName?: string;
+  visitorRole?: string;
+  evaluatorId?: string;
+  evaluatorName?: string;
+  evaluations: IndicatorEvaluation[];
+  standardScores?: StandardScore[];
+  totalScore?: number;
+  earnedScore?: number;
+  percentage?: number;
+  strengths: string[];
+  weaknesses?: string[];
+  improvementAreas: string[];
+  recommendations?: string[];
+  teacherFeedback?: string;
+  correctiveActionNotes?: string;
+  followUpDate?: string;
+  overallScore?: number; // Calculated weighted percentage
+  status: QualityReportStatus;
+  approvedBy?: string;
+  approvedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ComprehensiveEvaluation {
+  id: string;
+  schoolId: string;
+  title?: string;
+  academicYear?: string;
+  term?: string;
+  evaluationDate?: string;
+  scope?: EvaluationScope;
+  targetType: 'SCHOOL' | 'DEPARTMENT' | 'TEACHER' | 'GENERAL';
+  targetId?: string;
+  targetName?: string;
+  targetEntityName?: string;
+  periodLabel: string; // e.g. "الفصل الدراسي الأول 2026/2027"
+  startDate?: string;
+  endDate?: string;
+  evaluatorId?: string;
+  evaluatorName?: string;
+  leadEvaluatorId?: string;
+  leadEvaluatorName?: string;
+  committeeMembers?: string[];
+  evaluations: IndicatorEvaluation[];
+  standardScores?: StandardScore[];
+  domainScores?: DomainScore[];
+  rawScoreTotal?: number;
+  weightedScore?: number; // 0 - 100% computed strictly using standard weights & scales
+  totalScore?: number;
+  earnedScore?: number;
+  percentage?: number;
+  strengths: string[];
+  improvementAreas: string[];
+  areasForImprovement?: string[];
+  strategicRecommendations?: string[];
+  status: QualityReportStatus;
+  approvedBy?: string;
+  approvedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface QualityMetricOverview {
+  overallQualityScore: number;
+  totalDailyReports: number;
+  averageDailyScore: number;
+  totalTeacherVisits: number;
+  averageTeacherVisitScore: number;
+  totalComprehensiveEvaluations: number;
+  averageComprehensiveScore: number;
+  totalActionsCount: number;
+  resolvedActionsCount: number;
+  actionsResolutionRate: number;
+  domainAverages: {
+    domain: string;
+    averagePercentage: number;
+    count: number;
+  }[];
 }
 

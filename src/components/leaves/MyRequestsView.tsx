@@ -20,7 +20,7 @@ import { EmployeePermissionRecord } from '../../types_extended';
 import { storageService } from '../../services/storageService';
 import { HRPayrollService } from '../../services/hrService';
 import { MasterDataService } from '../../services/masterDataService';
-import { getCairoCurrentDate } from '../../utils/dateUtils';
+import { getCairoCurrentDate } from '../../utils/egyptianTime';
 
 interface MyRequestsViewProps {
   currentUser: User | null;

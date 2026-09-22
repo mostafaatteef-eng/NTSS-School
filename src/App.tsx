@@ -26,6 +26,7 @@ import { MonthlyMatrixView } from './components/attendance/MonthlyMatrixView';
 import { AnnualSummaryView } from './components/summary/AnnualSummaryView';
 import { EmployeesView } from './components/employees/EmployeesView';
 import { LeavesView } from './components/leaves/LeavesView';
+import { MyRequestsView } from './components/leaves/MyRequestsView';
 import { ReportsView } from './components/reports/ReportsView';
 import { UsersView } from './components/users/UsersView';
 import { AuditLogsView } from './components/audit/AuditLogsView';
@@ -38,6 +39,7 @@ import { OperationsCenterView } from './components/operations/OperationsCenterVi
 import { TimetableModuleView } from './components/timetable/TimetableModuleView';
 import { PublicStudentScheduleView } from './components/timetable/PublicStudentScheduleView';
 import { TeacherPortalView } from './components/timetable/TeacherPortalView';
+import { QualityModule } from './components/quality/QualityModule';
 import { LoginView } from './components/auth/LoginView';
 import { ForceChangePasswordModal } from './components/auth/ForceChangePasswordModal';
 import { runMigrationScope008RemoveSamatPayroll } from './services/migrationScope008RemoveSamatPayroll';
@@ -393,6 +395,9 @@ export default function App() {
           />
         );
 
+      case 'my_requests':
+        return <MyRequestsView currentUser={currentUser} />;
+
       case 'timetable':
       case 'timetable_weekly':
         return <TimetableModuleView currentUser={currentUser} initialTab="weekly" />;
@@ -453,6 +458,9 @@ export default function App() {
             initialFilters={selectedReportFilters}
           />
         );
+
+      case 'quality':
+        return <QualityModule currentUser={currentUser} />;
 
       case 'users':
         return (

@@ -14,6 +14,7 @@ import {
   StudentAccessToken,
   SupervisionAssignment,
   SupervisionLocation,
+  SupervisionMode,
   TeacherAvailability,
   TeacherLessonResource,
   TeacherLoadCalculation,

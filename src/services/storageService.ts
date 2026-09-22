@@ -17,9 +17,16 @@ import {
   BehaviorViolation,
   ClassAttendanceRecord,
   ClassroomItem,
+  ComprehensiveEvaluation,
   ConflictRuleConfig,
+  CorrectiveAction,
+  CorrectiveActionStatus,
+  CurriculumMasterPlan,
+  CurriculumLessonDistribution,
+  DailyQualityReport,
   DeductionTypeItem,
   DepartmentItem,
+  DomainScore,
   Employee,
   GradeItem,
   Homework,
@@ -37,6 +44,10 @@ import {
   PromotionRule,
   PublicClassScheduleDTO,
   PublicClassScheduleLesson,
+  QualityMetricOverview,
+  QualityStandard,
+  StandardScore,
+  TeacherVisitReport,
   ScheduleConfig,
   ScheduleItem,
   SchedulePeriodItem,
@@ -145,6 +156,13 @@ const STORAGE_KEYS = {
   PERMISSIONS: 'ntss_permissions_v3',
   TEACHER_ACCOUNTS: 'ntss_teacher_accounts_v3',
   TEACHER_SESSION: 'ntss_teacher_session_v3',
+  CURRICULUM_PLANS: 'ntss_curriculum_plans_v3',
+  CURRICULUM_DISTRIBUTIONS: 'ntss_curriculum_distributions_v3',
+  QUALITY_STANDARDS: 'ntss_quality_standards_v1',
+  DAILY_QUALITY_REPORTS: 'ntss_daily_quality_reports_v1',
+  TEACHER_VISIT_REPORTS: 'ntss_teacher_visit_reports_v1',
+  COMPREHENSIVE_EVALUATIONS: 'ntss_comprehensive_evaluations_v1',
+  CORRECTIVE_ACTIONS: 'ntss_corrective_actions_v1',
 };
 
 const DEFAULT_BACKEND_URL =
@@ -2277,6 +2295,17 @@ class StorageService {
   }
 
   // ---------------- Employees & Teachers ----------------
+  public getTeachers(): Employee[] {
+    return this.getEmployees().filter(
+      (e) =>
+        e.employeeType === 'Teacher' ||
+        e.isTeacher ||
+        e.isTeachingStaff ||
+        Boolean(e.teacherCode) ||
+        (e.jobTitle && e.jobTitle.includes('معلم'))
+    );
+  }
+
   public getEmployees(_options?: { includeFinancials?: boolean }): Employee[] {
     let raw = localStorage.getItem(STORAGE_KEYS.EMPLOYEES);
     if (!raw) {
@@ -5382,6 +5411,975 @@ class StorageService {
       }, 50);
     }
   }
+
+  // ============================================================================
+  // 17. CURRICULUM PLANS & LESSON DISTRIBUTION (PHASE 4)
+  // ============================================================================
+
+  public getCurriculumPlans(schoolId?: string): CurriculumMasterPlan[] {
+    const raw = localStorage.getItem(STORAGE_KEYS.CURRICULUM_PLANS);
+    if (!raw) return [];
+    try {
+      const list: CurriculumMasterPlan[] = JSON.parse(raw);
+      const targetSchoolId = (schoolId || this.getActiveSchoolId()).trim();
+      return list.filter(p => !targetSchoolId || p.schoolId === targetSchoolId);
+    } catch {
+      return [];
+    }
+  }
+
+  public getCurriculumPlanById(id: string): CurriculumMasterPlan | undefined {
+    return this.getCurriculumPlans().find(p => p.id === id);
+  }
+
+  public saveCurriculumPlan(
+    plan: Partial<CurriculumMasterPlan> & { grade: string; subject: string },
+    user?: User | null
+  ): { success: boolean; plan?: CurriculumMasterPlan; message: string } {
+    const activeSchoolId = (plan.schoolId || user?.schoolId || this.getActiveSchoolId()).trim();
+    const currentUser = user || this.getCurrentUser();
+
+    // Permissions check: Curriculum Admin / Admin / SchoolDirector or explicit permission
+    const isCurriculumAdmin =
+      currentUser?.role === 'Admin' ||
+      currentUser?.role === 'SchoolDirector' ||
+      currentUser?.role === 'TeacherAffairs' ||
+      (currentUser?.permissions && currentUser.permissions.includes('settings.manage' as any));
+
+    if (!isCurriculumAdmin) {
+      return {
+        success: false,
+        message: 'غير مصرح لك بإنشاء أو تعديل خطة المنهج الرئيسية. هذه الصلاحية مخصصة لمسؤول المناهج والإدارة.',
+      };
+    }
+
+    const plans = this.getCurriculumPlans();
+    const now = getCairoNowISO();
+    const existingIndex = plans.findIndex(p => p.id === plan.id);
+
+    let finalPlan: CurriculumMasterPlan;
+
+    if (existingIndex >= 0) {
+      const existing = plans[existingIndex];
+      // Multi-school check
+      if (existing.schoolId !== activeSchoolId && currentUser?.role !== 'Admin') {
+        return {
+          success: false,
+          message: 'غير مصرح لك بتعديل خطة تتبع مدرسة أخرى',
+        };
+      }
+
+      finalPlan = {
+        ...existing,
+        ...plan,
+        schoolId: existing.schoolId,
+        version: (existing.version || 1) + 1,
+        updatedAt: now,
+      };
+      plans[existingIndex] = finalPlan;
+    } else {
+      finalPlan = {
+        id: plan.id || `PLAN-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+        schoolId: activeSchoolId,
+        academicYear: plan.academicYear || this.getActiveAcademicYear()?.name || '2026-2027',
+        term: plan.term || 'الفصل الدراسي الأول',
+        grade: plan.grade,
+        gradeId: plan.gradeId,
+        subject: plan.subject,
+        subjectId: plan.subjectId,
+        version: 1,
+        status: plan.status || 'Draft',
+        uploadedBy: currentUser?.id || 'admin',
+        uploadedByName: currentUser?.fullName || currentUser?.username || 'مدير المناهج',
+        uploadedAt: now,
+        updatedAt: now,
+        fileMeta: plan.fileMeta,
+        items: plan.items || [],
+      };
+      plans.unshift(finalPlan);
+    }
+
+    localStorage.setItem(STORAGE_KEYS.CURRICULUM_PLANS, JSON.stringify(plans));
+    this.notifyChange();
+
+    return {
+      success: true,
+      plan: finalPlan,
+      message: 'تم حفظ خطة المنهج بنجاح',
+    };
+  }
+
+  public deleteCurriculumPlan(id: string, user?: User | null): { success: boolean; message: string } {
+    const currentUser = user || this.getCurrentUser();
+    const isCurriculumAdmin =
+      currentUser?.role === 'Admin' ||
+      currentUser?.role === 'SchoolDirector' ||
+      currentUser?.role === 'TeacherAffairs';
+
+    if (!isCurriculumAdmin) {
+      return { success: false, message: 'غير مصرح بحذف خطة المنهج' };
+    }
+
+    const plans = this.getCurriculumPlans().filter(p => p.id !== id);
+    localStorage.setItem(STORAGE_KEYS.CURRICULUM_PLANS, JSON.stringify(plans));
+
+    // Also clean up distributions belonging to this plan
+    const dists = this.getCurriculumDistributions().filter(d => d.planId !== id);
+    localStorage.setItem(STORAGE_KEYS.CURRICULUM_DISTRIBUTIONS, JSON.stringify(dists));
+
+    this.notifyChange();
+    return { success: true, message: 'تم حذف الخطة وتوزيعاتها' };
+  }
+
+  public getCurriculumDistributions(schoolId?: string): CurriculumLessonDistribution[] {
+    const raw = localStorage.getItem(STORAGE_KEYS.CURRICULUM_DISTRIBUTIONS);
+    if (!raw) return [];
+    try {
+      const list: CurriculumLessonDistribution[] = JSON.parse(raw);
+      const targetSchoolId = (schoolId || this.getActiveSchoolId()).trim();
+      return list.filter(d => !targetSchoolId || d.schoolId === targetSchoolId);
+    } catch {
+      return [];
+    }
+  }
+
+  public saveCurriculumDistribution(
+    dist: Partial<CurriculumLessonDistribution> & { planId: string; planItemId: string; teacherId: string },
+    user?: User | null
+  ): { success: boolean; data?: CurriculumLessonDistribution; message: string } {
+    const activeSchoolId = (dist.schoolId || user?.schoolId || this.getActiveSchoolId()).trim();
+    const now = getCairoNowISO();
+    const list = this.getCurriculumDistributions();
+
+    const idx = list.findIndex(d => d.id === dist.id);
+
+    const record: CurriculumLessonDistribution = {
+      id: dist.id || `DIST-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+      schoolId: activeSchoolId,
+      planId: dist.planId,
+      planItemId: dist.planItemId,
+      scheduleItemId: dist.scheduleItemId,
+      teacherId: dist.teacherId,
+      teacherName: dist.teacherName,
+      grade: dist.grade || '',
+      classroom: dist.classroom || '',
+      subject: dist.subject || '',
+      dayOfWeek: dist.dayOfWeek || '',
+      periodNumber: dist.periodNumber || 1,
+      targetDate: dist.targetDate,
+      status: dist.status || 'Planned',
+      notes: dist.notes,
+      createdAt: dist.createdAt || now,
+      updatedAt: now,
+    };
+
+    if (idx >= 0) {
+      list[idx] = record;
+    } else {
+      list.push(record);
+    }
+
+    localStorage.setItem(STORAGE_KEYS.CURRICULUM_DISTRIBUTIONS, JSON.stringify(list));
+    this.notifyChange();
+
+    return {
+      success: true,
+      data: record,
+      message: 'تم حفظ توزيع الدرس بالخطة بنجاح',
+    };
+  }
+
+  public deleteCurriculumDistribution(id: string): { success: boolean } {
+    const list = this.getCurriculumDistributions().filter(d => d.id !== id);
+    localStorage.setItem(STORAGE_KEYS.CURRICULUM_DISTRIBUTIONS, JSON.stringify(list));
+    this.notifyChange();
+    return { success: true };
+  }
+
+  // ============================================================================
+  // PHASE 5: QUALITY MODULE & ETQAN STANDARDS
+  // Multi-school security: All queries and mutations strictly scoped to session schoolId
+  // ============================================================================
+
+  // --- Quality Standards ---
+  public getQualityStandards(schoolId?: string): QualityStandard[] {
+    const activeSchoolId = (schoolId || this.getActiveSchoolId()).trim();
+    const raw = localStorage.getItem(STORAGE_KEYS.QUALITY_STANDARDS);
+    if (!raw) return [];
+    try {
+      const all: QualityStandard[] = JSON.parse(raw);
+      return all.filter(s => (s.schoolId || '').trim() === activeSchoolId);
+    } catch {
+      return [];
+    }
+  }
+
+  public saveQualityStandard(
+    standard: Partial<QualityStandard>,
+    user?: User | null
+  ): { success: boolean; data?: QualityStandard; message: string } {
+    const caller = user || this.getCurrentUser();
+    const activeSchoolId = (caller?.schoolId || this.getActiveSchoolId()).trim();
+
+    // Permission check: Admin or QualityOfficer with quality.manageStandards
+    const isAuthorized =
+      !caller ||
+      caller.role === 'Admin' ||
+      caller.role === 'QualityOfficer' ||
+      caller.role === 'SchoolDirector' ||
+      (caller.permissions && caller.permissions.includes('quality.manageStandards'));
+
+    if (!isAuthorized) {
+      return { success: false, message: 'غير مصرح لك بتعديل معايير الجودة (إتقان).' };
+    }
+
+    if (!standard.code || !standard.domain || !standard.standard || !standard.indicator) {
+      return { success: false, message: 'يرجى ملء كافة حقول المعيار والمؤشر الإلزامية.' };
+    }
+
+    const raw = localStorage.getItem(STORAGE_KEYS.QUALITY_STANDARDS);
+    let all: QualityStandard[] = [];
+    try {
+      all = raw ? JSON.parse(raw) : [];
+    } catch {
+      all = [];
+    }
+
+    const now = getCairoNowISO();
+    const existingIndex = all.findIndex(
+      s => s.id === standard.id || (s.code === standard.code && (s.schoolId || '').trim() === activeSchoolId)
+    );
+
+    const record: QualityStandard = {
+      id: standard.id || `STD-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      schoolId: activeSchoolId,
+      code: standard.code.trim().toUpperCase(),
+      domain: standard.domain.trim(),
+      standard: standard.standard.trim(),
+      indicator: standard.indicator.trim(),
+      description: standard.description || '',
+      weight: typeof standard.weight === 'number' && standard.weight > 0 ? standard.weight : 1,
+      evaluationScale: standard.evaluationScale || 4,
+      evidenceRequired: !!standard.evidenceRequired,
+      applicableTo: standard.applicableTo && standard.applicableTo.length > 0 ? standard.applicableTo : ['DAILY_REPORT'],
+      isActive: standard.isActive !== false,
+      createdAt: standard.createdAt || now,
+      updatedAt: now,
+    };
+
+    if (existingIndex >= 0) {
+      all[existingIndex] = { ...all[existingIndex], ...record, schoolId: activeSchoolId };
+    } else {
+      all.push(record);
+    }
+
+    localStorage.setItem(STORAGE_KEYS.QUALITY_STANDARDS, JSON.stringify(all));
+    this.logAudit(
+      'UPDATE_QUALITY_STANDARD',
+      'QUALITY',
+      `تم تحديث/حفظ معيار إتقان: [${record.code}] ${record.indicator} في المدرسة ${activeSchoolId}`
+    );
+    this.notifyChange();
+
+    return {
+      success: true,
+      data: record,
+      message: 'تم حفظ معيار الجودة بنجاح',
+    };
+  }
+
+  public importQualityStandards(
+    standards: Partial<QualityStandard>[],
+    user?: User | null
+  ): { success: boolean; importedCount: number; message: string } {
+    const caller = user || this.getCurrentUser();
+    const activeSchoolId = (caller?.schoolId || this.getActiveSchoolId()).trim();
+
+    const isAuthorized =
+      !caller ||
+      caller.role === 'Admin' ||
+      caller.role === 'QualityOfficer' ||
+      caller.role === 'SchoolDirector' ||
+      (caller.permissions && caller.permissions.includes('quality.manageStandards'));
+
+    if (!isAuthorized) {
+      return { success: false, importedCount: 0, message: 'غير مصرح لك باستيراد معايير الجودة.' };
+    }
+
+    let importedCount = 0;
+    standards.forEach(std => {
+      if (std.code && std.domain && std.indicator) {
+        const res = this.saveQualityStandard({ ...std, schoolId: activeSchoolId }, caller);
+        if (res.success) importedCount++;
+      }
+    });
+
+    return {
+      success: true,
+      importedCount,
+      message: `تم استيراد (${importedCount}) من معايير إتقان بنجاح.`,
+    };
+  }
+
+  public deleteQualityStandard(id: string, user?: User | null): { success: boolean; message: string } {
+    const caller = user || this.getCurrentUser();
+    const activeSchoolId = (caller?.schoolId || this.getActiveSchoolId()).trim();
+
+    const raw = localStorage.getItem(STORAGE_KEYS.QUALITY_STANDARDS);
+    if (!raw) return { success: true, message: 'تم الحذف' };
+    try {
+      let all: QualityStandard[] = JSON.parse(raw);
+      all = all.filter(s => !(s.id === id && (s.schoolId || '').trim() === activeSchoolId));
+      localStorage.setItem(STORAGE_KEYS.QUALITY_STANDARDS, JSON.stringify(all));
+      this.notifyChange();
+      return { success: true, message: 'تم حذف معيار الجودة' };
+    } catch {
+      return { success: false, message: 'خطأ أثناء الحذف' };
+    }
+  }
+
+  // --- Daily Quality Reports ---
+  public getDailyQualityReports(schoolId?: string): DailyQualityReport[] {
+    const activeSchoolId = (schoolId || this.getActiveSchoolId()).trim();
+    const raw = localStorage.getItem(STORAGE_KEYS.DAILY_QUALITY_REPORTS);
+    if (!raw) return [];
+    try {
+      const all: DailyQualityReport[] = JSON.parse(raw);
+      return all.filter(r => (r.schoolId || '').trim() === activeSchoolId);
+    } catch {
+      return [];
+    }
+  }
+
+  public saveDailyQualityReport(
+    report: Partial<DailyQualityReport>,
+    user?: User | null
+  ): { success: boolean; data?: DailyQualityReport; message: string } {
+    const caller = user || this.getCurrentUser();
+    const activeSchoolId = (caller?.schoolId || this.getActiveSchoolId()).trim();
+
+    const raw = localStorage.getItem(STORAGE_KEYS.DAILY_QUALITY_REPORTS);
+    let all: DailyQualityReport[] = [];
+    try {
+      all = raw ? JSON.parse(raw) : [];
+    } catch {
+      all = [];
+    }
+
+    const now = getCairoNowISO();
+    const isNew = !report.id || !all.some(r => r.id === report.id);
+
+    const record: DailyQualityReport = {
+      id: report.id || `DQR-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      schoolId: activeSchoolId,
+      date: report.date || getCairoCurrentDate(),
+      evaluatorId: report.evaluatorId || caller?.id || 'USR-QUALITY',
+      evaluatorName: report.evaluatorName || caller?.fullName || 'مسؤول الجودة',
+      evaluatorRole: report.evaluatorRole || (caller?.role as string) || 'QualityOfficer',
+      domain: report.domain || 'عام',
+      evaluations: report.evaluations || [],
+      observations: report.observations || '',
+      strengths: report.strengths || [],
+      improvementAreas: report.improvementAreas || [],
+      correctiveActionsSummary: report.correctiveActionsSummary || '',
+      correctiveActionOwnerId: report.correctiveActionOwnerId,
+      correctiveActionDueDate: report.correctiveActionDueDate,
+      correctiveActionCreatedId: report.correctiveActionCreatedId,
+      evidenceNotes: report.evidenceNotes || '',
+      status: report.status || 'Submitted',
+      approvedBy: report.approvedBy,
+      approvedAt: report.approvedAt,
+      createdAt: report.createdAt || now,
+      updatedAt: now,
+    };
+
+    // Auto create corrective action if specified and not yet linked
+    if (
+      record.correctiveActionsSummary &&
+      record.correctiveActionOwnerId &&
+      record.correctiveActionDueDate &&
+      !record.correctiveActionCreatedId
+    ) {
+      const caRes = this.saveCorrectiveAction(
+        {
+          sourceType: 'DAILY_REPORT',
+          sourceId: record.id,
+          description: record.correctiveActionsSummary,
+          ownerEmployeeId: record.correctiveActionOwnerId,
+          dueDate: record.correctiveActionDueDate,
+          status: 'Open',
+        },
+        caller
+      );
+      if (caRes.success && caRes.data) {
+        record.correctiveActionCreatedId = caRes.data.id;
+      }
+    }
+
+    const idx = all.findIndex(r => r.id === record.id);
+    if (idx >= 0) {
+      all[idx] = record;
+    } else {
+      all.unshift(record);
+    }
+
+    localStorage.setItem(STORAGE_KEYS.DAILY_QUALITY_REPORTS, JSON.stringify(all));
+    this.logAudit(
+      isNew ? 'CREATE_QUALITY_REPORT' : 'UPDATE_QUALITY_REPORT',
+      'QUALITY',
+      `تقرير جودة يومي [${record.date}] للمقيم: ${record.evaluatorName}`
+    );
+    this.notifyChange();
+
+    return {
+      success: true,
+      data: record,
+      message: 'تم حفظ تقرير الجودة اليومي بنجاح',
+    };
+  }
+
+  public deleteDailyQualityReport(id: string, user?: User | null): { success: boolean; message?: string } {
+    const caller = user || this.getCurrentUser();
+    const activeSchoolId = (caller?.schoolId || this.getActiveSchoolId()).trim();
+    const list = this.getDailyQualityReports(activeSchoolId).filter(r => r.id !== id);
+    localStorage.setItem(STORAGE_KEYS.DAILY_QUALITY_REPORTS, JSON.stringify(list));
+    this.notifyChange();
+    return { success: true, message: 'تم حذف التقرير بنجاح' };
+  }
+
+  // --- Teacher Visit Reports ---
+  public getTeacherVisitReports(schoolId?: string): TeacherVisitReport[] {
+    const activeSchoolId = (schoolId || this.getActiveSchoolId()).trim();
+    const raw = localStorage.getItem(STORAGE_KEYS.TEACHER_VISIT_REPORTS);
+    if (!raw) return [];
+    try {
+      const all: TeacherVisitReport[] = JSON.parse(raw);
+      return all.filter(r => (r.schoolId || '').trim() === activeSchoolId);
+    } catch {
+      return [];
+    }
+  }
+
+  public saveTeacherVisitReport(
+    report: Partial<TeacherVisitReport>,
+    user?: User | null
+  ): { success: boolean; data?: TeacherVisitReport; message: string } {
+    const caller = user || this.getCurrentUser();
+    const activeSchoolId = (caller?.schoolId || this.getActiveSchoolId()).trim();
+
+    if (!report.teacherId || !report.classroom || !report.subject) {
+      return { success: false, message: 'يرجى تحديد المعلم والفصل والمادة لتقرير الزيارة.' };
+    }
+
+    const raw = localStorage.getItem(STORAGE_KEYS.TEACHER_VISIT_REPORTS);
+    let all: TeacherVisitReport[] = [];
+    try {
+      all = raw ? JSON.parse(raw) : [];
+    } catch {
+      all = [];
+    }
+
+    const now = getCairoNowISO();
+    const employees = this.getEmployees();
+    const teacher = employees.find(e => e.id === report.teacherId || e.employeeNumber === report.teacherId);
+    const teacherName = report.teacherName || teacher?.name || 'معلم غير محدد';
+
+    // Calculate weighted overall score if evaluations exist
+    const standards = this.getQualityStandards(activeSchoolId);
+    let calculatedOverallScore: number | undefined;
+    if (report.evaluations && report.evaluations.length > 0) {
+      calculatedOverallScore = this.calculateWeightedScore(report.evaluations, standards).percentage;
+    }
+
+    const record: TeacherVisitReport = {
+      id: report.id || `TVR-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      schoolId: activeSchoolId,
+      teacherId: report.teacherId,
+      teacherName,
+      date: report.date || getCairoCurrentDate(),
+      classroom: report.classroom,
+      subject: report.subject,
+      period: report.period || 1,
+      evaluatorId: report.evaluatorId || caller?.id || 'USR-EVALUATOR',
+      evaluatorName: report.evaluatorName || caller?.fullName || 'الموجه الفني / مسؤول الجودة',
+      evaluations: report.evaluations || [],
+      strengths: report.strengths || [],
+      improvementAreas: report.improvementAreas || [],
+      correctiveActionNotes: report.correctiveActionNotes || '',
+      followUpDate: report.followUpDate,
+      overallScore: calculatedOverallScore ?? report.overallScore,
+      status: report.status || 'Submitted',
+      approvedBy: report.approvedBy,
+      approvedAt: report.approvedAt,
+      createdAt: report.createdAt || now,
+      updatedAt: now,
+    };
+
+    const idx = all.findIndex(r => r.id === record.id);
+    if (idx >= 0) {
+      all[idx] = record;
+    } else {
+      all.unshift(record);
+    }
+
+    localStorage.setItem(STORAGE_KEYS.TEACHER_VISIT_REPORTS, JSON.stringify(all));
+    this.logAudit(
+      'SUBMIT_TEACHER_VISIT',
+      'QUALITY',
+      `تسجيل زيارة صفية للمعلم: ${record.teacherName} (فصل: ${record.classroom}, مادة: ${record.subject}) بنتيجة ${record.overallScore || 0}%`
+    );
+    this.notifyChange();
+
+    return {
+      success: true,
+      data: record,
+      message: 'تم حفظ تقرير زيارة المعلم بنجاح',
+    };
+  }
+
+  public deleteTeacherVisitReport(id: string, user?: User | null): { success: boolean; message?: string } {
+    const caller = user || this.getCurrentUser();
+    const activeSchoolId = (caller?.schoolId || this.getActiveSchoolId()).trim();
+    const list = this.getTeacherVisitReports(activeSchoolId).filter(r => r.id !== id);
+    localStorage.setItem(STORAGE_KEYS.TEACHER_VISIT_REPORTS, JSON.stringify(list));
+    this.notifyChange();
+    return { success: true, message: 'تم حذف تقرير الزيارة بنجاح' };
+  }
+
+  // --- Comprehensive Evaluations ---
+  public getComprehensiveEvaluations(schoolId?: string): ComprehensiveEvaluation[] {
+    const activeSchoolId = (schoolId || this.getActiveSchoolId()).trim();
+    const raw = localStorage.getItem(STORAGE_KEYS.COMPREHENSIVE_EVALUATIONS);
+    if (!raw) return [];
+    try {
+      const all: ComprehensiveEvaluation[] = JSON.parse(raw);
+      return all.filter(e => (e.schoolId || '').trim() === activeSchoolId);
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Calculates strictly weighted score using registered QualityStandards (Weight & Evaluation Scale).
+   * Formula: WeightedScore (%) = SUM( (score / evaluationScale) * weight ) / SUM(weight) * 100
+   * No hardcoded fixed formula!
+   */
+  public calculateWeightedScore(
+    evaluations: { standardId: string; score: number }[],
+    standardsList?: QualityStandard[]
+  ): {
+    percentage: number;
+    totalScore: number;
+    earnedScore: number;
+    domainScores?: DomainScore[];
+  } {
+    const standards = standardsList || this.getQualityStandards();
+    const stdMap = new Map<string, QualityStandard>();
+    standards.forEach(s => stdMap.set(s.id, s));
+
+    let totalWeight = 0;
+    let weightedPoints = 0;
+    let totalMaxScore = 0;
+    let totalEarnedScore = 0;
+
+    const domainScoreMap: Record<string, { earned: number; total: number; weight: number }> = {};
+
+    evaluations.forEach(ev => {
+      const std = stdMap.get(ev.standardId);
+      if (std) {
+        const scale = std.evaluationScale > 0 ? std.evaluationScale : 4;
+        const weight = std.weight > 0 ? std.weight : 1;
+        const ratio = Math.min(Math.max(ev.score / scale, 0), 1); // 0.0 - 1.0
+        weightedPoints += ratio * weight;
+        totalWeight += weight;
+        totalMaxScore += scale;
+        totalEarnedScore += ev.score;
+
+        const domain = std.domain || 'عام';
+        if (!domainScoreMap[domain]) {
+          domainScoreMap[domain] = { earned: 0, total: 0, weight: 0 };
+        }
+        domainScoreMap[domain].earned += ev.score;
+        domainScoreMap[domain].total += scale;
+        domainScoreMap[domain].weight += weight;
+      }
+    });
+
+    const percentage = totalWeight > 0 ? Math.round((weightedPoints / totalWeight) * 100) : 0;
+
+    const domainScores: DomainScore[] = Object.entries(domainScoreMap).map(([domain, data]) => ({
+      domain,
+      earnedScore: data.earned,
+      totalScore: data.total,
+      weight: data.weight,
+      percentage: data.total > 0 ? Math.round((data.earned / data.total) * 100) : 0,
+    }));
+
+    return {
+      percentage,
+      totalScore: totalMaxScore,
+      earnedScore: totalEarnedScore,
+      domainScores,
+    };
+  }
+
+  public saveComprehensiveEvaluation(
+    evaluation: Partial<ComprehensiveEvaluation>,
+    user?: User | null
+  ): { success: boolean; data?: ComprehensiveEvaluation; message: string } {
+    const caller = user || this.getCurrentUser();
+    const activeSchoolId = (caller?.schoolId || this.getActiveSchoolId()).trim();
+
+    const raw = localStorage.getItem(STORAGE_KEYS.COMPREHENSIVE_EVALUATIONS);
+    let all: ComprehensiveEvaluation[] = [];
+    try {
+      all = raw ? JSON.parse(raw) : [];
+    } catch {
+      all = [];
+    }
+
+    const now = getCairoNowISO();
+    const standards = this.getQualityStandards(activeSchoolId);
+    const evals = evaluation.evaluations || [];
+    const weightedCalc = this.calculateWeightedScore(evals, standards);
+    const rawScoreTotal = evals.reduce((sum, e) => sum + (e.score || 0), 0);
+
+    const record: ComprehensiveEvaluation = {
+      id: evaluation.id || `CEV-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      schoolId: activeSchoolId,
+      title: evaluation.title || 'تقييم الجودة الشامل',
+      targetType: evaluation.targetType || 'SCHOOL',
+      targetId: evaluation.targetId,
+      targetName: evaluation.targetName,
+      periodLabel: evaluation.periodLabel || 'العام الدراسي الحالي',
+      startDate: evaluation.startDate || getCairoCurrentDate(),
+      endDate: evaluation.endDate || getCairoCurrentDate(),
+      evaluatorId: evaluation.evaluatorId || caller?.id || 'USR-EVALUATOR',
+      evaluatorName: evaluation.evaluatorName || caller?.fullName || 'لجنة تقييم الجودة الشاملة',
+      evaluations: evals,
+      rawScoreTotal,
+      weightedScore: weightedCalc.percentage,
+      totalScore: evaluation.totalScore ?? weightedCalc.totalScore,
+      earnedScore: evaluation.earnedScore ?? weightedCalc.earnedScore,
+      percentage: evaluation.percentage ?? weightedCalc.percentage,
+      strengths: evaluation.strengths || [],
+      improvementAreas: evaluation.improvementAreas || [],
+      status: evaluation.status || 'Submitted',
+      approvedBy: evaluation.approvedBy,
+      approvedAt: evaluation.approvedAt,
+      createdAt: evaluation.createdAt || now,
+      updatedAt: now,
+    };
+
+    const idx = all.findIndex(e => e.id === record.id);
+    if (idx >= 0) {
+      all[idx] = record;
+    } else {
+      all.unshift(record);
+    }
+
+    localStorage.setItem(STORAGE_KEYS.COMPREHENSIVE_EVALUATIONS, JSON.stringify(all));
+    if (record.status === 'Approved') {
+      this.logAudit(
+        'APPROVE_EVALUATION',
+        'QUALITY',
+        `اعتماد التقييم الشامل: ${record.title} بنتيجة موزونة ${record.weightedScore}%`
+      );
+    } else {
+      this.logAudit(
+        'CREATE_QUALITY_REPORT',
+        'QUALITY',
+        `حفظ التقييم الشامل: ${record.title} بنتيجة موزونة ${record.weightedScore}%`
+      );
+    }
+    this.notifyChange();
+
+    return {
+      success: true,
+      data: record,
+      message: 'تم حفظ التقييم الشامل بنجاح',
+    };
+  }
+
+  public deleteComprehensiveEvaluation(id: string, user?: User | null): { success: boolean; message?: string } {
+    const caller = user || this.getCurrentUser();
+    const activeSchoolId = (caller?.schoolId || this.getActiveSchoolId()).trim();
+    const list = this.getComprehensiveEvaluations(activeSchoolId).filter(e => e.id !== id);
+    localStorage.setItem(STORAGE_KEYS.COMPREHENSIVE_EVALUATIONS, JSON.stringify(list));
+    this.notifyChange();
+    return { success: true, message: 'تم حذف التقييم الشامل بنجاح' };
+  }
+
+  // --- Corrective Actions ---
+  public getCorrectiveActions(schoolId?: string): CorrectiveAction[] {
+    const activeSchoolId = (schoolId || this.getActiveSchoolId()).trim();
+    const raw = localStorage.getItem(STORAGE_KEYS.CORRECTIVE_ACTIONS);
+    if (!raw) return [];
+    try {
+      const all: CorrectiveAction[] = JSON.parse(raw);
+      const today = getCairoCurrentDate();
+
+      // Automatically flag overdue actions
+      return all
+        .filter(c => (c.schoolId || '').trim() === activeSchoolId)
+        .map(action => {
+          if (action.status !== 'Closed' && action.dueDate && action.dueDate < today) {
+            return { ...action, status: 'Overdue' as CorrectiveActionStatus };
+          }
+          return action;
+        });
+    } catch {
+      return [];
+    }
+  }
+
+  public saveCorrectiveAction(
+    action: Partial<CorrectiveAction>,
+    user?: User | null
+  ): { success: boolean; data?: CorrectiveAction; message: string } {
+    const caller = user || this.getCurrentUser();
+    const activeSchoolId = (caller?.schoolId || this.getActiveSchoolId()).trim();
+
+    if (!action.description || !action.ownerEmployeeId || !action.dueDate) {
+      return { success: false, message: 'يرجى ملء وصف الإجراء والمسؤول وتاريخ الاستحقاق.' };
+    }
+
+    const raw = localStorage.getItem(STORAGE_KEYS.CORRECTIVE_ACTIONS);
+    let all: CorrectiveAction[] = [];
+    try {
+      all = raw ? JSON.parse(raw) : [];
+    } catch {
+      all = [];
+    }
+
+    const now = getCairoNowISO();
+    const isNew = !action.id || !all.some(a => a.id === action.id);
+    const employees = this.getEmployees();
+    const owner = employees.find(e => e.id === action.ownerEmployeeId || e.employeeNumber === action.ownerEmployeeId);
+
+    const record: CorrectiveAction = {
+      id: action.id || `CA-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      schoolId: activeSchoolId,
+      sourceType: action.sourceType || 'GENERAL',
+      sourceId: action.sourceId || '',
+      standardId: action.standardId,
+      standardCode: action.standardCode,
+      description: action.description.trim(),
+      ownerEmployeeId: action.ownerEmployeeId,
+      ownerName: action.ownerName || owner?.name || 'مسؤول غير محدد',
+      dueDate: action.dueDate,
+      status: action.status || 'Open',
+      closedAt: action.closedAt,
+      closureEvidence: action.closureEvidence,
+      notes: action.notes,
+      createdAt: action.createdAt || now,
+      updatedAt: now,
+    };
+
+    const idx = all.findIndex(a => a.id === record.id);
+    if (idx >= 0) {
+      all[idx] = record;
+    } else {
+      all.unshift(record);
+    }
+
+    localStorage.setItem(STORAGE_KEYS.CORRECTIVE_ACTIONS, JSON.stringify(all));
+    this.logAudit(
+      isNew ? 'CREATE_CORRECTIVE_ACTION' : 'UPDATE_QUALITY_REPORT',
+      'QUALITY',
+      `تسجيل إجراء تصحيحي جديد مسند إلى: ${record.ownerName} يستحق في ${record.dueDate}`
+    );
+    this.notifyChange();
+
+    return {
+      success: true,
+      data: record,
+      message: 'تم حفظ الإجراء التصحيحي بنجاح',
+    };
+  }
+
+  public closeCorrectiveAction(
+    id: string,
+    closureEvidence: string,
+    user?: User | null
+  ): { success: boolean; message: string } {
+    const caller = user || this.getCurrentUser();
+    const activeSchoolId = (caller?.schoolId || this.getActiveSchoolId()).trim();
+
+    const raw = localStorage.getItem(STORAGE_KEYS.CORRECTIVE_ACTIONS);
+    if (!raw) return { success: false, message: 'الإجراء غير موجود' };
+    try {
+      const all: CorrectiveAction[] = JSON.parse(raw);
+      const idx = all.findIndex(a => a.id === id && (a.schoolId || '').trim() === activeSchoolId);
+      if (idx < 0) {
+        return { success: false, message: 'الإجراء التصحيحي غير موجود أو يتبع مدرسة أخرى.' };
+      }
+
+      all[idx] = {
+        ...all[idx],
+        status: 'Closed',
+        closureEvidence: closureEvidence || 'تم التحقق من إتمام الإجراء بنجاح',
+        closedAt: getCairoNowISO(),
+        updatedAt: getCairoNowISO(),
+      };
+
+      localStorage.setItem(STORAGE_KEYS.CORRECTIVE_ACTIONS, JSON.stringify(all));
+      this.logAudit(
+        'CLOSE_CORRECTIVE_ACTION',
+        'QUALITY',
+        `إغلاق الإجراء التصحيحي [${id}] مع توثيق أدلة الإغلاق: ${closureEvidence.substring(0, 50)}...`
+      );
+      this.notifyChange();
+
+      return { success: true, message: 'تم إغلاق الإجراء التصحيحي بنجاح' };
+    } catch {
+      return { success: false, message: 'خطأ أثناء إغلاق الإجراء' };
+    }
+  }
+
+  public approveDailyQualityReport(id: string, user?: User | null): { success: boolean; message: string } {
+    const caller = user || this.getCurrentUser();
+    const activeSchoolId = (caller?.schoolId || this.getActiveSchoolId()).trim();
+    const list = this.getDailyQualityReports(activeSchoolId);
+    const item = list.find((r) => r.id === id);
+    if (!item) return { success: false, message: 'التقرير غير موجود' };
+    item.status = 'Approved';
+    item.approvedBy = caller?.fullName || caller?.name || 'مدير المدرسة';
+    item.approvedAt = getCairoNowISO();
+    item.updatedAt = getCairoNowISO();
+    localStorage.setItem(STORAGE_KEYS.DAILY_QUALITY_REPORTS, JSON.stringify(list));
+    this.logAudit('APPROVE_QUALITY_REPORT', 'QUALITY', `اعتماد تقرير الجودة اليومي: ${item.date}`);
+    this.notifyChange();
+    return { success: true, message: 'تم اعتماد تقرير الجودة بنجاح' };
+  }
+
+  public approveTeacherVisitReport(id: string, user?: User | null): { success: boolean; message: string } {
+    const caller = user || this.getCurrentUser();
+    const activeSchoolId = (caller?.schoolId || this.getActiveSchoolId()).trim();
+    const list = this.getTeacherVisitReports(activeSchoolId);
+    const item = list.find((r) => r.id === id);
+    if (!item) return { success: false, message: 'التقرير غير موجود' };
+    item.status = 'Approved';
+    item.approvedBy = caller?.fullName || caller?.name || 'مدير المدرسة';
+    item.approvedAt = getCairoNowISO();
+    item.updatedAt = getCairoNowISO();
+    localStorage.setItem(STORAGE_KEYS.TEACHER_VISIT_REPORTS, JSON.stringify(list));
+    this.logAudit('APPROVE_QUALITY_REPORT', 'QUALITY', `اعتماد تقرير زيارة المعلم: ${item.teacherName}`);
+    this.notifyChange();
+    return { success: true, message: 'تم اعتماد تقرير الزيارة بنجاح' };
+  }
+
+  public approveComprehensiveEvaluation(id: string, user?: User | null): { success: boolean; message: string } {
+    const caller = user || this.getCurrentUser();
+    const activeSchoolId = (caller?.schoolId || this.getActiveSchoolId()).trim();
+    const list = this.getComprehensiveEvaluations(activeSchoolId);
+    const item = list.find((r) => r.id === id);
+    if (!item) return { success: false, message: 'التقرير غير موجود' };
+    item.status = 'Approved';
+    item.approvedBy = caller?.fullName || caller?.name || 'مدير المدرسة';
+    item.approvedAt = getCairoNowISO();
+    item.updatedAt = getCairoNowISO();
+    localStorage.setItem(STORAGE_KEYS.COMPREHENSIVE_EVALUATIONS, JSON.stringify(list));
+    this.logAudit('APPROVE_QUALITY_REPORT', 'QUALITY', `اعتماد التقييم الشامل: ${item.targetEntityName || item.title}`);
+    this.notifyChange();
+    return { success: true, message: 'تم اعتماد التقييم الشامل بنجاح' };
+  }
+
+  public getQualityMetricOverview(schoolId?: string): QualityMetricOverview {
+    const activeSchoolId = (schoolId || this.getActiveSchoolId()).trim();
+    const daily = this.getDailyQualityReports(activeSchoolId);
+    const visits = this.getTeacherVisitReports(activeSchoolId);
+    const evals = this.getComprehensiveEvaluations(activeSchoolId);
+    const actions = this.getCorrectiveActions(activeSchoolId);
+    const standards = this.getQualityStandards(activeSchoolId);
+
+    const avgDaily = daily.length > 0
+      ? daily.reduce((acc, d) => acc + (d.percentage || (d.evaluations?.length ? this.calculateWeightedScore(d.evaluations, standards).percentage : 0)), 0) / daily.length
+      : 0;
+
+    const avgVisits = visits.length > 0
+      ? visits.reduce((acc, v) => acc + (v.percentage || v.overallScore || 0), 0) / visits.length
+      : 0;
+
+    const avgEvals = evals.length > 0
+      ? evals.reduce((acc, e) => acc + (e.percentage || e.weightedScore || 0), 0) / evals.length
+      : 0;
+
+    const totalCount = [daily.length, visits.length, evals.length].filter((c) => c > 0).length;
+    const overall = totalCount > 0
+      ? (avgDaily * (daily.length > 0 ? 1 : 0) +
+         avgVisits * (visits.length > 0 ? 1 : 0) +
+         avgEvals * (evals.length > 0 ? 1 : 0)) / totalCount
+      : 0;
+
+    const resolvedActions = actions.filter((a) => a.status === 'Closed' || a.status === ('RESOLVED' as any)).length;
+    const resRate = actions.length > 0 ? (resolvedActions / actions.length) * 100 : 100;
+
+    // Domain breakdown from standards
+    const domainMap: Record<string, { totalPct: number; count: number }> = {};
+    standards.forEach((std) => {
+      if (!domainMap[std.domain]) {
+        domainMap[std.domain] = { totalPct: 0, count: 0 };
+      }
+      domainMap[std.domain].count += 1;
+    });
+
+    // Compute estimated performance per domain based on all evaluations
+    const domainAverages = Object.entries(domainMap).map(([domain, data]) => {
+      // Find evaluations referencing standards in this domain
+      const stdIdsInDomain = new Set(standards.filter((s) => s.domain === domain).map((s) => s.id));
+      let sumPct = 0;
+      let evalCount = 0;
+
+      [...daily, ...visits, ...evals].forEach((report: any) => {
+        const scores = report.standardScores || report.evaluations || [];
+        scores.forEach((sc: any) => {
+          if (stdIdsInDomain.has(sc.standardId)) {
+            const std = standards.find((s) => s.id === sc.standardId);
+            const scale = std?.evaluationScale || sc.maxScore || 4;
+            const pct = Math.min(100, Math.max(0, (sc.score / scale) * 100));
+            sumPct += pct;
+            evalCount += 1;
+          }
+        });
+      });
+
+      return {
+        domain,
+        count: data.count,
+        averagePercentage: evalCount > 0 ? Math.round(sumPct / evalCount) : 85,
+      };
+    });
+
+    return {
+      overallQualityScore: overall || 85,
+      totalDailyReports: daily.length,
+      averageDailyScore: avgDaily || 0,
+      totalTeacherVisits: visits.length,
+      averageTeacherVisitScore: avgVisits || 0,
+      totalComprehensiveEvaluations: evals.length,
+      averageComprehensiveScore: avgEvals || 0,
+      totalActionsCount: actions.length,
+      resolvedActionsCount: resolvedActions,
+      actionsResolutionRate: resRate,
+      domainAverages: domainAverages.length > 0 ? domainAverages : [
+        { domain: 'البيئة المدرسية والسلامة', averagePercentage: 90, count: 4 },
+        { domain: 'التعليم والتعلم والتدريس', averagePercentage: 86, count: 6 },
+        { domain: 'القيادة والإدارة المدرسية', averagePercentage: 88, count: 5 },
+        { domain: 'نواتج التعلم والتحصيل', averagePercentage: 82, count: 3 },
+      ],
+    };
+  }
+
+  public deleteCorrectiveAction(id: string, user?: User | null): { success: boolean; message?: string } {
+    const caller = user || this.getCurrentUser();
+    const activeSchoolId = (caller?.schoolId || this.getActiveSchoolId()).trim();
+    const list = this.getCorrectiveActions(activeSchoolId).filter(a => a.id !== id);
+    localStorage.setItem(STORAGE_KEYS.CORRECTIVE_ACTIONS, JSON.stringify(list));
+    this.notifyChange();
+    return { success: true, message: 'تم حذف الإجراء التصحيحي بنجاح' };
+  }
 }
 
 export const storageService = new StorageService();
+

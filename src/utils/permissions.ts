@@ -101,6 +101,12 @@ const ADMIN_ROLE_PERMISSIONS: Partial<Record<PermissionKey, boolean>> = {
     'users.manage': true,
     'audit.view': true,
     'reports.view': true,
+    'quality.view': true,
+    'quality.create': true,
+    'quality.evaluate': true,
+    'quality.manageStandards': true,
+    'quality.approve': true,
+    'quality.viewDashboard': true,
 };
 
 export const DEFAULT_ROLE_PERMISSIONS: Record<LegacyUserRole, Partial<Record<PermissionKey, boolean>>> = {
@@ -1028,6 +1034,12 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<LegacyUserRole, Partial<Record<Per
     'behaviorCases.view': true,
     'reports.view': true,
     'audit.view': true,
+    'quality.view': true,
+    'quality.create': true,
+    'quality.evaluate': true,
+    'quality.manageStandards': true,
+    'quality.approve': true,
+    'quality.viewDashboard': true,
   },
   Student: {},
 };
@@ -1042,6 +1054,7 @@ export function hasPermission(
 ): boolean {
   if (!user) return false;
   if (user.role === 'Admin' || user.role === 'SchoolDirector') return true;
+  if (Array.isArray(user.permissions) && user.permissions.includes(permission)) return true;
 
   const matrix = customRoleMatrix || DEFAULT_ROLE_PERMISSIONS;
   const rolePerms = matrix[user.role];

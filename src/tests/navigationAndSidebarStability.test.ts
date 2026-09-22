@@ -67,9 +67,10 @@ describe('NTSS ERP - Sidebar Navigation Stability & Route Guard Tests', () => {
     expect(canAccessTab(adminUser, 'users')).toBe(true);
     expect(canAccessTab(adminUser, 'audit')).toBe(true);
 
-    // Teacher cannot enter administrative ERP modules (Strictly isolated to teacher_portal)
+    // Teacher cannot enter administrative ERP modules (Strictly isolated to teacher_portal and personal my_requests)
     expect(canAccessTab(teacherUser, 'dashboard')).toBe(false);
     expect(canAccessTab(teacherUser, 'teacher_portal')).toBe(true);
+    expect(canAccessTab(teacherUser, 'my_requests')).toBe(true);
     expect(canAccessTab(teacherUser, 'timetable_weekly')).toBe(false);
     expect(canAccessTab(teacherUser, 'settings')).toBe(false);
     expect(canAccessTab(teacherUser, 'users')).toBe(false);
@@ -123,5 +124,19 @@ describe('NTSS ERP - Sidebar Navigation Stability & Route Guard Tests', () => {
     // 5. Explicit logout clears session completely
     storageService.setCurrentUser(null);
     expect(storageService.getCurrentUser()).toBeNull();
+  });
+
+  it('Test 5: canAccessTab allows my_requests for Teacher and Administrative roles while guarding other boundaries', () => {
+    const teacherUser: User = { id: 'U4', username: 'teacher1', fullName: 'معلم أول', role: 'Teacher' };
+    const adminUser: User = { id: 'U1', username: 'admin', fullName: 'مدير النظام', role: 'Admin' };
+    const hrUser: User = { id: 'U3', username: 'hr_user', fullName: 'شئون عاملين', role: 'TeacherAffairs' };
+    const stuAffairs: User = { id: 'U2', username: 'stu_affairs', fullName: 'شئون طلاب', role: 'StudentAffairs' };
+    const parentUser: User = { id: 'U5', username: 'parent1', fullName: 'ولي أمر', role: 'Parent' };
+
+    expect(canAccessTab(teacherUser, 'my_requests')).toBe(true);
+    expect(canAccessTab(adminUser, 'my_requests')).toBe(true);
+    expect(canAccessTab(hrUser, 'my_requests')).toBe(true);
+    expect(canAccessTab(stuAffairs, 'my_requests')).toBe(true);
+    expect(canAccessTab(parentUser, 'my_requests')).toBe(false);
   });
 });

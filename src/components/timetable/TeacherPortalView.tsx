@@ -31,6 +31,8 @@ import {
 } from '../../types';
 import { timetableService } from '../../services/timetableService';
 import { storageService } from '../../services/storageService';
+import { MyRequestsView } from '../leaves/MyRequestsView';
+import { CurriculumPlansView } from './CurriculumPlansView';
 
 interface TeacherPortalViewProps {
   currentUser?: User | null;
@@ -40,7 +42,7 @@ interface TeacherPortalViewProps {
 export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ currentUser, onBackToLogin }) => {
   const [activeTeacher, setActiveTeacher] = useState<Employee | null>(null);
   const [sessionToken, setSessionToken] = useState<string | null>(storageService.getTeacherSessionToken());
-  const [portalTab, setPortalTab] = useState<'today' | 'weekly' | 'classes' | 'homework' | 'resources' | 'exams'>('today');
+  const [portalTab, setPortalTab] = useState<'today' | 'weekly' | 'classes' | 'curriculum' | 'homework' | 'resources' | 'exams' | 'requests'>('today');
 
   // Teacher Login Form State
   const [username, setUsername] = useState('');
@@ -425,6 +427,14 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ currentUse
           جدولي الأسبوعي
         </button>
         <button
+          onClick={() => setPortalTab('curriculum')}
+          className={`px-4 py-2 rounded-xl transition ${
+            portalTab === 'curriculum' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600'
+          }`}
+        >
+          خطة المنهج وتوزيع الحصص
+        </button>
+        <button
           onClick={() => setPortalTab('homework')}
           className={`px-4 py-2 rounded-xl transition ${
             portalTab === 'homework' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600'
@@ -447,6 +457,14 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ currentUse
           }`}
         >
           جدول الامتحانات المنشور ({exams.length})
+        </button>
+        <button
+          onClick={() => setPortalTab('requests')}
+          className={`px-4 py-2 rounded-xl transition ${
+            portalTab === 'requests' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600'
+          }`}
+        >
+          إجازاتي وأذوناتي
         </button>
       </div>
 
@@ -543,6 +561,13 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ currentUse
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {/* TAB: CURRICULUM PLANS & DISTRIBUTION */}
+      {portalTab === 'curriculum' && (
+        <div>
+          <CurriculumPlansView currentUser={currentUser || null} />
         </div>
       )}
 
@@ -685,6 +710,24 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ currentUse
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {/* TAB 6: MY REQUESTS (LEAVES & PERMISSIONS) */}
+      {portalTab === 'requests' && (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+          <MyRequestsView
+            currentUser={
+              currentUser || {
+                id: activeTeacher.id,
+                username: activeTeacher.teacherCode || activeTeacher.name,
+                fullName: activeTeacher.name,
+                role: 'Teacher',
+                employeeId: activeTeacher.id,
+                schoolId: (activeTeacher as any).schoolId || 'SCH-001',
+              }
+            }
+          />
         </div>
       )}
 

@@ -32,7 +32,7 @@ export const SupervisionView: React.FC = () => {
   // Assign Modal
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedLocationId, setSelectedLocationId] = useState('');
-  const [selectedShift, setSelectedShift] = useState<'MORNING' | 'BREAK_1' | 'BREAK_2' | 'DISMISSAL'>('BREAK_1');
+  const [selectedShift, setSelectedShift] = useState<'MORNING' | 'BREAK_1' | 'BREAK_2' | 'DISMISSAL' | 'FULL_DAY'>('BREAK_1');
   const [selectedTeacherId, setSelectedTeacherId] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -67,6 +67,7 @@ export const SupervisionView: React.FC = () => {
     BREAK_1: { label: 'الفسحة الأولى', time: '10:20 - 10:40' },
     BREAK_2: { label: 'الفسحة الثانية', time: '12:20 - 12:35' },
     DISMISSAL: { label: 'انصراف الطلاب والباصات', time: '14:30 - 15:00' },
+    FULL_DAY: { label: 'إشراف اليوم الدراسي الكامل', time: '07:30 - 15:00' },
   };
 
   const handleOpenAssignModal = (locationId?: string, shift?: any) => {
@@ -82,11 +83,13 @@ export const SupervisionView: React.FC = () => {
     if (!teacher || !loc) return;
 
     // Validate conflicts
-    const shiftInfo = SHIFT_NAMES[selectedShift];
+    const shiftInfo = SHIFT_NAMES[selectedShift] || { label: 'إشراف اليوم الدراسي الكامل', time: '07:30 - 15:00' };
     const validation = timetableService.validateSupervisionConflict({
       teacherId: teacher.id,
       date: selectedDate,
       dayOfWeek: dayName,
+      shift: selectedShift,
+      supervisionMode: selectedShift === 'FULL_DAY' ? 'FULL_DAY' : 'TIME_SLOT',
       timeSlot: shiftInfo.time,
     });
 
@@ -106,6 +109,7 @@ export const SupervisionView: React.FC = () => {
       teacherCode: teacher.teacherCode,
       teacherName: teacher.name,
       shift: selectedShift,
+      supervisionMode: selectedShift === 'FULL_DAY' ? 'FULL_DAY' : 'TIME_SLOT',
       timeSlot: shiftInfo.time,
       status: 'Scheduled',
       createdAt: new Date().toISOString(),
@@ -203,8 +207,8 @@ export const SupervisionView: React.FC = () => {
       </div>
 
       {/* Grid: Shifts and Locations */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {(['MORNING', 'BREAK_1', 'BREAK_2', 'DISMISSAL'] as const).map(shift => {
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {(['MORNING', 'BREAK_1', 'BREAK_2', 'DISMISSAL', 'FULL_DAY'] as const).map(shift => {
           const shiftMeta = SHIFT_NAMES[shift];
           const shiftAssignments = dailyAssignments.filter(a => a.shift === shift);
 
@@ -307,6 +311,7 @@ export const SupervisionView: React.FC = () => {
                   <option value="BREAK_1">الفسحة الأولى (10:20 - 10:40)</option>
                   <option value="BREAK_2">الفسحة الثانية (12:20 - 12:35)</option>
                   <option value="DISMISSAL">انصراف الطلاب والباصات (14:30 - 15:00)</option>
+                  <option value="FULL_DAY">إشراف اليوم الدراسي الكامل (07:30 - 15:00)</option>
                 </select>
               </div>
 

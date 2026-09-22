@@ -37,7 +37,7 @@ export function resolveDefaultRouteForCurrentUser(user: User | null): string {
     case 'TrainingOfficer':
       return 'employees';
     case 'QualityOfficer':
-      return 'dashboard';
+      return 'quality';
     case 'Supervisor':
       return 'dashboard';
     case 'Viewer':
@@ -79,9 +79,9 @@ export function canAccessTab(user: User | null, rawTab: string): boolean {
     return false;
   }
 
-  // Teacher is strictly forbidden from accessing any administrative ERP module
+  // Teacher is strictly forbidden from accessing any administrative ERP module (except personal self-service requests)
   if ((user.role as string) === 'Teacher') {
-    return tab === 'teacher_portal';
+    return tab === 'teacher_portal' || tab === 'my_requests';
   }
 
   // Dashboard is universally accessible to all authenticated administrative roles
@@ -174,6 +174,7 @@ export function canAccessTab(user: User | null, rawTab: string): boolean {
       'timetable_weekly',
       'timetable_exams',
       'student_schedule_access',
+      'my_requests',
     ];
     return allowed.includes(tab);
   }
@@ -187,6 +188,7 @@ export function canAccessTab(user: User | null, rawTab: string): boolean {
       'monthly_matrix',
       'annual_summary',
       'leaves',
+      'my_requests',
       'reports',
       'timetable',
       'timetable_weekly',
@@ -210,6 +212,7 @@ export function canAccessTab(user: User | null, rawTab: string): boolean {
       'reports',
       'timetable',
       'timetable_weekly',
+      'my_requests',
     ];
     return allowed.includes(tab);
   }
@@ -222,6 +225,7 @@ export function canAccessTab(user: User | null, rawTab: string): boolean {
       'daily_attendance',
       'monthly_matrix',
       'leaves',
+      'my_requests',
       'reports',
       'timetable',
       'timetable_weekly',
@@ -234,6 +238,7 @@ export function canAccessTab(user: User | null, rawTab: string): boolean {
   if (role === 'QualityOfficer') {
     const allowed = [
       'dashboard',
+      'quality',
       'students',
       'student_attendance',
       'behavior',
@@ -242,6 +247,7 @@ export function canAccessTab(user: User | null, rawTab: string): boolean {
       'monthly_matrix',
       'annual_summary',
       'leaves',
+      'my_requests',
       'reports',
       'audit',
       'system_health',
@@ -258,12 +264,14 @@ export function canAccessTab(user: User | null, rawTab: string): boolean {
   if (role === 'Supervisor') {
     const allowed = [
       'dashboard',
+      'quality',
       'students',
       'student_attendance',
       'behavior',
       'employees',
       'daily_attendance',
       'monthly_matrix',
+      'my_requests',
       'reports',
       'timetable',
       'timetable_weekly',

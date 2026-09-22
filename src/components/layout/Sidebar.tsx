@@ -7,11 +7,13 @@ import {
   Calendar,
   CalendarDays,
   CalendarRange,
+  CheckCircle2,
   ChevronLeft,
   ChevronDown,
   Clock,
   Database,
   Eye,
+  FileCheck,
   FileSpreadsheet,
   FileText,
   GraduationCap,
@@ -22,6 +24,7 @@ import {
   Settings as SettingsIcon,
   Shield,
   ShieldCheck,
+  Sparkles,
   Sun,
   Upload,
   UploadCloud,
@@ -43,6 +46,7 @@ export type ActiveTab =
   | 'annual_summary'
   | 'employees'
   | 'leaves'
+  | 'my_requests'
   | 'timetable'
   | 'timetable_weekly'
   | 'timetable_import'
@@ -61,6 +65,7 @@ export type ActiveTab =
   | 'backup'
   | 'system_health'
   | 'reports'
+  | 'quality'
   | 'operations'
   | 'users'
   | 'settings'
@@ -222,6 +227,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
           icon: CalendarRange,
           permission: 'leaves.view',
         },
+        {
+          id: 'my_requests',
+          label: 'إجازاتي وأذوناتي',
+          icon: FileCheck,
+        },
       ],
     },
     {
@@ -296,6 +306,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
           label: 'وصول الطلاب للجدول (QR)',
           icon: Eye,
           badge: 'طلاب',
+        },
+      ],
+    },
+    {
+      id: 'sec_quality',
+      title: 'إدارة الجودة ومعايير إتقان',
+      items: [
+        {
+          id: 'quality',
+          label: 'إدارة الجودة الشاملة',
+          icon: Award,
+          permission: 'quality.view',
+          badge: 'إتقان',
         },
       ],
     },
