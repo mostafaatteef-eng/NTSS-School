@@ -1,3 +1,5 @@
+export type AccessScope = 'GLOBAL' | 'SCHOOL' | 'SELF';
+
 export type StaffRole =
   | 'SystemAdmin'
   | 'SchoolAdmin'
@@ -7,7 +9,9 @@ export type StaffRole =
   | 'TeacherAffairs'
   | 'SocialSpecialist'
   | 'TrainingOfficer'
-  | 'QualityOfficer';
+  | 'QualityOfficer'
+  | 'Teacher'
+  | 'AdministrativeEmployee';
 
 export const CANONICAL_STAFF_ROLES: StaffRole[] = [
   'SystemAdmin',
@@ -19,9 +23,23 @@ export const CANONICAL_STAFF_ROLES: StaffRole[] = [
   'SocialSpecialist',
   'TrainingOfficer',
   'QualityOfficer',
+  'Teacher',
+  'AdministrativeEmployee',
 ];
 
 export type UserRole = StaffRole;
+
+export interface ServerSession {
+  sessionToken: string;
+  userId: string;
+  email: string;
+  role: UserRole;
+  accessScope: AccessScope;
+  schoolId: string;
+  allowedSchoolIds: string[];
+  activeSchoolId: string;
+  expiresAt: string;
+}
 
 // Legacy and Historical Roles for Audit, Archive, and Migration
 export type LegacyUserRole =
