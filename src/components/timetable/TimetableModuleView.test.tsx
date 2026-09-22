@@ -50,7 +50,7 @@ describe('TimetableModuleView - initialTab Prop Synchronization Regression Tests
       root.render(<TimetableModuleView currentUser={mockAdminUser} initialTab="import" />);
     });
     activeBtn = container.querySelector('button.bg-indigo-600');
-    expect(activeBtn?.textContent).toContain('استيراد الجدول');
+    expect(activeBtn?.textContent).toContain('استيراد aSc والجدول');
 
     // 4. Update prop to "reserve"
     await act(async () => {
