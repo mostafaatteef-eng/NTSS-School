@@ -45,6 +45,8 @@ export interface ServerSession {
   teacherId?: string;
   isActive?: boolean;
   status?: string;
+  customPermissions?: Partial<Record<string, boolean>>;
+  permissions?: string[];
 }
 
 export interface ResourceContext {
@@ -52,6 +54,9 @@ export interface ResourceContext {
   ownerEmployeeId?: string;
   resourceId?: string;
   resourceType?: string;
+  targetUserId?: string;
+  targetUsername?: string;
+  roleChanged?: boolean;
 }
 
 export interface BackendSecurityAuditEvent {

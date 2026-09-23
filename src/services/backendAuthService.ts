@@ -31,6 +31,8 @@ import {
 } from '../types';
 import { hasEffectivePermission, DEFAULT_ROLE_PERMISSIONS } from '../utils/permissions';
 
+export const CANONICAL_BACKEND_VERSION = '5.1.0-RBAC-SECURE';
+
 // In-Memory Security Audit Logs Store (Server Authoritative)
 const securityAuditLogs: BackendSecurityAuditEvent[] = [];
 
@@ -497,7 +499,14 @@ export function authorize(
 
   // 4. resolve canonical permission from action or key (Fail-Closed on unknown actions)
   let effectivePermission: PermissionKey;
-  if (ACTION_PERMISSION_MAP[permission as string]) {
+  if (permission === 'saveUser') {
+    const targetUserId = resourceContext?.resourceId || resourceContext?.targetUserId;
+    const targetUsername = resourceContext?.targetUsername;
+    const existing = masterUsersStore.find(
+      u => (targetUserId && u.id === targetUserId) || (targetUsername && u.username === targetUsername)
+    );
+    effectivePermission = existing ? 'users.edit' : 'users.create';
+  } else if (ACTION_PERMISSION_MAP[permission as string]) {
     effectivePermission = ACTION_PERMISSION_MAP[permission as string];
     if (scope === 'SELF') {
       const permStr = String(permission);
@@ -764,6 +773,7 @@ export const ACTION_PERMISSION_MAP: Record<string, PermissionKey> = {
   deleteLeave: 'leaves.delete',
   getPermissions: 'leaves.view',
   savePermission: 'leaves.create',
+  deletePermission: 'leaves.delete',
 
   // Teaching Assignments
   getTeacherAssignments: 'timetable.manage',
@@ -888,7 +898,8 @@ export interface SchoolDataStore {
   students: Array<{ id: string; name: string; schoolId?: string }>;
   employees: Array<{ id: string; name: string; schoolId?: string }>;
   schedule: Array<{ id: string; subject?: string; teacherId?: string; classroom?: string; schoolId?: string; version?: string }>;
-  leaves: Array<{ id: string; employeeId: string; schoolId?: string }>;
+  leaves: Array<{ id: string; employeeId: string; schoolId?: string; status?: string; [key: string]: any }>;
+  permissions?: Array<{ id: string; employeeId: string; schoolId?: string; status?: string; [key: string]: any }>;
   settings: Record<string, any>;
   archivedReceipts?: Array<{ archivedAt: string; archivedBy: string; count: number }>;
 }
@@ -906,6 +917,7 @@ const isolatedSchoolStores: Record<string, SchoolDataStore> = {
       { id: 'SCH-B1', subject: 'رياضيات', classroom: '1/1', schoolId: 'SCH-BADR' },
     ],
     leaves: [],
+    permissions: [],
     settings: { schoolName: 'مدرسة بدر الحديثة' },
     archivedReceipts: [],
   },
@@ -920,6 +932,7 @@ const isolatedSchoolStores: Record<string, SchoolDataStore> = {
       { id: 'SCH-N1', subject: 'علوم', classroom: '2/1', schoolId: 'SCH-ALNOOR' },
     ],
     leaves: [],
+    permissions: [],
     settings: { schoolName: 'مدرسة النور' },
     archivedReceipts: [],
   },
@@ -1030,9 +1043,192 @@ export function executeSchoolScopedAction(
         employees: [...store.employees],
         schedule: [...(store.schedule || [])],
         leaves: [...store.leaves],
+        permissions: [...(store.permissions || [])],
         settings: { ...store.settings },
       },
     };
+  }
+
+  // School Leaves & Permissions with strict SELF Scope Enforcement
+  if (action === 'getLeaves') {
+    if (session.accessScope === 'SELF') {
+      const selfEmpId = String(session.employeeId || session.userId || '').trim().toLowerCase();
+      const ownLeaves = store.leaves.filter(
+        l => String(l.employeeId || '').trim().toLowerCase() === selfEmpId
+      );
+      return { success: true, data: ownLeaves };
+    }
+    return { success: true, data: [...store.leaves] };
+  }
+
+  if (action === 'getPermissions') {
+    store.permissions = store.permissions || [];
+    if (session.accessScope === 'SELF') {
+      const selfEmpId = String(session.employeeId || session.userId || '').trim().toLowerCase();
+      const ownPerms = store.permissions.filter(
+        p => String(p.employeeId || '').trim().toLowerCase() === selfEmpId
+      );
+      return { success: true, data: ownPerms };
+    }
+    return { success: true, data: [...store.permissions] };
+  }
+
+  if (action === 'saveLeave') {
+    let leaveData = { ...payload };
+    if (session.accessScope === 'SELF') {
+      const selfEmpId = String(session.employeeId || session.userId || '').trim();
+      if (leaveData.employeeId && String(leaveData.employeeId).trim().toLowerCase() !== selfEmpId.toLowerCase()) {
+        recordSecurityAuditEvent({
+          actorUserId: session.userId,
+          actorRole: String(session.role),
+          actorSchoolId: session.schoolId,
+          targetSchoolId: effectiveSchoolId,
+          action: 'saveLeave',
+          code: 'SELF_SCOPE_VIOLATION',
+          reason: 'محاولة تسجيل إجازة لموظف آخر (forged employeeId)',
+        });
+        return {
+          success: false,
+          code: 'SELF_SCOPE_VIOLATION',
+          message: 'تم رفض العملية: غير مصرح بطلب أو تسجيل إجازة لموظف آخر',
+        };
+      }
+      if (leaveData.id) {
+        const existing = store.leaves.find(l => l.id === leaveData.id);
+        if (existing) {
+          if (String(existing.employeeId || '').trim().toLowerCase() !== selfEmpId.toLowerCase()) {
+            recordSecurityAuditEvent({
+              actorUserId: session.userId,
+              actorRole: String(session.role),
+              actorSchoolId: session.schoolId,
+              targetSchoolId: effectiveSchoolId,
+              action: 'saveLeave',
+              code: 'SELF_SCOPE_VIOLATION',
+              reason: 'محاولة تعديل إجازة موظف آخر عبر معرف معروف',
+            });
+            return {
+              success: false,
+              code: 'SELF_SCOPE_VIOLATION',
+              message: 'تم رفض العملية: غير مصرح بتعديل إجازة موظف آخر',
+            };
+          }
+          if (leaveData.status && leaveData.status !== existing.status) {
+            if (['Approved', 'Rejected', 'معتمدة', 'مرفوضة'].includes(leaveData.status)) {
+              return {
+                success: false,
+                code: 'ROLE_PERMISSION_DENIED',
+                message: 'غير مصرح بتغيير حالة اعتماد الإجازة إدارياً',
+              };
+            }
+          }
+        }
+      }
+      leaveData.employeeId = selfEmpId;
+    }
+
+    const cleanLeave = { ...leaveData, schoolId: effectiveSchoolId };
+    const idx = store.leaves.findIndex(l => l.id === cleanLeave.id);
+    if (idx >= 0) {
+      store.leaves[idx] = cleanLeave;
+    } else {
+      store.leaves.push(cleanLeave);
+    }
+    return { success: true, message: 'تم حفظ سجل الإجازة بنجاح' };
+  }
+
+  if (action === 'savePermission') {
+    store.permissions = store.permissions || [];
+    let permData = { ...payload };
+    if (session.accessScope === 'SELF') {
+      const selfEmpId = String(session.employeeId || session.userId || '').trim();
+      if (permData.employeeId && String(permData.employeeId).trim().toLowerCase() !== selfEmpId.toLowerCase()) {
+        recordSecurityAuditEvent({
+          actorUserId: session.userId,
+          actorRole: String(session.role),
+          actorSchoolId: session.schoolId,
+          targetSchoolId: effectiveSchoolId,
+          action: 'savePermission',
+          code: 'SELF_SCOPE_VIOLATION',
+          reason: 'محاولة تسجيل إذن لموظف آخر (forged employeeId)',
+        });
+        return {
+          success: false,
+          code: 'SELF_SCOPE_VIOLATION',
+          message: 'تم رفض العملية: غير مصرح بطلب أو تسجيل إذن لموظف آخر',
+        };
+      }
+      if (permData.id) {
+        const existing = store.permissions.find(p => p.id === permData.id);
+        if (existing) {
+          if (String(existing.employeeId || '').trim().toLowerCase() !== selfEmpId.toLowerCase()) {
+            recordSecurityAuditEvent({
+              actorUserId: session.userId,
+              actorRole: String(session.role),
+              actorSchoolId: session.schoolId,
+              targetSchoolId: effectiveSchoolId,
+              action: 'savePermission',
+              code: 'SELF_SCOPE_VIOLATION',
+              reason: 'محاولة تعديل إذن موظف آخر عبر معرف معروف',
+            });
+            return {
+              success: false,
+              code: 'SELF_SCOPE_VIOLATION',
+              message: 'تم رفض العملية: غير مصرح بتعديل إذن موظف آخر',
+            };
+          }
+          if (permData.status && permData.status !== existing.status) {
+            if (['Approved', 'Rejected', 'معتمد', 'مرفوض'].includes(permData.status)) {
+              return {
+                success: false,
+                code: 'ROLE_PERMISSION_DENIED',
+                message: 'غير مصرح بتغيير حالة اعتماد الإذن إدارياً',
+              };
+            }
+          }
+        }
+      }
+      permData.employeeId = selfEmpId;
+    }
+
+    const cleanPerm = { ...permData, schoolId: effectiveSchoolId };
+    const idx = store.permissions.findIndex(p => p.id === cleanPerm.id);
+    if (idx >= 0) {
+      store.permissions[idx] = cleanPerm;
+    } else {
+      store.permissions.push(cleanPerm);
+    }
+    return { success: true, message: 'تم حفظ سجل الإذن بنجاح' };
+  }
+
+  if (action === 'deleteLeave') {
+    if (session.accessScope === 'SELF') {
+      return {
+        success: false,
+        code: 'ROLE_PERMISSION_DENIED',
+        message: 'حسابات النطاق الذاتي غير مصرح لها بحذف سجلات الإجازات',
+      };
+    }
+    const idx = store.leaves.findIndex(l => l.id === payload?.id);
+    if (idx >= 0) {
+      store.leaves.splice(idx, 1);
+    }
+    return { success: true, message: 'تم حذف سجل الإجازة بنجاح' };
+  }
+
+  if (action === 'deletePermission') {
+    if (session.accessScope === 'SELF') {
+      return {
+        success: false,
+        code: 'ROLE_PERMISSION_DENIED',
+        message: 'حسابات النطاق الذاتي غير مصرح لها بحذف سجلات الأذونات',
+      };
+    }
+    store.permissions = store.permissions || [];
+    const idx = store.permissions.findIndex(p => p.id === payload?.id);
+    if (idx >= 0) {
+      store.permissions.splice(idx, 1);
+    }
+    return { success: true, message: 'تم حذف سجل الإذن بنجاح' };
   }
 
   // Timetable import strictly isolated to effective school store

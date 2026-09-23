@@ -50,10 +50,8 @@ export const PERMISSION_ALIASES: Record<string, PermissionKey[]> = {
   'schedule.publish': ['timetable.publish'],
   'curriculum.view': ['lessonContent.view'],
   'lessonContent.view': ['curriculum.view'],
-  'leaves.own.view': ['leaves.view'],
-  'leaves.view': ['leaves.own.view'],
+  'leaves.own.view': ['leaves.view', 'leaves.manage.view'],
   'leaves.own.create': ['leaves.create'],
-  'leaves.create': ['leaves.own.create'],
   'settings.view': ['settings.manage'],
 };
 
@@ -436,10 +434,15 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<LegacyUserRole, Partial<Record<Per
     'teacherAttendance.create': false,
     'teacherAttendance.edit': false,
     'teacherAttendance.delete': false,
-    'leaves.view': true,
-    'leaves.create': true,
+    'leaves.own.view': true,
+    'leaves.own.create': true,
+    'leaves.view': false,
+    'leaves.create': false,
     'leaves.edit': false,
     'leaves.delete': false,
+    'leaves.manage.view': false,
+    'leaves.manage.approve': false,
+    'leaves.manage.reject': false,
     'behavior.view': true,
     'behavior.create': true,
     'behavior.edit': false,
@@ -481,8 +484,6 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<LegacyUserRole, Partial<Record<Per
     'users.manage': false,
     'timetable.view': true,
     'curriculum.view': true,
-    'leaves.own.view': true,
-    'leaves.own.create': true,
     'attendance.students.view': true,
     'audit.view': false,
     'reports.view': false,
@@ -1223,8 +1224,12 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<LegacyUserRole, Partial<Record<Per
     'users.manage': false,
     'leaves.own.view': true,
     'leaves.own.create': true,
-    'leaves.view': true,
-    'leaves.create': true,
+    'leaves.view': false,
+    'leaves.create': false,
+    'leaves.delete': false,
+    'leaves.manage.view': false,
+    'leaves.manage.approve': false,
+    'leaves.manage.reject': false,
   },
 };
 
@@ -1297,7 +1302,15 @@ export function hasEffectivePermission(
     return false;
   }
 
-  // Explicit user permission overrides
+  // Explicit user or session permission overrides (explicit false denies, explicit true permits)
+  if (sessionObj?.customPermissions && typeof sessionObj.customPermissions === 'object') {
+    if ((sessionObj.customPermissions as any)[permission] !== undefined) {
+      return !!(sessionObj.customPermissions as any)[permission];
+    }
+  }
+  if (sessionObj?.permissions && Array.isArray(sessionObj.permissions)) {
+    if (sessionObj.permissions.includes(permission)) return true;
+  }
   if (userObj?.permissions && Array.isArray(userObj.permissions)) {
     if (userObj.permissions.includes(permission)) return true;
   }

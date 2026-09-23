@@ -2,7 +2,7 @@
  * ==============================================================================
  * NTSS SCHOOL ERP & TIMETABLE SYSTEM - AUTHORITATIVE GOOGLE APPS SCRIPT BACKEND
  * ==============================================================================
- * Version: 5.0.0-TIMETABLE-SECURE-PROD
+ * Version: 5.1.0-RBAC-SECURE
  * Runtime: V8 (Google Apps Script)
  * Authoritative Storage: Google Sheets Spreadsheet
  *
@@ -26,6 +26,7 @@
  *    - Teacher's weekly timetable & today's schedule
  *    - Classroom homework & resources (Assignment-scoped draft creation)
  *    - Exam supervision duties & reserve substitutions
+ *    - Leaves & Permissions Self-Portal (Strictly employeeId scoped)
  * 4. Read-Only Public Student Timetable Portal:
  *    - Server-hashed token-based access
  *    - Sanitized Safe Student DTO
@@ -40,7 +41,7 @@
  */
 
 var CANONICAL_BACKEND_SOURCE = 'google-apps-script/Code.gs';
-var CANONICAL_BACKEND_VERSION = '5.0.0-TIMETABLE-SECURE-PROD';
+var CANONICAL_BACKEND_VERSION = '5.1.0-RBAC-SECURE';
 var PBKDF2_ITERATIONS = 10000;
 var SESSION_DURATION_HOURS = 24;
 var TEACHER_SESSION_DURATION_HOURS = 24;
@@ -634,7 +635,9 @@ function doPost(e) {
     var resourceContext = {
       schoolId: requestedSchoolId,
       ownerEmployeeId: resourceOwnerEmployeeId,
-      resourceId: (payload && payload.id) || postData.id
+      resourceId: (payload && payload.id) || postData.id,
+      targetUserId: (payload && payload.id) || postData.id,
+      targetUsername: (payload && payload.username) || postData.username
     };
 
     var authResult = authorize(activeSession, action, resourceContext, ss, requestId);
@@ -1014,11 +1017,63 @@ function doPost(e) {
     }
 
     if (action === 'getLeaves') {
-      output.data = getSheetData(schoolSs, SHEETS.LEAVES);
+      var allLeaves = getSheetData(schoolSs, SHEETS.LEAVES);
+      if (activeSession.accessScope === 'SELF') {
+        var selfEmpId = String(activeSession.employeeId || activeSession.userId || '').trim().toLowerCase();
+        output.data = allLeaves.filter(function(l) {
+          return String(l.employeeId || '').trim().toLowerCase() === selfEmpId;
+        });
+      } else {
+        output.data = allLeaves;
+      }
       return createJsonResponse(output, 200);
     }
 
     if (action === 'saveLeave' && payload) {
+      if (activeSession.accessScope === 'SELF') {
+        var selfEmpId = String(activeSession.employeeId || activeSession.userId || '').trim();
+        if (payload.employeeId && String(payload.employeeId).trim().toLowerCase() !== selfEmpId.toLowerCase()) {
+          recordAuthoritativeAudit(ss, requestId, authenticatedUsername, authenticatedRole, 'SELF_SCOPE_VIOLATION', 'LEAVES', payload.id || '', 'محاولة تسجيل إجازة لموظف آخر');
+          return createJsonResponse({
+            status: 'error',
+            code: 'SELF_SCOPE_VIOLATION',
+            message: 'تم رفض العملية: غير مصرح بطلب أو تسجيل إجازة لموظف آخر',
+            requestId: requestId
+          }, 403);
+        }
+        if (payload.id) {
+          var allSchoolLeaves = getSheetData(schoolSs, SHEETS.LEAVES);
+          var existingLeave = null;
+          for (var li = 0; li < allSchoolLeaves.length; li++) {
+            if (String(allSchoolLeaves[li].id || '').trim() === String(payload.id).trim()) {
+              existingLeave = allSchoolLeaves[li];
+              break;
+            }
+          }
+          if (existingLeave) {
+            if (String(existingLeave.employeeId || '').trim().toLowerCase() !== selfEmpId.toLowerCase()) {
+              recordAuthoritativeAudit(ss, requestId, authenticatedUsername, authenticatedRole, 'SELF_SCOPE_VIOLATION', 'LEAVES', payload.id, 'محاولة تعديل إجازة موظف آخر');
+              return createJsonResponse({
+                status: 'error',
+                code: 'SELF_SCOPE_VIOLATION',
+                message: 'تم رفض العملية: غير مصرح بتعديل إجازة موظف آخر',
+                requestId: requestId
+              }, 403);
+            }
+            if (payload.status && payload.status !== existingLeave.status) {
+              if (['Approved', 'Rejected', 'معتمدة', 'مرفوضة'].indexOf(payload.status) !== -1) {
+                return createJsonResponse({
+                  status: 'error',
+                  code: 'ROLE_PERMISSION_DENIED',
+                  message: 'غير مصرح بتغيير حالة اعتماد الإجازة إدارياً',
+                  requestId: requestId
+                }, 403);
+              }
+            }
+          }
+        }
+        payload.employeeId = selfEmpId;
+      }
       payload.schoolId = effectiveSchoolId;
       upsertRecord(schoolSs, SHEETS.LEAVES, 'id', payload);
       recordAuthoritativeAudit(schoolSs, requestId, authenticatedUsername, authenticatedRole, 'SAVE', 'LEAVES', payload.id || '', 'طلب / اعتماد إجازة');
@@ -1027,20 +1082,97 @@ function doPost(e) {
     }
 
     if (action === 'deleteLeave' && payload && payload.id) {
+      if (activeSession.accessScope === 'SELF') {
+        recordAuthoritativeAudit(ss, requestId, authenticatedUsername, authenticatedRole, 'SELF_SCOPE_VIOLATION', 'LEAVES', payload.id, 'محاولة حذف إجازة من حساب نطاق ذاتي');
+        return createJsonResponse({
+          status: 'error',
+          code: 'ROLE_PERMISSION_DENIED',
+          message: 'حسابات النطاق الذاتي غير مصرح لها بحذف سجلات الإجازات',
+          requestId: requestId
+        }, 403);
+      }
       deleteRecord(schoolSs, SHEETS.LEAVES, 'id', payload.id);
       output.message = 'تم حذف سجل الإجازة بنجاح';
       return createJsonResponse(output, 200);
     }
 
     if (action === 'getPermissions') {
-      output.data = getSheetData(schoolSs, SHEETS.PERMISSIONS);
+      var allPerms = getSheetData(schoolSs, SHEETS.PERMISSIONS);
+      if (activeSession.accessScope === 'SELF') {
+        var selfPermEmpId = String(activeSession.employeeId || activeSession.userId || '').trim().toLowerCase();
+        output.data = allPerms.filter(function(p) {
+          return String(p.employeeId || '').trim().toLowerCase() === selfPermEmpId;
+        });
+      } else {
+        output.data = allPerms;
+      }
       return createJsonResponse(output, 200);
     }
 
     if (action === 'savePermission' && payload) {
+      if (activeSession.accessScope === 'SELF') {
+        var selfPermEmpId = String(activeSession.employeeId || activeSession.userId || '').trim();
+        if (payload.employeeId && String(payload.employeeId).trim().toLowerCase() !== selfPermEmpId.toLowerCase()) {
+          recordAuthoritativeAudit(ss, requestId, authenticatedUsername, authenticatedRole, 'SELF_SCOPE_VIOLATION', 'PERMISSIONS', payload.id || '', 'محاولة تسجيل إذن لموظف آخر');
+          return createJsonResponse({
+            status: 'error',
+            code: 'SELF_SCOPE_VIOLATION',
+            message: 'تم رفض العملية: غير مصرح بطلب أو تسجيل إذن لموظف آخر',
+            requestId: requestId
+          }, 403);
+        }
+        if (payload.id) {
+          var allSchoolPerms = getSheetData(schoolSs, SHEETS.PERMISSIONS);
+          var existingPerm = null;
+          for (var pi = 0; pi < allSchoolPerms.length; pi++) {
+            if (String(allSchoolPerms[pi].id || '').trim() === String(payload.id).trim()) {
+              existingPerm = allSchoolPerms[pi];
+              break;
+            }
+          }
+          if (existingPerm) {
+            if (String(existingPerm.employeeId || '').trim().toLowerCase() !== selfPermEmpId.toLowerCase()) {
+              recordAuthoritativeAudit(ss, requestId, authenticatedUsername, authenticatedRole, 'SELF_SCOPE_VIOLATION', 'PERMISSIONS', payload.id, 'محاولة تعديل إذن موظف آخر');
+              return createJsonResponse({
+                status: 'error',
+                code: 'SELF_SCOPE_VIOLATION',
+                message: 'تم رفض العملية: غير مصرح بتعديل إذن موظف آخر',
+                requestId: requestId
+              }, 403);
+            }
+            if (payload.status && payload.status !== existingPerm.status) {
+              if (['Approved', 'Rejected', 'معتمد', 'مرفوض'].indexOf(payload.status) !== -1) {
+                return createJsonResponse({
+                  status: 'error',
+                  code: 'ROLE_PERMISSION_DENIED',
+                  message: 'غير مصرح بتغيير حالة اعتماد الإذن إدارياً',
+                  requestId: requestId
+                }, 403);
+              }
+            }
+          }
+        }
+        payload.employeeId = selfPermEmpId;
+      }
       payload.schoolId = effectiveSchoolId;
       upsertRecord(schoolSs, SHEETS.PERMISSIONS, 'id', payload);
+      recordAuthoritativeAudit(schoolSs, requestId, authenticatedUsername, authenticatedRole, 'SAVE', 'PERMISSIONS', payload.id || '', 'طلب / اعتماد إذن');
       output.message = 'تم حفظ سجل الإذن بنجاح';
+      return createJsonResponse(output, 200);
+    }
+
+    if (action === 'deletePermission' && payload && payload.id) {
+      if (activeSession.accessScope === 'SELF') {
+        recordAuthoritativeAudit(ss, requestId, authenticatedUsername, authenticatedRole, 'SELF_SCOPE_VIOLATION', 'PERMISSIONS', payload.id, 'محاولة حذف إذن من حساب نطاق ذاتي');
+        return createJsonResponse({
+          status: 'error',
+          code: 'ROLE_PERMISSION_DENIED',
+          message: 'حسابات النطاق الذاتي غير مصرح لها بحذف سجلات الأذونات',
+          requestId: requestId
+        }, 403);
+      }
+      deleteRecord(schoolSs, SHEETS.PERMISSIONS, 'id', payload.id);
+      output.message = 'تم حذف سجل الإذن بنجاح';
       return createJsonResponse(output, 200);
     }
 
@@ -2544,6 +2676,7 @@ var ACTION_PERMISSION_MAP = {
   deleteLeave: 'leaves.delete',
   getPermissions: 'leaves.view',
   savePermission: 'leaves.create',
+  deletePermission: 'leaves.delete',
 
   // Teaching Assignments
   getTeacherAssignments: 'timetable.manage',
@@ -2663,10 +2796,8 @@ var PERMISSION_ALIASES = {
   'schedule.view': ['timetable.view'],
   'schedule.manage': ['timetable.manage'],
   'schedule.publish': ['timetable.publish'],
-  'leaves.own.view': ['leaves.view'],
-  'leaves.view': ['leaves.own.view'],
+  'leaves.own.view': ['leaves.view', 'leaves.manage.view'],
   'leaves.own.create': ['leaves.create'],
-  'leaves.create': ['leaves.own.create'],
   'settings.view': ['settings.manage']
 };
 
@@ -2989,9 +3120,12 @@ var CANONICAL_ROLE_PERMISSIONS = {
     'employees.view': false,
     'leaves.own.view': true,
     'leaves.own.create': true,
-    'leaves.view': true,
-    'leaves.create': true,
+    'leaves.view': false,
+    'leaves.create': false,
     'leaves.delete': false,
+    'leaves.manage.view': false,
+    'leaves.manage.approve': false,
+    'leaves.manage.reject': false,
     'timetable.view': true,
     'timetable.manage': false,
     'timetable.publish': false,
@@ -3015,9 +3149,12 @@ var CANONICAL_ROLE_PERMISSIONS = {
     'employees.view': false,
     'leaves.own.view': true,
     'leaves.own.create': true,
-    'leaves.view': true,
-    'leaves.create': true,
+    'leaves.view': false,
+    'leaves.create': false,
     'leaves.delete': false,
+    'leaves.manage.view': false,
+    'leaves.manage.approve': false,
+    'leaves.manage.reject': false,
     'timetable.view': false,
     'timetable.manage': false,
     'settings.view': true,
@@ -3035,6 +3172,14 @@ function hasEffectivePermissionGas(session, permission) {
 
   if (session.isActive === false || String(session.status || '').toLowerCase() === 'inactive' || String(session.status || '').toLowerCase() === 'suspended') {
     return false;
+  }
+
+  // Explicit session overrides
+  if (session.customPermissions && typeof session.customPermissions === 'object') {
+    if (session.customPermissions.hasOwnProperty(permission)) {
+      if (session.customPermissions[permission] === false) return false;
+      if (session.customPermissions[permission] === true) return true;
+    }
   }
 
   var rolePerms = CANONICAL_ROLE_PERMISSIONS[role];
@@ -3127,8 +3272,26 @@ function authorize(session, action, resourceContext, masterSs, requestId) {
     }
   }
 
-  // 4. verify permission via canonical ACTION_PERMISSION_MAP and hasEffectivePermissionGas (Fail-Closed)
-  if (!ACTION_PERMISSION_MAP.hasOwnProperty(action)) {
+  // 4. verify permission via dynamic resolution / canonical ACTION_PERMISSION_MAP and hasEffectivePermissionGas (Fail-Closed)
+  var permissionKey;
+  if (action === 'saveUser') {
+    var targetUsers = getSheetData(ss, SHEETS.USERS);
+    var existingUserRec = null;
+    var targetId = String((resourceContext && (resourceContext.resourceId || resourceContext.targetUserId)) || '').trim();
+    var targetUsername = String((resourceContext && resourceContext.targetUsername) || '').trim().toLowerCase();
+    for (var uix = 0; uix < targetUsers.length; uix++) {
+      if ((targetId && String(targetUsers[uix].id || '').trim() === targetId) ||
+          (targetUsername && String(targetUsers[uix].username || '').trim().toLowerCase() === targetUsername)) {
+        existingUserRec = targetUsers[uix];
+        break;
+      }
+    }
+    permissionKey = existingUserRec ? 'users.edit' : 'users.create';
+  } else if (ACTION_PERMISSION_MAP.hasOwnProperty(action)) {
+    permissionKey = ACTION_PERMISSION_MAP[action];
+  } else if (action.indexOf('.') !== -1) {
+    permissionKey = action;
+  } else {
     recordAuthoritativeAudit(ss, reqId, session.username || session.userId, role, 'PERMISSION_MAPPING_MISSING', 'AUTH', session.userId, 'إجراء محمي غير معروف في خريطة الصلاحيات: ' + action);
     return {
       allowed: false,
@@ -3137,7 +3300,6 @@ function authorize(session, action, resourceContext, masterSs, requestId) {
     };
   }
 
-  var permissionKey = ACTION_PERMISSION_MAP[action];
   if (scope === 'SELF') {
     if (action === 'getLeaves' || action === 'getPermissions') {
       permissionKey = 'leaves.own.view';
