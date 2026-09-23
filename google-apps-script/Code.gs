@@ -1452,13 +1452,72 @@ function doPost(e) {
       return createJsonResponse(output, 200);
     }
 
-    // U. User Management (Admin Only)
+    // U. User Management (Strictly scoped via Central USERS sheet & School Isolation)
     if (action === 'getUsers') {
-      output.data = getSanitizedUsersList(ss);
+      output.data = getSanitizedUsersList(ss, activeSession);
       return createJsonResponse(output, 200);
     }
 
     if (action === 'saveUser' && payload) {
+      var targetRole = String(payload.role || '').trim();
+      var existingUsers = getSheetData(ss, SHEETS.USERS);
+      var existingUser = null;
+      for (var eu = 0; eu < existingUsers.length; eu++) {
+        if (existingUsers[eu].id === payload.id || (payload.username && String(existingUsers[eu].username).trim().toLowerCase() === String(payload.username).trim().toLowerCase())) {
+          existingUser = existingUsers[eu];
+          break;
+        }
+      }
+
+      if (authenticatedRole === 'SchoolAdmin') {
+        if (targetRole === 'SystemAdmin') {
+          return createJsonResponse({
+            status: 'error',
+            code: 'FORBIDDEN_ROLE_ELEVATION',
+            message: 'لا يمكن لمدير المدرسة إنشاء أو ترقية مستخدم إلى مدير نظام عام (SystemAdmin)',
+            requestId: requestId
+          }, 403);
+        }
+        if (existingUser) {
+          if (existingUser.role === 'SystemAdmin') {
+            return createJsonResponse({
+              status: 'error',
+              code: 'FORBIDDEN',
+              message: 'غير مصرح بتعديل حساب مدير نظام عام',
+              requestId: requestId
+            }, 403);
+          }
+          if (existingUser.schoolId && String(existingUser.schoolId).trim().toUpperCase() !== String(effectiveSchoolId).trim().toUpperCase()) {
+            return createJsonResponse({
+              status: 'error',
+              code: 'CROSS_SCHOOL_ACCESS_DENIED',
+              message: 'غير مصرح بتعديل مستخدم ينتمي لمدرسة أخرى',
+              requestId: requestId
+            }, 403);
+          }
+        }
+        // Force newUser.schoolId to match effectiveSchoolId
+        payload.schoolId = effectiveSchoolId;
+      } else if (authenticatedRole === 'SystemAdmin') {
+        var allowedList = (activeSession.allowedSchoolIds || []).map(function(id) { return String(id).trim().toUpperCase(); });
+        if (payload.schoolId && allowedList.indexOf(String(payload.schoolId).trim().toUpperCase()) === -1) {
+          return createJsonResponse({
+            status: 'error',
+            code: 'ACCESS_DENIED_SCHOOL_SCOPE',
+            message: 'المدرسة المحددة للمستخدم خارج نطاق المدارس المصرح لك بها',
+            requestId: requestId
+          }, 403);
+        }
+        if (existingUser && existingUser.schoolId && allowedList.indexOf(String(existingUser.schoolId).trim().toUpperCase()) === -1) {
+          return createJsonResponse({
+            status: 'error',
+            code: 'ACCESS_DENIED_SCHOOL_SCOPE',
+            message: 'المستخدم ينتمي لمدرسة خارج نطاق الصلاحيات المصرح لك بها',
+            requestId: requestId
+          }, 403);
+        }
+      }
+
       var savedUser = saveUserSecure(ss, payload, authenticatedUsername, requestId);
       recordAuthoritativeAudit(ss, requestId, authenticatedUsername, authenticatedRole, 'SAVE', 'USERS', payload.username || '', 'حفظ حساب مستخدم');
       output.message = 'تم حفظ حساب المستخدم بنجاح';
@@ -1467,6 +1526,15 @@ function doPost(e) {
     }
 
     if (action === 'deleteUser' && payload && payload.id) {
+      var checkTarget = verifyTargetUserAccess(ss, activeSession, payload.id);
+      if (!checkTarget.allowed) {
+        return createJsonResponse({
+          status: 'error',
+          code: checkTarget.code,
+          message: checkTarget.message,
+          requestId: requestId
+        }, 403);
+      }
       deleteRecord(ss, SHEETS.USERS, 'id', payload.id);
       recordAuthoritativeAudit(ss, requestId, authenticatedUsername, authenticatedRole, 'DELETE', 'USERS', payload.id, 'حذف حساب مستخدم');
       output.message = 'تم حذف حساب المستخدم بنجاح';
@@ -1474,6 +1542,15 @@ function doPost(e) {
     }
 
     if (action === 'resetUserPassword' && payload) {
+      var checkTarget = verifyTargetUserAccess(ss, activeSession, payload.userId);
+      if (!checkTarget.allowed) {
+        return createJsonResponse({
+          status: 'error',
+          code: checkTarget.code,
+          message: checkTarget.message,
+          requestId: requestId
+        }, 403);
+      }
       var resetRes = resetUserPasswordSecure(ss, payload.userId, payload.newPassword, authenticatedUsername, requestId);
       if (!resetRes.success) {
         return createJsonResponse({
@@ -1489,6 +1566,15 @@ function doPost(e) {
     }
 
     if (action === 'issueUserActivationToken' && payload) {
+      var checkTarget = verifyTargetUserAccess(ss, activeSession, payload.userId);
+      if (!checkTarget.allowed) {
+        return createJsonResponse({
+          status: 'error',
+          code: checkTarget.code,
+          message: checkTarget.message,
+          requestId: requestId
+        }, 403);
+      }
       var tokenRes = issueUserActivationTokenSecure(ss, payload.userId, authenticatedUsername, requestId);
       if (!tokenRes.success) {
         return createJsonResponse({
@@ -1506,6 +1592,15 @@ function doPost(e) {
     }
 
     if (action === 'revokeUserSessions' && payload && payload.userId) {
+      var checkTarget = verifyTargetUserAccess(ss, activeSession, payload.userId);
+      if (!checkTarget.allowed) {
+        return createJsonResponse({
+          status: 'error',
+          code: checkTarget.code,
+          message: checkTarget.message,
+          requestId: requestId
+        }, 403);
+      }
       revokeAllUserSessions(ss, payload.userId);
       recordAuthoritativeAudit(ss, requestId, authenticatedUsername, authenticatedRole, 'REVOKE_SESSIONS', 'USERS', payload.userId, 'إلغاء جميع جلسات المستخدم');
       output.message = 'تم إلغاء جميع جلسات العمل النشطة للمستخدم بنجاح';
@@ -1513,6 +1608,15 @@ function doPost(e) {
     }
 
     if (action === 'toggleUserStatus' && payload && payload.userId) {
+      var checkTarget = verifyTargetUserAccess(ss, activeSession, payload.userId);
+      if (!checkTarget.allowed) {
+        return createJsonResponse({
+          status: 'error',
+          code: checkTarget.code,
+          message: checkTarget.message,
+          requestId: requestId
+        }, 403);
+      }
       var statusRes = toggleUserStatusSecure(ss, payload.userId, payload.status);
       recordAuthoritativeAudit(ss, requestId, authenticatedUsername, authenticatedRole, 'UPDATE_STATUS', 'USERS', payload.userId, 'تعديل حالة حساب المستخدم');
       output.message = statusRes.message;
@@ -1520,39 +1624,39 @@ function doPost(e) {
       return createJsonResponse(output, 200);
     }
 
-    // V. Authenticated POST Data Sync (Replaces legacy unauthenticated GET getAll)
+    // V. Authenticated POST Data Sync (Strictly isolated to school operational spreadsheet: schoolSs)
     if (action === 'syncData') {
       output.data = {
-        students: getSheetData(ss, SHEETS.STUDENTS),
-        employees: getSheetData(ss, SHEETS.EMPLOYEES).map(function(e) {
+        students: getSheetData(schoolSs, SHEETS.STUDENTS),
+        employees: getSheetData(schoolSs, SHEETS.EMPLOYEES).map(function(e) {
           var clean = Object.assign({}, e);
           delete clean.basicSalary;
           delete clean.allowances;
           return clean;
         }),
-        schedule: getSheetData(ss, SHEETS.SCHEDULE),
-        scheduleBreaks: getSheetData(ss, SHEETS.SCHEDULE_BREAKS),
-        teacherAssignments: getSheetData(ss, SHEETS.TEACHER_TEACHING_ASSIGNMENTS),
-        substitutions: getSheetData(ss, SHEETS.RESERVE_ASSIGNMENTS),
-        supervisionLocations: getSheetData(ss, SHEETS.SUPERVISION_LOCATIONS),
-        supervisionAssignments: getSheetData(ss, SHEETS.SUPERVISION_ASSIGNMENTS),
-        teacherAvailability: getSheetData(ss, SHEETS.TEACHER_AVAILABILITY),
-        homeworks: getSheetData(ss, SHEETS.HOMEWORK),
-        teacherResources: getSheetData(ss, SHEETS.TEACHER_RESOURCES),
-        examSchedules: getSheetData(ss, SHEETS.EXAM_SCHEDULES),
-        academicYears: getSheetData(ss, SHEETS.ACADEMIC_YEARS),
-        studentAttendance: getSheetData(ss, SHEETS.STUDENT_ATTENDANCE),
-        employeeAttendance: getSheetData(ss, SHEETS.ATTENDANCE),
-        leaves: getSheetData(ss, SHEETS.LEAVES),
-        permissions: getSheetData(ss, SHEETS.PERMISSIONS),
-        settings: getSettingsDataClean(ss)
+        schedule: getSheetData(schoolSs, SHEETS.SCHEDULE),
+        scheduleBreaks: getSheetData(schoolSs, SHEETS.SCHEDULE_BREAKS),
+        teacherAssignments: getSheetData(schoolSs, SHEETS.TEACHER_TEACHING_ASSIGNMENTS),
+        substitutions: getSheetData(schoolSs, SHEETS.RESERVE_ASSIGNMENTS),
+        supervisionLocations: getSheetData(schoolSs, SHEETS.SUPERVISION_LOCATIONS),
+        supervisionAssignments: getSheetData(schoolSs, SHEETS.SUPERVISION_ASSIGNMENTS),
+        teacherAvailability: getSheetData(schoolSs, SHEETS.TEACHER_AVAILABILITY),
+        homeworks: getSheetData(schoolSs, SHEETS.HOMEWORK),
+        teacherResources: getSheetData(schoolSs, SHEETS.TEACHER_RESOURCES),
+        examSchedules: getSheetData(schoolSs, SHEETS.EXAM_SCHEDULES),
+        academicYears: getSheetData(schoolSs, SHEETS.ACADEMIC_YEARS),
+        studentAttendance: getSheetData(schoolSs, SHEETS.STUDENT_ATTENDANCE),
+        employeeAttendance: getSheetData(schoolSs, SHEETS.ATTENDANCE),
+        leaves: getSheetData(schoolSs, SHEETS.LEAVES),
+        permissions: getSheetData(schoolSs, SHEETS.PERMISSIONS),
+        settings: getSettingsDataClean(schoolSs)
       };
       return createJsonResponse(output, 200);
     }
 
-    // W. Timetable Import Commit (With exact teacherCode validation & duplicate prevention)
+    // W. Timetable Import Commit (Strictly isolated to school operational spreadsheet: schoolSs)
     if (action === 'commitTimetableImport' && payload) {
-      var importRes = commitTimetableImportBatch(ss, payload.rows, payload.batchFingerprint, authenticatedUsername);
+      var importRes = commitTimetableImportBatch(schoolSs, payload.rows, payload.batchFingerprint, authenticatedUsername, effectiveSchoolId);
       if (!importRes.success) {
         return createJsonResponse({
           status: 'error',
@@ -1562,17 +1666,20 @@ function doPost(e) {
           requestId: requestId
         }, 400);
       }
-      recordAuthoritativeAudit(ss, requestId, authenticatedUsername, authenticatedRole, 'IMPORT', 'SCHEDULE', payload.batchFingerprint || '', 'استيراد واعتماد جدول دراسي');
+      recordAuthoritativeAudit(schoolSs, requestId, authenticatedUsername, authenticatedRole, 'IMPORT', 'SCHEDULE', payload.batchFingerprint || '', 'استيراد واعتماد جدول دراسي');
       output.message = importRes.message;
       output.importedCount = importRes.importedCount;
       return createJsonResponse(output, 200);
     }
 
-    // X. Server-Side Archive & Scope Snapshot
+    // X. Server-Side Archive & Scope Snapshot (Strictly isolated to school operational spreadsheet: schoolSs)
     if (action === 'createArchiveSnapshot') {
-      var archiveReceipt = executeServerSideArchive(ss, authenticatedUsername, requestId);
+      var archiveReceipt = executeServerSideArchive(schoolSs, authenticatedUsername, requestId);
+      recordAuthoritativeAudit(schoolSs, requestId, authenticatedUsername, authenticatedRole, 'ARCHIVE', 'OPERATIONAL_SNAPSHOT', '', 'أرشفة وتجميد الجداول التشغيلية للمدرسة');
       output.message = 'تم أرشفة وتجميد الجداول الملغاة وحفظ إيصال الأرشفة بنجاح';
       output.archiveReceipt = archiveReceipt;
+      return createJsonResponse(output, 200);
+    }
       return createJsonResponse(output, 200);
     }
 
@@ -2358,122 +2465,575 @@ function revokeTeacherSessionToken(ss, token) {
   }
 }
 
+// -------------------------------------------------------------
+// CANONICAL BACKEND PERMISSION ENGINE & ROLE MATRIX
+// -------------------------------------------------------------
+
+var ACTION_PERMISSION_MAP = {
+  // Students
+  getStudents: 'students.view',
+  saveStudent: 'students.create',
+  bulkSaveStudents: 'students.edit',
+  deleteStudent: 'students.delete',
+
+  // Student Attendance
+  getStudentAttendance: 'studentAttendance.view',
+  saveStudentAttendance: 'studentAttendance.manage',
+  bulkSaveStudentAttendance: 'studentAttendance.manage',
+  saveDailyStudentAttendanceBatch: 'studentAttendance.manage',
+
+  // Student Tokens
+  issueStudentAccessToken: 'students.edit',
+  revokeStudentAccessToken: 'students.edit',
+  rotateStudentAccessToken: 'students.edit',
+  getStudentAccessTokensList: 'students.view',
+
+  // Employees / Staff
+  getEmployees: 'employees.view',
+  saveEmployee: 'employees.create',
+  bulkSaveEmployees: 'employees.create',
+  deleteEmployee: 'employees.delete',
+
+  // Staff Attendance
+  getAttendance: 'teacherAttendance.view',
+  saveAttendance: 'teacherAttendance.manage',
+  bulkSaveAttendance: 'teacherAttendance.manage',
+  saveDailyStaffAttendanceBatch: 'teacherAttendance.manage',
+  saveDailyTeacherAttendanceBatch: 'teacherAttendance.manage',
+
+  // Leaves & Permissions
+  getLeaves: 'leaves.view',
+  saveLeave: 'leaves.create',
+  deleteLeave: 'leaves.delete',
+  getPermissions: 'leaves.view',
+  savePermission: 'leaves.create',
+
+  // Teaching Assignments
+  getTeacherAssignments: 'timetable.manage',
+  saveTeacherAssignment: 'timetable.manage',
+  deleteTeacherAssignment: 'timetable.manage',
+  bulkSaveTeacherAssignments: 'timetable.manage',
+  commitTimetableImport: 'timetable.manage',
+
+  // Timetable & Schedule
+  getSchedule: 'schedule.view',
+  saveScheduleEntry: 'timetable.manage',
+  bulkSaveSchedule: 'timetable.manage',
+  deleteScheduleEntry: 'timetable.manage',
+  publishSchedule: 'timetable.publish',
+  getScheduleBreaks: 'timetable.manage',
+  saveScheduleBreaks: 'timetable.manage',
+  getTeacherAvailability: 'timetable.manage',
+  saveTeacherAvailability: 'timetable.manage',
+
+  // Reserve
+  getReserveAssignments: 'timetable.view',
+  saveReserveAssignment: 'timetable.manage',
+  cancelReserveAssignment: 'timetable.manage',
+  getReserveCandidates: 'timetable.view',
+
+  // Supervision
+  getSupervisionLocations: 'timetable.view',
+  saveSupervisionLocation: 'timetable.manage',
+  getSupervisionAssignments: 'timetable.view',
+  saveSupervisionAssignment: 'timetable.manage',
+
+  // Homework & Resources
+  getHomework: 'lessonContent.view',
+  saveHomework: 'homework.create',
+  deleteHomework: 'homework.create',
+  getTeacherResources: 'lessonContent.view',
+  saveTeacherResource: 'lessonResources.manage',
+  deleteTeacherResource: 'lessonResources.manage',
+
+  // Exam Schedules
+  getExamSchedules: 'timetable.view',
+  saveExamSchedule: 'timetable.manage',
+  deleteExamSchedule: 'timetable.manage',
+
+  // Teacher Portal Account Admin
+  setTeacherPortalPin: 'teacherAccounts.manage',
+  createTeacherAccount: 'teacherAccounts.manage',
+  resetTeacherPassword: 'teacherAccounts.manage',
+  setTeacherAccountStatus: 'teacherAccounts.manage',
+  getTeacherAccounts: 'teacherAccounts.manage',
+
+  // Behavior
+  getBehaviorRecords: 'behavior.view',
+  saveBehaviorViolation: 'behavior.create',
+  saveBehaviorCase: 'behaviorCases.create',
+
+  // Academic Years & Enrollments
+  getAcademicYears: 'academicYears.view',
+  saveAcademicYear: 'academicYears.create',
+  saveStudentEnrollment: 'academicYears.edit',
+
+  // Communications
+  getParentCommunications: 'parentCommunication.view',
+  saveParentCommunication: 'parentCommunication.create',
+
+  // Users & Roles (Master spreadsheet only)
+  getUsers: 'users.view',
+  saveUser: 'users.create',
+  deleteUser: 'users.manage',
+  resetUserPassword: 'users.resetPassword',
+  issueUserActivationToken: 'users.manageRoles',
+  revokeUserSessions: 'users.manageRoles',
+  toggleUserStatus: 'users.manageRoles',
+
+  // Master Schools (Master spreadsheet only)
+  adminGetSchools: 'schools.manage',
+  adminCreateSchool: 'schools.manage',
+  adminUpdateSchool: 'schools.manage',
+
+  // Settings & Audit
+  getSettings: 'settings.view',
+  saveSettings: 'settings.manage',
+  getAuditLogs: 'audit.view',
+  addAuditLog: 'audit.view',
+
+  // Lifecycle
+  logout: 'settings.view',
+  validateSession: 'settings.view',
+  syncData: 'settings.view',
+  createArchiveSnapshot: 'settings.manage'
+};
+
+var PERMISSION_ALIASES = {
+  'schools.manage': ['schools.view'],
+  'users.create': ['users.manage'],
+  'users.edit': ['users.manage'],
+  'users.disable': ['users.manage'],
+  'users.resetPassword': ['users.manage'],
+  'users.manageRoles': ['users.manage'],
+  'users.view': ['users.manage'],
+  'students.view': ['students.create', 'students.edit', 'students.delete'],
+  'employees.view': ['employees.create', 'employees.edit', 'employees.delete'],
+  'teachers.view': ['employees.view'],
+  'teachers.create': ['employees.create'],
+  'teachers.edit': ['employees.edit'],
+  'teachers.delete': ['employees.delete'],
+  'attendance.students.view': ['studentAttendance.view'],
+  'studentAttendance.view': ['attendance.students.view'],
+  'attendance.students.manage': ['studentAttendance.manage'],
+  'studentAttendance.manage': ['attendance.students.manage'],
+  'attendance.staff.view': ['teacherAttendance.view'],
+  'teacherAttendance.view': ['attendance.staff.view'],
+  'attendance.staff.manage': ['teacherAttendance.manage'],
+  'teacherAttendance.manage': ['attendance.staff.manage'],
+  'timetable.view': ['schedule.view'],
+  'timetable.manage': ['schedule.manage'],
+  'schedule.view': ['timetable.view'],
+  'schedule.manage': ['timetable.manage'],
+  'schedule.publish': ['timetable.publish'],
+  'leaves.own.view': ['leaves.view'],
+  'leaves.view': ['leaves.own.view'],
+  'leaves.own.create': ['leaves.create'],
+  'leaves.create': ['leaves.own.create'],
+  'settings.view': ['settings.manage']
+};
+
+var BASE_ADMIN_PERMISSIONS = {
+  'schools.view': true,
+  'schools.manage': true,
+  'users.view': true,
+  'users.create': true,
+  'users.edit': true,
+  'users.disable': true,
+  'users.resetPassword': true,
+  'users.manageRoles': true,
+  'users.manage': true,
+  'students.view': true,
+  'students.create': true,
+  'students.edit': true,
+  'students.delete': true,
+  'students.import': true,
+  'employees.view': true,
+  'employees.create': true,
+  'employees.edit': true,
+  'employees.delete': true,
+  'employees.import': true,
+  'attendance.students.view': true,
+  'attendance.students.manage': true,
+  'studentAttendance.view': true,
+  'studentAttendance.manage': true,
+  'attendance.staff.view': true,
+  'attendance.staff.manage': true,
+  'teacherAttendance.view': true,
+  'teacherAttendance.manage': true,
+  'leaves.view': true,
+  'leaves.create': true,
+  'leaves.delete': true,
+  'leaves.own.view': true,
+  'leaves.own.create': true,
+  'timetable.view': true,
+  'timetable.manage': true,
+  'timetable.publish': true,
+  'timetable.import': true,
+  'schedule.view': true,
+  'schedule.manage': true,
+  'schedule.publish': true,
+  'teacherAccounts.manage': true,
+  'lessonContent.view': true,
+  'homework.create': true,
+  'curriculum.manage': true,
+  'lessonResources.manage': true,
+  'behavior.view': true,
+  'behavior.create': true,
+  'behaviorCases.create': true,
+  'academicYears.view': true,
+  'academicYears.create': true,
+  'academicYears.edit': true,
+  'parentCommunication.view': true,
+  'parentCommunication.create': true,
+  'settings.view': true,
+  'settings.manage': true,
+  'audit.view': true,
+  'reports.view': true
+};
+
+var CANONICAL_ROLE_PERMISSIONS = {
+  SystemAdmin: Object.assign({}, BASE_ADMIN_PERMISSIONS, {
+    'schools.view': true,
+    'schools.manage': true
+  }),
+
+  SchoolAdmin: Object.assign({}, BASE_ADMIN_PERMISSIONS, {
+    'schools.view': true,
+    'schools.manage': false // SchoolAdmin cannot manage global schools
+  }),
+
+  Admin: Object.assign({}, BASE_ADMIN_PERMISSIONS, {
+    'schools.view': true,
+    'schools.manage': false
+  }),
+
+  SchoolDirector: {
+    'schools.view': true,
+    'schools.manage': false,
+    'users.view': true,
+    'users.create': false,
+    'users.edit': false,
+    'users.disable': false,
+    'users.resetPassword': false,
+    'users.manageRoles': false,
+    'users.manage': false,
+    'students.view': true,
+    'students.create': true,
+    'students.edit': true,
+    'students.delete': true,
+    'students.import': true,
+    'studentAttendance.view': true,
+    'studentAttendance.manage': true,
+    'attendance.students.view': true,
+    'attendance.students.manage': true,
+    'employees.view': true,
+    'employees.create': true,
+    'employees.edit': true,
+    'employees.delete': true,
+    'employees.import': true,
+    'attendance.staff.view': true,
+    'attendance.staff.manage': true,
+    'teacherAttendance.view': true,
+    'teacherAttendance.manage': true,
+    'leaves.view': true,
+    'leaves.create': true,
+    'leaves.edit': true,
+    'leaves.delete': true,
+    'leaves.own.view': true,
+    'leaves.own.create': true,
+    'timetable.view': true,
+    'timetable.manage': true,
+    'timetable.publish': true,
+    'schedule.view': true,
+    'schedule.manage': true,
+    'schedule.publish': true,
+    'teacherAccounts.manage': true,
+    'lessonContent.view': true,
+    'homework.create': true,
+    'curriculum.manage': true,
+    'lessonResources.manage': true,
+    'behavior.view': true,
+    'behavior.create': true,
+    'behaviorCases.create': true,
+    'academicYears.view': true,
+    'academicYears.create': true,
+    'academicYears.edit': true,
+    'parentCommunication.view': true,
+    'parentCommunication.create': true,
+    'settings.view': true,
+    'settings.manage': true,
+    'audit.view': true,
+    'reports.view': true
+  },
+
+  StudentAffairs: {
+    'schools.view': false,
+    'schools.manage': false,
+    'users.view': false,
+    'users.create': false,
+    'users.edit': false,
+    'users.disable': false,
+    'users.resetPassword': false,
+    'users.manageRoles': false,
+    'users.manage': false,
+    'students.view': true,
+    'students.create': true,
+    'students.edit': true,
+    'students.delete': true,
+    'students.import': true,
+    'studentAttendance.view': true,
+    'studentAttendance.manage': true,
+    'attendance.students.view': true,
+    'attendance.students.manage': true,
+    'academicYears.view': true,
+    'academicYears.create': false,
+    'academicYears.edit': false,
+    'behavior.view': true,
+    'behavior.create': true,
+    'behaviorCases.create': true,
+    'parentCommunication.view': true,
+    'parentCommunication.create': true,
+    'schedule.view': true,
+    'timetable.view': true,
+    'timetable.manage': false,
+    'timetable.publish': false,
+    'employees.view': false,
+    'settings.view': true,
+    'settings.manage': false,
+    'audit.view': true,
+    'leaves.own.view': true,
+    'leaves.own.create': true
+  },
+
+  TeacherAffairs: {
+    'schools.view': false,
+    'schools.manage': false,
+    'users.view': false,
+    'users.create': false,
+    'users.edit': false,
+    'users.disable': false,
+    'users.resetPassword': false,
+    'users.manageRoles': false,
+    'users.manage': false,
+    'students.view': false,
+    'students.create': false,
+    'students.edit': false,
+    'students.delete': false,
+    'studentAttendance.view': false,
+    'employees.view': true,
+    'employees.create': true,
+    'employees.edit': true,
+    'employees.delete': false,
+    'employees.import': true,
+    'attendance.staff.view': true,
+    'attendance.staff.manage': true,
+    'teacherAttendance.view': true,
+    'teacherAttendance.manage': true,
+    'leaves.view': true,
+    'leaves.create': true,
+    'leaves.delete': true,
+    'leaves.own.view': true,
+    'leaves.own.create': true,
+    'timetable.view': true,
+    'timetable.manage': true,
+    'timetable.publish': true,
+    'schedule.view': true,
+    'schedule.manage': true,
+    'schedule.publish': true,
+    'teacherAccounts.manage': true,
+    'lessonContent.view': true,
+    'lessonResources.manage': true,
+    'homework.create': true,
+    'settings.view': true,
+    'settings.manage': false,
+    'audit.view': true
+  },
+
+  SocialSpecialist: {
+    'schools.view': false,
+    'schools.manage': false,
+    'users.view': false,
+    'users.create': false,
+    'users.manage': false,
+    'students.view': true,
+    'students.create': false,
+    'employees.view': false,
+    'timetable.manage': false,
+    'behavior.view': true,
+    'behavior.create': true,
+    'behaviorCases.create': true,
+    'parentCommunication.view': true,
+    'parentCommunication.create': true,
+    'settings.view': true,
+    'settings.manage': false,
+    'audit.view': true,
+    'leaves.own.view': true,
+    'leaves.own.create': true
+  },
+
+  QualityOfficer: {
+    'schools.view': false,
+    'schools.manage': false,
+    'users.view': false,
+    'users.create': false,
+    'users.edit': false,
+    'users.disable': false,
+    'users.resetPassword': false,
+    'users.manageRoles': false,
+    'users.manage': false,
+    'students.view': true,
+    'students.create': false,
+    'students.edit': false,
+    'students.delete': false,
+    'employees.view': true,
+    'employees.create': false,
+    'employees.edit': false,
+    'employees.delete': false,
+    'studentAttendance.view': true,
+    'studentAttendance.manage': false,
+    'attendance.students.view': true,
+    'attendance.staff.view': true,
+    'attendance.staff.manage': false,
+    'teacherAttendance.view': true,
+    'teacherAttendance.manage': false,
+    'leaves.view': true,
+    'leaves.create': false,
+    'leaves.own.view': true,
+    'leaves.own.create': true,
+    'timetable.view': true,
+    'timetable.manage': false,
+    'timetable.publish': false,
+    'schedule.view': true,
+    'schedule.manage': false,
+    'behavior.view': true,
+    'academicYears.view': true,
+    'parentCommunication.view': true,
+    'settings.view': true,
+    'settings.manage': false,
+    'audit.view': true,
+    'reports.view': true
+  },
+
+  TrainingOfficer: {
+    'schools.view': false,
+    'schools.manage': false,
+    'users.view': false,
+    'users.create': false,
+    'users.manage': false,
+    'students.view': false,
+    'employees.view': true,
+    'employees.create': false,
+    'employees.edit': false,
+    'attendance.staff.view': true,
+    'attendance.staff.manage': false,
+    'teacherAttendance.view': true,
+    'teacherAttendance.manage': false,
+    'leaves.view': true,
+    'leaves.own.view': true,
+    'leaves.own.create': true,
+    'timetable.view': true,
+    'timetable.manage': false,
+    'settings.view': true,
+    'settings.manage': false,
+    'audit.view': true,
+    'reports.view': true
+  },
+
+  Teacher: {
+    'schools.view': false,
+    'schools.manage': false,
+    'users.view': false,
+    'users.create': false,
+    'users.manage': false,
+    'students.view': true,
+    'students.create': false,
+    'employees.view': false,
+    'leaves.own.view': true,
+    'leaves.own.create': true,
+    'leaves.view': true,
+    'leaves.create': true,
+    'leaves.delete': false,
+    'timetable.view': true,
+    'timetable.manage': false,
+    'timetable.publish': false,
+    'schedule.view': true,
+    'schedule.manage': false,
+    'lessonContent.view': true,
+    'lessonResources.manage': true,
+    'homework.create': true,
+    'settings.view': true,
+    'settings.manage': false,
+    'audit.view': false
+  },
+
+  AdministrativeEmployee: {
+    'schools.view': false,
+    'schools.manage': false,
+    'users.view': false,
+    'users.create': false,
+    'users.manage': false,
+    'students.view': false,
+    'employees.view': false,
+    'leaves.own.view': true,
+    'leaves.own.create': true,
+    'leaves.view': true,
+    'leaves.create': true,
+    'leaves.delete': false,
+    'timetable.view': false,
+    'timetable.manage': false,
+    'settings.view': true,
+    'settings.manage': false,
+    'audit.view': false
+  }
+};
+
 /**
- * Authorize Action based on Staff Role
+ * Checks effective canonical permission with strict explicit-deny priority
  */
-function authorizeStaffAction(role, action) {
-  // SystemAdmin & SchoolAdmin have full administrative authority within their authorized scope
-  if (role === 'SystemAdmin' || role === 'SchoolAdmin') return { allowed: true };
+function hasEffectivePermissionGas(session, permission) {
+  if (!session) return false;
+  var role = String(session.role || '').trim();
 
-  // Legacy Admin role (within its single bound school only)
-  if (role === 'Admin') return { allowed: true };
+  if (session.isActive === false || String(session.status || '').toLowerCase() === 'inactive' || String(session.status || '').toLowerCase() === 'suspended') {
+    return false;
+  }
 
-  // School Director
-  if (role === 'SchoolDirector') {
-    var forbiddenForDirector = ['saveUser', 'deleteUser', 'resetUserPassword', 'adminCreateSchool', 'adminUpdateSchool'];
-    if (forbiddenForDirector.indexOf(action) !== -1) {
-      return { allowed: false, message: 'إدارة حسابات المستخدمين وصلاحياتهم مقتصرة على مدير النظام (Admin)' };
+  var rolePerms = CANONICAL_ROLE_PERMISSIONS[role];
+  if (!rolePerms) {
+    if (role === 'Admin') return true;
+    return false;
+  }
+
+  // 1. Direct check: explicit deny beats allow
+  if (rolePerms.hasOwnProperty(permission)) {
+    if (rolePerms[permission] === false) return false;
+    if (rolePerms[permission] === true) return true;
+  }
+
+  // 2. Check aliases if direct permission was not explicitly declared
+  var aliases = PERMISSION_ALIASES[permission];
+  if (aliases && aliases.length > 0) {
+    for (var a = 0; a < aliases.length; a++) {
+      var alias = aliases[a];
+      if (rolePerms.hasOwnProperty(alias)) {
+        if (rolePerms[alias] === false) return false;
+        if (rolePerms[alias] === true) return true;
+      }
     }
-    return { allowed: true };
   }
 
-  // Student Affairs
-  if (role === 'StudentAffairs') {
-    var studentAffairsActions = [
-      'getStudents', 'saveStudent', 'bulkSaveStudents', 'deleteStudent',
-      'getStudentAttendance', 'saveStudentAttendance', 'bulkSaveStudentAttendance', 'saveDailyStudentAttendanceBatch',
-      'issueStudentAccessToken', 'revokeStudentAccessToken', 'rotateStudentAccessToken', 'getStudentAccessTokensList',
-      'getAcademicYears', 'saveAcademicYear', 'saveStudentEnrollment',
-      'getBehaviorRecords', 'saveBehaviorCase',
-      'getSchedule', 'getExamSchedules',
-      'getParentCommunications', 'saveParentCommunication',
-      'getSettings', 'getAuditLogs', 'addAuditLog', 'logout', 'validateSession', 'syncData'
-    ];
-    if (studentAffairsActions.indexOf(action) !== -1) return { allowed: true };
-    return { allowed: false, message: 'هذا الإجراء خارج اختصاص شؤون الطلاب' };
-  }
-
-  // Teacher & Staff Affairs
-  if (role === 'TeacherAffairs') {
-    var teacherAffairsActions = [
-      'getEmployees', 'saveEmployee', 'deleteEmployee',
-      'getAttendance', 'saveAttendance', 'bulkSaveAttendance', 'saveDailyStaffAttendanceBatch', 'saveDailyTeacherAttendanceBatch',
-      'getLeaves', 'saveLeave', 'deleteLeave',
-      'getPermissions', 'savePermission',
-      'getTeacherAssignments', 'saveTeacherAssignment', 'deleteTeacherAssignment', 'bulkSaveTeacherAssignments',
-      'getSchedule', 'saveScheduleEntry', 'bulkSaveSchedule', 'deleteScheduleEntry', 'publishSchedule',
-      'getScheduleBreaks', 'saveScheduleBreaks',
-      'getTeacherAvailability', 'saveTeacherAvailability',
-      'getReserveAssignments', 'saveReserveAssignment', 'cancelReserveAssignment', 'getReserveCandidates',
-      'getSupervisionLocations', 'saveSupervisionLocation', 'getSupervisionAssignments', 'saveSupervisionAssignment',
-      'setTeacherPortalPin', 'createTeacherAccount', 'resetTeacherPassword', 'setTeacherAccountStatus', 'getTeacherAccounts',
-      'commitTimetableImport',
-      'getHomework', 'saveHomework', 'deleteHomework',
-      'getTeacherResources', 'saveTeacherResource', 'deleteTeacherResource',
-      'getExamSchedules', 'saveExamSchedule', 'deleteExamSchedule',
-      'getSettings', 'getAuditLogs', 'addAuditLog', 'logout', 'validateSession', 'syncData'
-    ];
-    if (teacherAffairsActions.indexOf(action) !== -1) return { allowed: true };
-    return { allowed: false, message: 'هذا الإجراء خارج اختصاص شؤون المعلمين والعاملين' };
-  }
-
-  // Social Specialist
-  if (role === 'SocialSpecialist') {
-    var socialActions = [
-      'getStudents',
-      'getBehaviorRecords', 'saveBehaviorViolation', 'saveBehaviorCase',
-      'getParentCommunications', 'saveParentCommunication',
-      'getSettings', 'addAuditLog', 'logout', 'validateSession', 'syncData'
-    ];
-    if (socialActions.indexOf(action) !== -1) return { allowed: true };
-    return { allowed: false, message: 'هذا الإجراء خارج اختصاص الأخصائي الاجتماعي' };
-  }
-
-  // Training and Quality Officers
-  if (role === 'TrainingOfficer' || role === 'QualityOfficer') {
-    var readOnlyStaffActions = [
-      'getStudents', 'getStudentAttendance', 'getEmployees', 'getAttendance',
-      'getLeaves', 'getPermissions', 'getBehaviorRecords', 'getAcademicYears',
-      'getTeacherAssignments', 'getSchedule', 'getReserveAssignments', 'getSupervisionAssignments', 'getExamSchedules',
-      'getParentCommunications', 'getSettings', 'getAuditLogs', 'addAuditLog',
-      'logout', 'validateSession', 'syncData'
-    ];
-    if (readOnlyStaffActions.indexOf(action) !== -1) return { allowed: true };
-    return { allowed: false, message: 'صلاحيات هذا الدور مخصصة للمتابعة والرقابة والتقارير دون إمكانية التعديل' };
-  }
-
-  // Teacher (Self-scoped operations)
-  if (role === 'Teacher') {
-    var teacherActions = [
-      'getLeaves', 'saveLeave', 'getPermissions', 'savePermission',
-      'getSchedule', 'getExamSchedules', 'getHomework', 'saveHomework',
-      'getTeacherResources', 'saveTeacherResource',
-      'logout', 'validateSession', 'syncData'
-    ];
-    if (teacherActions.indexOf(action) !== -1) return { allowed: true };
-    return { allowed: false, message: 'هذا الإجراء خارج صلاحيات المعلم الذاتية' };
-  }
-
-  // AdministrativeEmployee (Self-scoped operations only)
-  if (role === 'AdministrativeEmployee') {
-    var adminEmpActions = [
-      'getLeaves', 'saveLeave', 'getPermissions', 'savePermission',
-      'logout', 'validateSession', 'syncData'
-    ];
-    if (adminEmpActions.indexOf(action) !== -1) return { allowed: true };
-    return { allowed: false, message: 'الموظف الإداري مصرح له بالعمليات الذاتية فقط' };
-  }
-
-  return { allowed: false, message: 'دور غير مصرح له بتنفيذ هذا الإجراء' };
+  if (role === 'Admin') return true;
+  return false;
 }
 
 /**
- * Authoritative Backend Authorization Engine (RBAC Phase 2)
+ * Authoritative Backend Authorization Engine (RBAC Phase 2C)
  * Enforces the strict 8-step order:
  * 1. validateSession()
  * 2. verify account is Active
  * 3. resolve effective canonical role & validate scope
- * 4. verify permission
+ * 4. verify permission (Canonical ACTION_PERMISSION_MAP + Explicit Deny)
  * 5. verify AccessScope
  * 6. verify target school & cross-school object access
  * 7. verify SELF ownership
@@ -2519,11 +3079,33 @@ function authorize(session, action, resourceContext, masterSs, requestId) {
     }
   }
 
-  // 4. verify permission
-  var permCheck = authorizeStaffAction(role, action);
-  if (!permCheck.allowed) {
-    recordAuthoritativeAudit(ss, reqId, session.username || session.userId, role, 'ROLE_PERMISSION_DENIED', 'AUTH', session.userId, 'تم رفض الإجراء: صلاحيات غير كافية لـ ' + action);
-    return { allowed: false, code: 'ROLE_PERMISSION_DENIED', message: permCheck.message || 'ليس لديك الصلاحيات الإدارية الكافية لتنفيذ هذا الإجراء' };
+  // 4. verify permission via canonical ACTION_PERMISSION_MAP and hasEffectivePermissionGas (Fail-Closed)
+  if (!ACTION_PERMISSION_MAP.hasOwnProperty(action)) {
+    recordAuthoritativeAudit(ss, reqId, session.username || session.userId, role, 'PERMISSION_MAPPING_MISSING', 'AUTH', session.userId, 'إجراء محمي غير معروف في خريطة الصلاحيات: ' + action);
+    return {
+      allowed: false,
+      code: 'PERMISSION_MAPPING_MISSING',
+      message: 'تم حجب الإجراء لعدم وجود ربط صلاحية معتمد (Fail-Closed): ' + action
+    };
+  }
+
+  var permissionKey = ACTION_PERMISSION_MAP[action];
+  if (scope === 'SELF') {
+    if (action === 'getLeaves' || action === 'getPermissions') {
+      permissionKey = 'leaves.own.view';
+    } else if (action === 'saveLeave' || action === 'savePermission') {
+      permissionKey = 'leaves.own.create';
+    }
+  }
+
+  var hasPerm = hasEffectivePermissionGas(session, permissionKey);
+  if (!hasPerm) {
+    recordAuthoritativeAudit(ss, reqId, session.username || session.userId, role, 'ROLE_PERMISSION_DENIED', 'AUTH', session.userId, 'تم رفض الإجراء: صلاحيات غير كافية لـ ' + action + ' (' + permissionKey + ')');
+    return {
+      allowed: false,
+      code: 'ROLE_PERMISSION_DENIED',
+      message: 'ليس لديك الصلاحيات الإدارية الكافية لتنفيذ هذا الإجراء'
+    };
   }
 
   // 5. verify AccessScope & Target School
@@ -3118,9 +3700,9 @@ function publishScheduleBatch(ss, classroomOrGrade, version, authenticatedUserna
 }
 
 /**
- * Commit Timetable Import Batch (teacherCode or teacherId only, batch duplicate slot checking, fingerprint idempotency)
+ * Commit Timetable Import Batch (teacherCode or teacherId only, batch duplicate slot checking, fingerprint idempotency, school-isolated)
  */
-function commitTimetableImportBatch(ss, rows, batchFingerprint, authenticatedUsername) {
+function commitTimetableImportBatch(ss, rows, batchFingerprint, authenticatedUsername, effectiveSchoolId) {
   if (!rows || !Array.isArray(rows) || rows.length === 0) {
     return { success: false, code: 'EMPTY_BATCH', message: 'مجموعة البيانات المراد استيرادها فارغة' };
   }
@@ -3209,6 +3791,7 @@ function commitTimetableImportBatch(ss, rows, batchFingerprint, authenticatedUse
 
     cleanRows.push({
       id: r.id || ('SCH_' + Utilities.getUuid().substring(0, 8)),
+      schoolId: effectiveSchoolId || r.schoolId || '',
       dayOfWeek: day,
       dayName: day,
       periodNumber: period,
@@ -3260,9 +3843,32 @@ function commitTimetableImportBatch(ss, rows, batchFingerprint, authenticatedUse
 // USER MANAGEMENT & SECURITY HELPERS
 // -------------------------------------------------------------
 
-function getSanitizedUsersList(ss) {
+function getSanitizedUsersList(ss, activeSession) {
   var users = getSheetData(ss, SHEETS.USERS);
-  return users.map(function(u) {
+  var role = activeSession ? activeSession.role : '';
+  var sessionSchool = activeSession ? String(activeSession.schoolId || '').trim().toUpperCase() : '';
+  var allowed = (activeSession && activeSession.allowedSchoolIds ? activeSession.allowedSchoolIds : []).map(function(s) {
+    return String(s).trim().toUpperCase();
+  });
+
+  var filtered = users.filter(function(u) {
+    var uSchool = String(u.schoolId || '').trim().toUpperCase();
+    if (role === 'SchoolAdmin') {
+      // SchoolAdmin sees ONLY users in own school, and NEVER SystemAdmin
+      if (u.role === 'SystemAdmin') return false;
+      return uSchool === sessionSchool;
+    }
+    if (role === 'SystemAdmin') {
+      if (!uSchool) return true;
+      return allowed.indexOf(uSchool) !== -1;
+    }
+    if (role === 'Admin') {
+      return uSchool === sessionSchool;
+    }
+    return false;
+  });
+
+  return filtered.map(function(u) {
     var copy = Object.assign({}, u);
     delete copy.password;
     delete copy.passwordHash;
@@ -3272,6 +3878,47 @@ function getSanitizedUsersList(ss) {
     delete copy.activationTokenHash;
     return copy;
   });
+}
+
+/**
+ * Checks whether target user can be viewed, updated, reset or deleted by the calling session
+ */
+function verifyTargetUserAccess(ss, activeSession, targetUserId) {
+  if (!targetUserId) {
+    return { allowed: false, code: 'TARGET_REQUIRED', message: 'معرف المستخدم المستهدف مطلوب' };
+  }
+  var users = getSheetData(ss, SHEETS.USERS);
+  var target = null;
+  for (var i = 0; i < users.length; i++) {
+    if (users[i].id === targetUserId || users[i].username === targetUserId) {
+      target = users[i];
+      break;
+    }
+  }
+  if (!target) {
+    return { allowed: false, code: 'USER_NOT_FOUND', message: 'المستخدم المستهدف غير موجود' };
+  }
+
+  var authRole = activeSession ? activeSession.role : '';
+  var sessionSchool = activeSession ? String(activeSession.schoolId || '').trim().toUpperCase() : '';
+
+  if (authRole === 'SchoolAdmin') {
+    if (target.role === 'SystemAdmin') {
+      return { allowed: false, code: 'FORBIDDEN', message: 'غير مصرح بتعديل أو حذف حساب مدير نظام عام' };
+    }
+    var targetSchool = String(target.schoolId || '').trim().toUpperCase();
+    if (targetSchool && targetSchool !== sessionSchool) {
+      return { allowed: false, code: 'CROSS_SCHOOL_ACCESS_DENIED', message: 'غير مصرح بالعمليات على مستخدم ينتمي لمدرسة أخرى' };
+    }
+  } else if (authRole === 'SystemAdmin') {
+    var allowedSchools = (activeSession.allowedSchoolIds || []).map(function(s) { return String(s).trim().toUpperCase(); });
+    var targetSch = String(target.schoolId || '').trim().toUpperCase();
+    if (targetSch && allowedSchools.indexOf(targetSch) === -1) {
+      return { allowed: false, code: 'ACCESS_DENIED_SCHOOL_SCOPE', message: 'المستخدم يتبع مدرسة خارج نطاق المدارس المصرح بها' };
+    }
+  }
+
+  return { allowed: true, targetUser: target };
 }
 
 /**
@@ -3360,6 +4007,8 @@ function saveUserSecure(ss, payload, authenticatedUsername, requestId) {
     activationExpiresAt: payload.activationExpiresAt || (existing ? existing.activationExpiresAt : ''),
     fullName: payload.fullName,
     role: payload.role,
+    schoolId: payload.schoolId || (existing ? existing.schoolId : ''),
+    allowedSchoolIds: payload.allowedSchoolIds || (existing ? existing.allowedSchoolIds : ''),
     status: payload.status || 'Active',
     department: payload.department || '',
     email: payload.email || '',

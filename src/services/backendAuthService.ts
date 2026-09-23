@@ -29,7 +29,7 @@ import {
   User,
   UserRole,
 } from '../types';
-import { hasEffectivePermission } from '../utils/permissions';
+import { hasEffectivePermission, DEFAULT_ROLE_PERMISSIONS } from '../utils/permissions';
 
 // In-Memory Security Audit Logs Store (Server Authoritative)
 const securityAuditLogs: BackendSecurityAuditEvent[] = [];
@@ -324,7 +324,7 @@ export function createAuthoritativeSession(
  */
 export function authorize(
   session: ServerSession | null | undefined,
-  permission: PermissionKey,
+  permission: PermissionKey | string,
   resourceContext?: ResourceContext,
   requestId?: string
 ): AuthorizationResult {
@@ -448,9 +448,22 @@ export function authorize(
     }
   }
 
-  // 4. verify permission (via hasEffectivePermission)
-  const hasPerm = hasEffectivePermission(session, permission);
-  if (!hasPerm) {
+  // 4. resolve canonical permission from action or key (Fail-Closed on unknown actions)
+  let effectivePermission: PermissionKey;
+  if (ACTION_PERMISSION_MAP[permission as string]) {
+    effectivePermission = ACTION_PERMISSION_MAP[permission as string];
+    if (scope === 'SELF') {
+      const permStr = String(permission);
+      if (permStr === 'getLeaves' || permStr === 'getPermissions') {
+        effectivePermission = 'leaves.own.view';
+      } else if (permStr === 'saveLeave' || permStr === 'savePermission') {
+        effectivePermission = 'leaves.own.create';
+      }
+    }
+  } else if ((permission as string).includes('.') || (permission as string) in DEFAULT_ROLE_PERMISSIONS.SystemAdmin) {
+    effectivePermission = permission as PermissionKey;
+  } else {
+    // Unknown action with missing permission mapping: Fail Closed
     const audit = recordSecurityAuditEvent({
       requestId: reqId,
       actorUserId: session.userId,
@@ -458,6 +471,30 @@ export function authorize(
       actorSchoolId: session.schoolId || 'UNKNOWN',
       targetSchoolId: resourceContext?.schoolId || session.schoolId || 'UNKNOWN',
       action: permission,
+      code: 'PERMISSION_MAPPING_MISSING',
+      reason: `تم حجب الإجراء لعدم وجود ربط صلاحية معتمد (Fail-Closed): ${permission}`,
+      resourceId: resourceContext?.resourceId,
+    });
+    return {
+      allowed: false,
+      code: 'PERMISSION_MAPPING_MISSING',
+      reason: `تم حجب الإجراء لعدم وجود ربط صلاحية معتمد (Fail-Closed): ${permission}`,
+      actorUserId: session.userId,
+      actorRole: String(role),
+      auditEvent: audit,
+    };
+  }
+
+  // 4b. verify permission (via hasEffectivePermission)
+  const hasPerm = hasEffectivePermission(session, effectivePermission);
+  if (!hasPerm) {
+    const audit = recordSecurityAuditEvent({
+      requestId: reqId,
+      actorUserId: session.userId,
+      actorRole: String(role),
+      actorSchoolId: session.schoolId || 'UNKNOWN',
+      targetSchoolId: resourceContext?.schoolId || session.schoolId || 'UNKNOWN',
+      action: effectivePermission,
       code: 'ROLE_PERMISSION_DENIED',
       reason: 'ليس لديك الصلاحيات الإدارية المطلوبة لتنفيذ هذا الإجراء',
       resourceId: resourceContext?.resourceId,
@@ -769,6 +806,7 @@ export const ACTION_PERMISSION_MAP: Record<string, PermissionKey> = {
   logout: 'settings.view',
   validateSession: 'settings.view',
   syncData: 'settings.view',
+  createArchiveSnapshot: 'settings.manage',
 };
 
 /**
@@ -802,7 +840,10 @@ export function verifyServerResourceOwnership(
 export interface SchoolDataStore {
   students: Array<{ id: string; name: string; schoolId?: string }>;
   employees: Array<{ id: string; name: string; schoolId?: string }>;
+  schedule: Array<{ id: string; subject?: string; teacherId?: string; classroom?: string; schoolId?: string; version?: string }>;
   leaves: Array<{ id: string; employeeId: string; schoolId?: string }>;
+  settings: Record<string, any>;
+  archivedReceipts?: Array<{ archivedAt: string; archivedBy: string; count: number }>;
 }
 
 const isolatedSchoolStores: Record<string, SchoolDataStore> = {
@@ -814,7 +855,12 @@ const isolatedSchoolStores: Record<string, SchoolDataStore> = {
     employees: [
       { id: 'EMP-BADR-1', name: 'محمد علي', schoolId: 'SCH-BADR' },
     ],
+    schedule: [
+      { id: 'SCH-B1', subject: 'رياضيات', classroom: '1/1', schoolId: 'SCH-BADR' },
+    ],
     leaves: [],
+    settings: { schoolName: 'مدرسة بدر الحديثة' },
+    archivedReceipts: [],
   },
   'SCH-ALNOOR': {
     students: [
@@ -823,7 +869,12 @@ const isolatedSchoolStores: Record<string, SchoolDataStore> = {
     employees: [
       { id: 'EMP-NOOR-1', name: 'هدى يوسف', schoolId: 'SCH-ALNOOR' },
     ],
+    schedule: [
+      { id: 'SCH-N1', subject: 'علوم', classroom: '2/1', schoolId: 'SCH-ALNOOR' },
+    ],
     leaves: [],
+    settings: { schoolName: 'مدرسة النور' },
+    archivedReceipts: [],
   },
 };
 
@@ -836,7 +887,7 @@ export function executeSchoolScopedAction(
   action: string,
   payload: any,
   options?: { targetSchoolId?: string }
-): { success: boolean; code?: string; data?: any; message?: string } {
+): { success: boolean; code?: string; data?: any; message?: string; importedCount?: number; archiveReceipt?: any } {
   // 1. Resolve permission from ACTION_PERMISSION_MAP
   let permission = ACTION_PERMISSION_MAP[action];
   if (session.accessScope === 'SELF') {
@@ -850,7 +901,7 @@ export function executeSchoolScopedAction(
   // 2. Authorize
   const authRes = authorize(
     session,
-    permission,
+    permission || action,
     {
       schoolId: options?.targetSchoolId || (session.accessScope === 'GLOBAL' ? options?.targetSchoolId : undefined),
       resourceId: payload?.id,
@@ -922,5 +973,311 @@ export function executeSchoolScopedAction(
     return { success: true, message: 'تم حفظ بيانات الطالب بنجاح' };
   }
 
+  // Operational syncData reading strictly from school store
+  if (action === 'syncData') {
+    return {
+      success: true,
+      data: {
+        schoolId: effectiveSchoolId,
+        students: [...store.students],
+        employees: [...store.employees],
+        schedule: [...(store.schedule || [])],
+        leaves: [...store.leaves],
+        settings: { ...store.settings },
+      },
+    };
+  }
+
+  // Timetable import strictly isolated to effective school store
+  if (action === 'commitTimetableImport') {
+    if (!payload?.rows || !Array.isArray(payload.rows) || payload.rows.length === 0) {
+      return { success: false, code: 'EMPTY_BATCH', message: 'مجموعة البيانات المراد استيرادها فارغة' };
+    }
+    const cleanRows = payload.rows.map((r: any) => ({
+      ...r,
+      schoolId: effectiveSchoolId,
+    }));
+    store.schedule = store.schedule || [];
+    store.schedule.push(...cleanRows);
+    return { success: true, importedCount: cleanRows.length, message: 'تم استيراد واعتماد الجدول' };
+  }
+
+  // Server-side archive snapshot executes on school store
+  if (action === 'createArchiveSnapshot') {
+    const count = (store.schedule || []).length;
+    const receipt = {
+      archivedAt: new Date().toISOString(),
+      archivedBy: session.username || session.userId,
+      schoolId: effectiveSchoolId,
+      totalRowsArchived: count,
+    };
+    store.archivedReceipts = store.archivedReceipts || [];
+    store.archivedReceipts.push({ archivedAt: receipt.archivedAt, archivedBy: receipt.archivedBy, count });
+    return { success: true, archiveReceipt: receipt, message: 'تم أرشفة وتجميد الجداول التشغيلية للمدرسة بنجاح' };
+  }
+
   return { success: true, data: null };
+}
+
+// -------------------------------------------------------------
+// CENTRAL USER MANAGEMENT & SCHOOL ISOLATION ENGINE
+// -------------------------------------------------------------
+
+export interface BackendUserRecord {
+  id: string;
+  username: string;
+  fullName: string;
+  role: string;
+  schoolId?: string;
+  allowedSchoolIds?: string[];
+  status: string;
+}
+
+let masterUsersStore: BackendUserRecord[] = [
+  { id: 'usr-sysadmin-1', username: 'sysadmin', fullName: 'مدير النظام العام', role: 'SystemAdmin', allowedSchoolIds: ['SCH-BADR', 'SCH-ALNOOR'], status: 'Active' },
+  { id: 'usr-admin-badr', username: 'admin_badr', fullName: 'مدير مدرسة بدر', role: 'SchoolAdmin', schoolId: 'SCH-BADR', status: 'Active' },
+  { id: 'usr-admin-noor', username: 'admin_noor', fullName: 'مدير مدرسة النور', role: 'SchoolAdmin', schoolId: 'SCH-ALNOOR', status: 'Active' },
+  { id: 'usr-director-badr', username: 'director_badr', fullName: 'ناظر مدرسة بدر', role: 'SchoolDirector', schoolId: 'SCH-BADR', status: 'Active' },
+  { id: 'usr-teacher-badr', username: 'teacher_badr', fullName: 'معلم بدر', role: 'Teacher', schoolId: 'SCH-BADR', status: 'Active' },
+  { id: 'usr-teacher-noor', username: 'teacher_noor', fullName: 'معلم النور', role: 'Teacher', schoolId: 'SCH-ALNOOR', status: 'Active' },
+];
+
+export function resetMasterUsersStore() {
+  masterUsersStore = [
+    { id: 'usr-sysadmin-1', username: 'sysadmin', fullName: 'مدير النظام العام', role: 'SystemAdmin', allowedSchoolIds: ['SCH-BADR', 'SCH-ALNOOR'], status: 'Active' },
+    { id: 'usr-admin-badr', username: 'admin_badr', fullName: 'مدير مدرسة بدر', role: 'SchoolAdmin', schoolId: 'SCH-BADR', status: 'Active' },
+    { id: 'usr-admin-noor', username: 'admin_noor', fullName: 'مدير مدرسة النور', role: 'SchoolAdmin', schoolId: 'SCH-ALNOOR', status: 'Active' },
+    { id: 'usr-director-badr', username: 'director_badr', fullName: 'ناظر مدرسة بدر', role: 'SchoolDirector', schoolId: 'SCH-BADR', status: 'Active' },
+    { id: 'usr-teacher-badr', username: 'teacher_badr', fullName: 'معلم بدر', role: 'Teacher', schoolId: 'SCH-BADR', status: 'Active' },
+    { id: 'usr-teacher-noor', username: 'teacher_noor', fullName: 'معلم النور', role: 'Teacher', schoolId: 'SCH-ALNOOR', status: 'Active' },
+  ];
+}
+
+export function getUsersListSecure(session: ServerSession): { success: boolean; data?: BackendUserRecord[]; code?: string; message?: string } {
+  const auth = authorize(session, 'users.view');
+  if (!auth.allowed) {
+    return { success: false, code: auth.code, message: auth.reason };
+  }
+
+  const role = session.role;
+  const sessionSchool = String(session.schoolId || '').trim().toUpperCase();
+  const allowed = (session.allowedSchoolIds || []).map(s => s.trim().toUpperCase());
+
+  const filtered = masterUsersStore.filter(u => {
+    const uSchool = String(u.schoolId || '').trim().toUpperCase();
+    if (role === 'SchoolAdmin') {
+      // SchoolAdmin sees ONLY users of own school, and NEVER SystemAdmin
+      if (u.role === 'SystemAdmin') return false;
+      return uSchool === sessionSchool;
+    }
+    if (role === 'SystemAdmin') {
+      if (!uSchool) return true;
+      return allowed.includes(uSchool);
+    }
+    if (role === 'Admin') {
+      return uSchool === sessionSchool;
+    }
+    return false;
+  });
+
+  return { success: true, data: filtered.map(u => ({ ...u })) };
+}
+
+export function saveUserSecure(
+  session: ServerSession,
+  payload: Partial<BackendUserRecord>
+): { success: boolean; user?: BackendUserRecord; code?: string; message?: string } {
+  const auth = authorize(session, 'users.create');
+  if (!auth.allowed) {
+    return { success: false, code: auth.code, message: auth.reason };
+  }
+
+  const role = session.role;
+  const sessionSchool = String(session.schoolId || '').trim().toUpperCase();
+  const existingUser = masterUsersStore.find(u => u.id === payload.id || (payload.username && u.username === payload.username));
+
+  if (role === 'SchoolAdmin') {
+    if (payload.role === 'SystemAdmin') {
+      return { success: false, code: 'FORBIDDEN_ROLE_ELEVATION', message: 'لا يمكن لمدير المدرسة إنشاء أو ترقية مستخدم إلى مدير نظام عام (SystemAdmin)' };
+    }
+    if (existingUser) {
+      if (existingUser.role === 'SystemAdmin') {
+        return { success: false, code: 'FORBIDDEN', message: 'غير مصرح بتعديل حساب مدير نظام عام' };
+      }
+      if (existingUser.schoolId && String(existingUser.schoolId).trim().toUpperCase() !== sessionSchool) {
+        return { success: false, code: 'CROSS_SCHOOL_ACCESS_DENIED', message: 'غير مصرح بتعديل مستخدم ينتمي لمدرسة أخرى' };
+      }
+    }
+    // Force user schoolId to match session.schoolId
+    payload.schoolId = session.schoolId;
+  } else if (role === 'SystemAdmin') {
+    const allowed = (session.allowedSchoolIds || []).map(s => s.trim().toUpperCase());
+    if (payload.schoolId && !allowed.includes(payload.schoolId.trim().toUpperCase())) {
+      return { success: false, code: 'ACCESS_DENIED_SCHOOL_SCOPE', message: 'المدرسة المحددة للمستخدم خارج نطاق المدارس المصرح بها' };
+    }
+    if (existingUser && existingUser.schoolId && !allowed.includes(existingUser.schoolId.trim().toUpperCase())) {
+      return { success: false, code: 'ACCESS_DENIED_SCHOOL_SCOPE', message: 'المستخدم ينتمي لمدرسة خارج نطاق الصلاحيات المصرح لك بها' };
+    }
+  }
+
+  const record: BackendUserRecord = {
+    id: payload.id || `USR_${Date.now()}`,
+    username: String(payload.username || '').trim().toLowerCase(),
+    fullName: payload.fullName || '',
+    role: payload.role || 'Teacher',
+    schoolId: payload.schoolId,
+    allowedSchoolIds: payload.allowedSchoolIds,
+    status: payload.status || 'Active',
+  };
+
+  const idx = masterUsersStore.findIndex(u => u.id === record.id);
+  if (idx >= 0) {
+    masterUsersStore[idx] = record;
+  } else {
+    masterUsersStore.push(record);
+  }
+
+  return { success: true, user: record, message: 'تم حفظ حساب المستخدم بنجاح' };
+}
+
+export function deleteUserSecure(
+  session: ServerSession,
+  targetUserId: string
+): { success: boolean; code?: string; message?: string } {
+  const auth = authorize(session, 'users.manage');
+  if (!auth.allowed) {
+    return { success: false, code: auth.code, message: auth.reason };
+  }
+
+  const target = masterUsersStore.find(u => u.id === targetUserId);
+  if (!target) {
+    return { success: false, code: 'USER_NOT_FOUND', message: 'المستخدم غير موجود' };
+  }
+
+  const role = session.role;
+  const sessionSchool = String(session.schoolId || '').trim().toUpperCase();
+
+  if (role === 'SchoolAdmin') {
+    if (target.role === 'SystemAdmin') {
+      return { success: false, code: 'FORBIDDEN', message: 'غير مصرح بحذف حساب مدير نظام عام' };
+    }
+    if (target.schoolId && String(target.schoolId).trim().toUpperCase() !== sessionSchool) {
+      return { success: false, code: 'CROSS_SCHOOL_ACCESS_DENIED', message: 'غير مصرح بحذف مستخدم ينتمي لمدرسة أخرى' };
+    }
+  } else if (role === 'SystemAdmin') {
+    const allowed = (session.allowedSchoolIds || []).map(s => s.trim().toUpperCase());
+    if (target.schoolId && !allowed.includes(target.schoolId.trim().toUpperCase())) {
+      return { success: false, code: 'ACCESS_DENIED_SCHOOL_SCOPE', message: 'المستخدم يتبع مدرسة خارج نطاق المدارس المصرح بها' };
+    }
+  }
+
+  const idx = masterUsersStore.findIndex(u => u.id === targetUserId);
+  if (idx >= 0) {
+    masterUsersStore.splice(idx, 1);
+  }
+  return { success: true, message: 'تم حذف حساب المستخدم بنجاح' };
+}
+
+export function resetUserPasswordSecure(
+  session: ServerSession,
+  targetUserId: string
+): { success: boolean; code?: string; message?: string } {
+  const auth = authorize(session, 'users.resetPassword');
+  if (!auth.allowed) {
+    return { success: false, code: auth.code, message: auth.reason };
+  }
+
+  const target = masterUsersStore.find(u => u.id === targetUserId);
+  if (!target) {
+    return { success: false, code: 'USER_NOT_FOUND', message: 'المستخدم غير موجود' };
+  }
+
+  const role = session.role;
+  const sessionSchool = String(session.schoolId || '').trim().toUpperCase();
+
+  if (role === 'SchoolAdmin') {
+    if (target.role === 'SystemAdmin') {
+      return { success: false, code: 'FORBIDDEN', message: 'غير مصرح بإعادة تعيين كلمة مرور مدير نظام عام' };
+    }
+    if (target.schoolId && String(target.schoolId).trim().toUpperCase() !== sessionSchool) {
+      return { success: false, code: 'CROSS_SCHOOL_ACCESS_DENIED', message: 'غير مصرح بإعادة تعيين كلمة مرور مستخدم ينتمي لمدرسة أخرى' };
+    }
+  } else if (role === 'SystemAdmin') {
+    const allowed = (session.allowedSchoolIds || []).map(s => s.trim().toUpperCase());
+    if (target.schoolId && !allowed.includes(target.schoolId.trim().toUpperCase())) {
+      return { success: false, code: 'ACCESS_DENIED_SCHOOL_SCOPE', message: 'المستخدم يتبع مدرسة خارج نطاق المدارس المصرح بها' };
+    }
+  }
+
+  return { success: true, message: 'تم إعادة تعيين كلمة المرور بنجاح' };
+}
+
+export function toggleUserStatusSecure(
+  session: ServerSession,
+  targetUserId: string,
+  newStatus?: string
+): { success: boolean; status?: string; code?: string; message?: string } {
+  const auth = authorize(session, 'users.manageRoles');
+  if (!auth.allowed) {
+    return { success: false, code: auth.code, message: auth.reason };
+  }
+
+  const target = masterUsersStore.find(u => u.id === targetUserId);
+  if (!target) {
+    return { success: false, code: 'USER_NOT_FOUND', message: 'المستخدم غير موجود' };
+  }
+
+  const role = session.role;
+  const sessionSchool = String(session.schoolId || '').trim().toUpperCase();
+
+  if (role === 'SchoolAdmin') {
+    if (target.role === 'SystemAdmin') {
+      return { success: false, code: 'FORBIDDEN', message: 'غير مصرح بتعديل حالة حساب مدير نظام عام' };
+    }
+    if (target.schoolId && String(target.schoolId).trim().toUpperCase() !== sessionSchool) {
+      return { success: false, code: 'CROSS_SCHOOL_ACCESS_DENIED', message: 'غير مصرح بتعديل حالة مستخدم ينتمي لمدرسة أخرى' };
+    }
+  } else if (role === 'SystemAdmin') {
+    const allowed = (session.allowedSchoolIds || []).map(s => s.trim().toUpperCase());
+    if (target.schoolId && !allowed.includes(target.schoolId.trim().toUpperCase())) {
+      return { success: false, code: 'ACCESS_DENIED_SCHOOL_SCOPE', message: 'المستخدم يتبع مدرسة خارج نطاق المدارس المصرح بها' };
+    }
+  }
+
+  target.status = newStatus || (target.status === 'Active' ? 'Suspended' : 'Active');
+  return { success: true, status: target.status, message: `تم تحديث حالة الحساب إلى ${target.status}` };
+}
+
+export function revokeUserSessionsSecure(
+  session: ServerSession,
+  targetUserId: string
+): { success: boolean; code?: string; message?: string } {
+  const auth = authorize(session, 'users.manageRoles');
+  if (!auth.allowed) {
+    return { success: false, code: auth.code, message: auth.reason };
+  }
+
+  const target = masterUsersStore.find(u => u.id === targetUserId);
+  if (!target) {
+    return { success: false, code: 'USER_NOT_FOUND', message: 'المستخدم غير موجود' };
+  }
+
+  const role = session.role;
+  const sessionSchool = String(session.schoolId || '').trim().toUpperCase();
+
+  if (role === 'SchoolAdmin') {
+    if (target.role === 'SystemAdmin') {
+      return { success: false, code: 'FORBIDDEN', message: 'غير مصرح بإلغاء جلسات مدير نظام عام' };
+    }
+    if (target.schoolId && String(target.schoolId).trim().toUpperCase() !== sessionSchool) {
+      return { success: false, code: 'CROSS_SCHOOL_ACCESS_DENIED', message: 'غير مصرح بإلغاء جلسات مستخدم ينتمي لمدرسة أخرى' };
+    }
+  } else if (role === 'SystemAdmin') {
+    const allowed = (session.allowedSchoolIds || []).map(s => s.trim().toUpperCase());
+    if (target.schoolId && !allowed.includes(target.schoolId.trim().toUpperCase())) {
+      return { success: false, code: 'ACCESS_DENIED_SCHOOL_SCOPE', message: 'المستخدم يتبع مدرسة خارج نطاق المدارس المصرح بها' };
+    }
+  }
+
+  return { success: true, message: 'تم إلغاء جميع جلسات العمل النشطة للمستخدم بنجاح' };
 }
