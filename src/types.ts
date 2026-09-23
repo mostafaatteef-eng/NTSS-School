@@ -1,31 +1,31 @@
 export type AccessScope = 'GLOBAL' | 'SCHOOL' | 'SELF';
 
-export type StaffRole =
+export type CanonicalStaffRole =
   | 'SystemAdmin'
   | 'SchoolAdmin'
-  | 'Admin'
   | 'SchoolDirector'
   | 'StudentAffairs'
   | 'TeacherAffairs'
-  | 'SocialSpecialist'
-  | 'TrainingOfficer'
   | 'QualityOfficer'
+  | 'TrainingOfficer'
+  | 'SocialSpecialist'
   | 'Teacher'
   | 'AdministrativeEmployee';
 
-export const CANONICAL_STAFF_ROLES: StaffRole[] = [
+export const CANONICAL_STAFF_ROLES: CanonicalStaffRole[] = [
   'SystemAdmin',
   'SchoolAdmin',
-  'Admin',
   'SchoolDirector',
   'StudentAffairs',
   'TeacherAffairs',
-  'SocialSpecialist',
-  'TrainingOfficer',
   'QualityOfficer',
+  'TrainingOfficer',
+  'SocialSpecialist',
   'Teacher',
   'AdministrativeEmployee',
 ];
+
+export type StaffRole = CanonicalStaffRole | 'Admin';
 
 export type UserRole = StaffRole;
 
@@ -49,7 +49,6 @@ export type LegacyUserRole =
   | 'BehaviorOfficer'
   | 'Employee'
   | 'Viewer'
-  | 'Teacher' // Historical archive only - forbidden from login
   | 'Parent'  // Historical archive only - forbidden from login
   | 'Student'; // Historical archive only - forbidden from login
 
@@ -59,7 +58,7 @@ export type LegacyUserRole =
  */
 export function normalizeStaffRole(role: string): StaffRole {
   const r = (role || '').trim();
-  if (r === 'Teacher' || r === 'Parent' || r === 'Student') {
+  if (r === 'Parent' || r === 'Student') {
     throw new Error('ACCOUNT_ROLE_NOT_ALLOWED');
   }
   if (r === 'SystemAdmin') return 'SystemAdmin';
@@ -71,23 +70,60 @@ export function normalizeStaffRole(role: string): StaffRole {
   if (r === 'SocialSpecialist' || r === 'BehaviorOfficer') return 'SocialSpecialist';
   if (r === 'TrainingOfficer') return 'TrainingOfficer';
   if (r === 'QualityOfficer' || r === 'Viewer') return 'QualityOfficer';
+  if (r === 'Teacher') return 'Teacher';
+  if (r === 'AdministrativeEmployee') return 'AdministrativeEmployee';
   throw new Error('INVALID_OR_UNSUPPORTED_ROLE');
 }
 
 export type PermissionKey =
+  // Schools
+  | 'schools.view'
+  | 'schools.manage'
+  // Users
+  | 'users.view'
+  | 'users.create'
+  | 'users.edit'
+  | 'users.disable'
+  | 'users.resetPassword'
+  | 'users.manageRoles'
+  | 'users.manage'
+  // Students
   | 'students.view'
   | 'students.create'
   | 'students.edit'
   | 'students.delete'
   | 'students.import'
+  // Employees / Staff
+  | 'employees.view'
+  | 'employees.create'
+  | 'employees.edit'
+  | 'employees.import'
+  | 'employees.delete'
+  | 'teachers.view'
+  | 'teachers.create'
+  | 'teachers.edit'
+  | 'teachers.delete'
+  | 'teachers.import'
+  | 'teacherPortal.access'
+  | 'teacherSchedule.viewOwn'
+  | 'teacherAccounts.manage'
+  // Attendance - Students
+  | 'attendance.students.view'
+  | 'attendance.students.manage'
   | 'studentAttendance.view'
   | 'studentAttendance.create'
   | 'studentAttendance.edit'
   | 'studentAttendance.delete'
   | 'studentAttendance.manage'
+  // Attendance - Staff
+  | 'attendance.staff.view'
+  | 'attendance.staff.manage'
   | 'teacherAttendance.view'
+  | 'teacherAttendance.create'
+  | 'teacherAttendance.edit'
+  | 'teacherAttendance.delete'
   | 'teacherAttendance.manage'
-  | 'teacherAccounts.manage'
+  // Attendance - School & Class
   | 'schoolAttendance.view'
   | 'schoolAttendance.create'
   | 'schoolAttendance.edit'
@@ -98,8 +134,21 @@ export type PermissionKey =
   | 'classAttendance.create'
   | 'classAttendance.edit'
   | 'classAttendance.manageOwnLessons'
-  | 'teacherPortal.access'
-  | 'teacherSchedule.viewOwn'
+  // Leaves
+  | 'leaves.own.view'
+  | 'leaves.own.create'
+  | 'leaves.manage.view'
+  | 'leaves.manage.approve'
+  | 'leaves.manage.reject'
+  | 'leaves.view'
+  | 'leaves.create'
+  | 'leaves.edit'
+  | 'leaves.delete'
+  // Timetable / Schedule
+  | 'timetable.view'
+  | 'timetable.manage'
+  | 'timetable.import'
+  | 'timetable.publish'
   | 'schedule.view'
   | 'schedule.manage'
   | 'schedule.publish'
@@ -107,6 +156,10 @@ export type PermissionKey =
   | 'schedule.exportPdf'
   | 'schedule.manageSubstitution'
   | 'schedule.viewConflicts'
+  // Curriculum / Lessons
+  | 'curriculum.view'
+  | 'curriculum.manage'
+  | 'curriculum.assign'
   | 'lessonContent.view'
   | 'lessonContent.create'
   | 'lessonContent.edit'
@@ -116,6 +169,7 @@ export type PermissionKey =
   | 'homework.create'
   | 'homework.editOwn'
   | 'homework.publish'
+  // Academic Years & Promotion
   | 'academicYears.view'
   | 'academicYears.create'
   | 'academicYears.edit'
@@ -129,19 +183,7 @@ export type PermissionKey =
   | 'student360.viewBehavior'
   | 'student360.viewParentCommunication'
   | 'student360.editNotes'
-  | 'teachers.view'
-  | 'teachers.create'
-  | 'teachers.edit'
-  | 'teachers.delete'
-  | 'teachers.import'
-  | 'teacherAttendance.view'
-  | 'teacherAttendance.create'
-  | 'teacherAttendance.edit'
-  | 'teacherAttendance.delete'
-  | 'leaves.view'
-  | 'leaves.create'
-  | 'leaves.edit'
-  | 'leaves.delete'
+  // Behavior & Communication
   | 'behavior.view'
   | 'behavior.create'
   | 'behavior.edit'
@@ -155,10 +197,12 @@ export type PermissionKey =
   | 'positiveBehavior.create'
   | 'parentCommunication.view'
   | 'parentCommunication.create'
+  // Settings & Audit & Reports
+  | 'settings.view'
   | 'settings.manage'
-  | 'users.manage'
   | 'audit.view'
   | 'reports.view'
+  // Quality
   | 'quality.view'
   | 'quality.create'
   | 'quality.evaluate'
