@@ -144,14 +144,16 @@ export function sanitizeSchoolDTO(school: MasterSchoolRegistryRecord | School | 
  */
 export function getSchoolSpreadsheet(effectiveSchoolId: string): string {
   const cleanId = String(effectiveSchoolId || '').trim().toUpperCase();
+  if (!cleanId) {
+    return '';
+  }
   const found = masterSchoolRegistry.find(
     s => s.schoolId.toUpperCase() === cleanId || s.schoolCode.toUpperCase() === cleanId
   );
   if (found && found.spreadsheetId) {
     return found.spreadsheetId;
   }
-  // Safe fallback to default primary spreadsheet
-  return masterSchoolRegistry[0]?.spreadsheetId || 'SHEET_ID_DEFAULT_FALLBACK';
+  return '';
 }
 
 /**
@@ -186,7 +188,7 @@ export function resolveSchoolContext(
       }
       effectiveSchoolId = cleanRequested;
     } else {
-      effectiveSchoolId = (session.activeSchoolId || session.schoolId || 'SCH-BADR').trim().toUpperCase();
+      effectiveSchoolId = (session.activeSchoolId || session.schoolId || '').trim().toUpperCase();
     }
   } else if (session.accessScope === 'SCHOOL' || session.accessScope === 'SELF') {
     // School-bound roles: payload/requested school cannot override session
@@ -203,6 +205,14 @@ export function resolveSchoolContext(
       success: false,
       code: 'MISSING_OR_INVALID_SCOPE',
       message: 'نطاق الوصول غير محدد أو غير مصرح به',
+    };
+  }
+
+  if (!effectiveSchoolId) {
+    return {
+      success: false,
+      code: 'SCHOOL_CONTEXT_REQUIRED',
+      message: 'الجلسة غير مربوطة بمدرسة محددة (FAIL CLOSED)',
     };
   }
 
@@ -224,7 +234,7 @@ export function resolveSchoolContext(
 /**
  * Constructs an authoritative ServerSession from a user record with safe defaults.
  * Guarantees:
- * - SystemAdmin: accessScope = GLOBAL only if backed by allowedSchoolIds
+ * - SystemAdmin: accessScope = GLOBAL only if backed by explicit allowedSchoolIds
  * - Legacy Admin: accessScope = SCHOOL only; bound to a single school; NEVER GLOBAL
  * - Teachers / AdministrativeEmployees: accessScope = SELF
  * - School roles: accessScope = SCHOOL
@@ -251,9 +261,13 @@ export function createAuthoritativeSession(
 
   if (role === 'SystemAdmin') {
     accessScope = 'GLOBAL';
-    allowedSchoolIds = options?.allowedSchoolIds && options.allowedSchoolIds.length > 0
-      ? options.allowedSchoolIds
-      : [boundSchoolId || 'SCH-BADR', 'SCH-ALNOOR'];
+    // User record / session authority ONLY. Do not invent all schools!
+    const configuredSchools = options?.allowedSchoolIds || (user as any).allowedSchoolIds;
+    if (configuredSchools && Array.isArray(configuredSchools)) {
+      allowedSchoolIds = configuredSchools.map((s: string) => String(s).trim()).filter(Boolean);
+    } else {
+      allowedSchoolIds = []; // Fail closed if not explicitly granted
+    }
   } else if (role === 'Admin') {
     // Legacy Admin: MUST be SCHOOL scoped. NEVER GLOBAL. Bound to single school.
     accessScope = 'SCHOOL';
@@ -622,4 +636,291 @@ export function authorize(
     actorUserId: session.userId,
     actorRole: String(role),
   };
+}
+
+/**
+ * Action-to-Permission Mapping Table
+ * Defines canonical PermissionKey for each backend API action.
+ */
+export const ACTION_PERMISSION_MAP: Record<string, PermissionKey> = {
+  // Students
+  getStudents: 'students.view',
+  saveStudent: 'students.create',
+  bulkSaveStudents: 'students.edit',
+  deleteStudent: 'students.delete',
+
+  // Student Attendance
+  getStudentAttendance: 'studentAttendance.view',
+  saveStudentAttendance: 'studentAttendance.manage',
+  bulkSaveStudentAttendance: 'studentAttendance.manage',
+  saveDailyStudentAttendanceBatch: 'studentAttendance.manage',
+
+  // Student Tokens
+  issueStudentAccessToken: 'students.edit',
+  revokeStudentAccessToken: 'students.edit',
+  rotateStudentAccessToken: 'students.edit',
+  getStudentAccessTokensList: 'students.view',
+
+  // Employees / Staff
+  getEmployees: 'employees.view',
+  saveEmployee: 'employees.create',
+  bulkSaveEmployees: 'employees.create',
+  deleteEmployee: 'employees.delete',
+
+  // Staff Attendance
+  getAttendance: 'teacherAttendance.view',
+  saveAttendance: 'teacherAttendance.manage',
+  bulkSaveAttendance: 'teacherAttendance.manage',
+  saveDailyStaffAttendanceBatch: 'teacherAttendance.manage',
+  saveDailyTeacherAttendanceBatch: 'teacherAttendance.manage',
+
+  // Leaves & Permissions
+  getLeaves: 'leaves.view',
+  saveLeave: 'leaves.create',
+  deleteLeave: 'leaves.delete',
+  getPermissions: 'leaves.view',
+  savePermission: 'leaves.create',
+
+  // Teaching Assignments
+  getTeacherAssignments: 'timetable.manage',
+  saveTeacherAssignment: 'timetable.manage',
+  deleteTeacherAssignment: 'timetable.manage',
+  bulkSaveTeacherAssignments: 'timetable.manage',
+  commitTimetableImport: 'timetable.manage',
+
+  // Timetable & Schedule
+  getSchedule: 'schedule.view',
+  saveScheduleEntry: 'timetable.manage',
+  bulkSaveSchedule: 'timetable.manage',
+  deleteScheduleEntry: 'timetable.manage',
+  publishSchedule: 'timetable.publish',
+  getScheduleBreaks: 'timetable.manage',
+  saveScheduleBreaks: 'timetable.manage',
+  getTeacherAvailability: 'timetable.manage',
+  saveTeacherAvailability: 'timetable.manage',
+
+  // Reserve
+  getReserveAssignments: 'timetable.view',
+  saveReserveAssignment: 'timetable.manage',
+  cancelReserveAssignment: 'timetable.manage',
+  getReserveCandidates: 'timetable.view',
+
+  // Supervision
+  getSupervisionLocations: 'timetable.view',
+  saveSupervisionLocation: 'timetable.manage',
+  getSupervisionAssignments: 'timetable.view',
+  saveSupervisionAssignment: 'timetable.manage',
+
+  // Homework & Resources
+  getHomework: 'lessonContent.view',
+  saveHomework: 'homework.create',
+  deleteHomework: 'homework.create',
+  getTeacherResources: 'lessonContent.view',
+  saveTeacherResource: 'lessonResources.manage',
+  deleteTeacherResource: 'lessonResources.manage',
+
+  // Exam Schedules
+  getExamSchedules: 'timetable.view',
+  saveExamSchedule: 'timetable.manage',
+  deleteExamSchedule: 'timetable.manage',
+
+  // Teacher Portal Account Admin
+  setTeacherPortalPin: 'teacherAccounts.manage',
+  createTeacherAccount: 'teacherAccounts.manage',
+  resetTeacherPassword: 'teacherAccounts.manage',
+  setTeacherAccountStatus: 'teacherAccounts.manage',
+  getTeacherAccounts: 'teacherAccounts.manage',
+
+  // Behavior
+  getBehaviorRecords: 'behavior.view',
+  saveBehaviorViolation: 'behavior.create',
+  saveBehaviorCase: 'behaviorCases.create',
+
+  // Academic Years & Enrollments
+  getAcademicYears: 'academicYears.view',
+  saveAcademicYear: 'academicYears.create',
+  saveStudentEnrollment: 'academicYears.edit',
+
+  // Communications
+  getParentCommunications: 'parentCommunication.view',
+  saveParentCommunication: 'parentCommunication.create',
+
+  // Users & Roles (Master spreadsheet only)
+  getUsers: 'users.view',
+  saveUser: 'users.create',
+  deleteUser: 'users.manage',
+  resetUserPassword: 'users.resetPassword',
+  issueUserActivationToken: 'users.manageRoles',
+  revokeUserSessions: 'users.manageRoles',
+  toggleUserStatus: 'users.manageRoles',
+
+  // Master Schools (Master spreadsheet only)
+  adminGetSchools: 'schools.manage',
+  adminCreateSchool: 'schools.manage',
+  adminUpdateSchool: 'schools.manage',
+
+  // Settings & Audit
+  getSettings: 'settings.view',
+  saveSettings: 'settings.manage',
+  getAuditLogs: 'audit.view',
+  addAuditLog: 'audit.view',
+
+  // Lifecycle
+  logout: 'settings.view',
+  validateSession: 'settings.view',
+  syncData: 'settings.view',
+};
+
+/**
+ * Server-Side Resource Ownership Verifier.
+ * Ensures the target resource actually belongs to effectiveSchoolId in its school spreadsheet.
+ */
+export function verifyServerResourceOwnership(
+  resource: { id?: string; schoolId?: string } | null | undefined,
+  effectiveSchoolId: string
+): { valid: boolean; code?: string; message?: string } {
+  if (!resource) {
+    return {
+      valid: false,
+      code: 'RESOURCE_NOT_FOUND',
+      message: 'المورد المطلوب غير موجود في قاعدة بيانات هذه المدرسة',
+    };
+  }
+  if (resource.schoolId && String(resource.schoolId).trim().toUpperCase() !== String(effectiveSchoolId).trim().toUpperCase()) {
+    return {
+      valid: false,
+      code: 'CROSS_SCHOOL_ACCESS_DENIED',
+      message: 'تم رفض العملية: المورد المطلوب ينتمي إلى مدرسة أخرى',
+    };
+  }
+  return { valid: true };
+}
+
+/**
+ * Isolated School Data Storage Engine for testing and backend dispatch validation.
+ */
+export interface SchoolDataStore {
+  students: Array<{ id: string; name: string; schoolId?: string }>;
+  employees: Array<{ id: string; name: string; schoolId?: string }>;
+  leaves: Array<{ id: string; employeeId: string; schoolId?: string }>;
+}
+
+const isolatedSchoolStores: Record<string, SchoolDataStore> = {
+  'SCH-BADR': {
+    students: [
+      { id: 'STU-BADR-1', name: 'أحمد محمود', schoolId: 'SCH-BADR' },
+      { id: 'STU-BADR-2', name: 'عمر خالد', schoolId: 'SCH-BADR' },
+    ],
+    employees: [
+      { id: 'EMP-BADR-1', name: 'محمد علي', schoolId: 'SCH-BADR' },
+    ],
+    leaves: [],
+  },
+  'SCH-ALNOOR': {
+    students: [
+      { id: 'STU-NOOR-100', name: 'فاطمة الزهراء', schoolId: 'SCH-ALNOOR' },
+    ],
+    employees: [
+      { id: 'EMP-NOOR-1', name: 'هدى يوسف', schoolId: 'SCH-ALNOOR' },
+    ],
+    leaves: [],
+  },
+};
+
+export function getIsolatedSchoolStore(schoolId: string): SchoolDataStore | undefined {
+  return isolatedSchoolStores[String(schoolId).trim().toUpperCase()];
+}
+
+export function executeSchoolScopedAction(
+  session: ServerSession,
+  action: string,
+  payload: any,
+  options?: { targetSchoolId?: string }
+): { success: boolean; code?: string; data?: any; message?: string } {
+  // 1. Resolve permission from ACTION_PERMISSION_MAP
+  let permission = ACTION_PERMISSION_MAP[action];
+  if (session.accessScope === 'SELF') {
+    if (action === 'getLeaves' || action === 'getPermissions') {
+      permission = 'leaves.own.view';
+    } else if (action === 'saveLeave' || action === 'savePermission') {
+      permission = 'leaves.own.create';
+    }
+  }
+
+  // 2. Authorize
+  const authRes = authorize(
+    session,
+    permission,
+    {
+      schoolId: options?.targetSchoolId || (session.accessScope === 'GLOBAL' ? options?.targetSchoolId : undefined),
+      resourceId: payload?.id,
+    }
+  );
+
+  if (!authRes.allowed) {
+    return {
+      success: false,
+      code: authRes.code,
+      message: authRes.reason,
+    };
+  }
+
+  const effectiveSchoolId = authRes.effectiveSchoolId;
+  const store = getIsolatedSchoolStore(effectiveSchoolId);
+  if (!store) {
+    return {
+      success: false,
+      code: 'SCHOOL_NOT_FOUND',
+      message: `قاعدة بيانات المدرسة (${effectiveSchoolId}) غير متوفرة`,
+    };
+  }
+
+  // 3. School-scoped resource actions with server-side ownership verification
+  if (action === 'getStudents') {
+    return { success: true, data: [...store.students] };
+  }
+
+  if (action === 'deleteStudent') {
+    const studentIndex = store.students.findIndex(s => s.id === payload.id);
+    if (studentIndex === -1) {
+      return {
+        success: false,
+        code: 'RESOURCE_NOT_FOUND',
+        message: 'سجل الطالب غير موجود في هذه المدرسة',
+      };
+    }
+    const targetStudent = store.students[studentIndex];
+    const ownership = verifyServerResourceOwnership(targetStudent, effectiveSchoolId);
+    if (!ownership.valid) {
+      return {
+        success: false,
+        code: ownership.code,
+        message: ownership.message,
+      };
+    }
+    store.students.splice(studentIndex, 1);
+    return { success: true, message: 'تم حذف الطالب بنجاح' };
+  }
+
+  if (action === 'saveStudent') {
+    if (payload.id) {
+      const existing = store.students.find(s => s.id === payload.id);
+      if (existing) {
+        const ownership = verifyServerResourceOwnership(existing, effectiveSchoolId);
+        if (!ownership.valid) {
+          return { success: false, code: ownership.code, message: ownership.message };
+        }
+      }
+    }
+    const cleanStudent = { ...payload, schoolId: effectiveSchoolId };
+    const idx = store.students.findIndex(s => s.id === cleanStudent.id);
+    if (idx >= 0) {
+      store.students[idx] = cleanStudent;
+    } else {
+      store.students.push(cleanStudent);
+    }
+    return { success: true, message: 'تم حفظ بيانات الطالب بنجاح' };
+  }
+
+  return { success: true, data: null };
 }

@@ -197,9 +197,18 @@ function doPost(e) {
 
     // Staff Login (School + Username + Password)
     if (action === 'login') {
-      var schoolId = String(postData.schoolId || (payload && payload.schoolId) || '').trim() || 'SCH-BADR';
+      var schoolId = String(postData.schoolId || (payload && payload.schoolId) || '').trim();
       var username = String(postData.username || (payload && payload.username) || '').trim().toLowerCase();
       var password = String(postData.password || (payload && payload.password) || '').trim();
+
+      if (!schoolId) {
+        return createJsonResponse({
+          status: 'error',
+          code: 'SCHOOL_CONTEXT_REQUIRED',
+          message: 'يرجى تحديد كود المدرسة لتسجيل الدخول',
+          requestId: requestId
+        }, 400);
+      }
 
       var authResult = handleStaffLogin(ss, username, password, requestId, schoolId);
       if (!authResult.success) {
@@ -221,9 +230,18 @@ function doPost(e) {
 
     // Teacher Login (School + Username/TeacherCode + Password -> Opaque TeacherSessionToken)
     if (action === 'teacherLogin') {
-      var teacherSchoolId = String(postData.schoolId || (payload && payload.schoolId) || '').trim() || 'SCH-BADR';
+      var teacherSchoolId = String(postData.schoolId || (payload && payload.schoolId) || '').trim();
       var tUserOrCode = String(postData.username || postData.teacherCode || (payload && (payload.username || payload.teacherCode)) || '').trim();
       var tPass = String(postData.password || (payload && payload.password) || '').trim();
+
+      if (!teacherSchoolId) {
+        return createJsonResponse({
+          status: 'error',
+          code: 'SCHOOL_CONTEXT_REQUIRED',
+          message: 'يرجى تحديد كود المدرسة لتسجيل دخول المعلم',
+          requestId: requestId
+        }, 400);
+      }
 
       var teacherAuth = handleTeacherLogin(ss, tUserOrCode, tPass, requestId, teacherSchoolId);
       if (!teacherAuth.success) {
@@ -311,7 +329,15 @@ function doPost(e) {
 
     // Public Student Class Schedule (School-Scoped, NO login, NO token, strictly published lessons only)
     if (action === 'getPublicClassSchedule') {
-      var targetSchoolIdForSchedule = String(postData.schoolId || (payload && payload.schoolId) || '').trim() || 'SCH-BADR';
+      var targetSchoolIdForSchedule = String(postData.schoolId || (payload && payload.schoolId) || '').trim();
+      if (!targetSchoolIdForSchedule) {
+        return createJsonResponse({
+          status: 'error',
+          code: 'SCHOOL_CONTEXT_REQUIRED',
+          message: 'يرجى تحديد كود المدرسة لعرض الجدول المدرسي',
+          requestId: requestId
+        }, 400);
+      }
       var scheduleSchoolSs = getSchoolSpreadsheet(targetSchoolIdForSchedule, ss);
       var gradeParam = String(postData.gradeId || postData.grade || postData.gradeName || (payload && (payload.gradeId || payload.grade || payload.gradeName)) || '').trim();
       var classroomParam = String(postData.classroomId || postData.classroom || postData.classroomName || (payload && (payload.classroomId || payload.classroom || payload.classroomName)) || '').trim();
@@ -398,6 +424,25 @@ function doPost(e) {
 
       var tSession = teacherSessionAuth.session;
 
+      if (!tSession.schoolId || String(tSession.schoolId).trim() === '') {
+        return createJsonResponse({
+          status: 'error',
+          code: 'SCHOOL_CONTEXT_REQUIRED',
+          message: 'جلسة المعلم غير مرتبطة بمدرسة محددة (FAIL CLOSED)',
+          requestId: requestId
+        }, 403);
+      }
+
+      var teacherSchoolSs = getSchoolSpreadsheet(tSession.schoolId, ss);
+      if (!teacherSchoolSs) {
+        return createJsonResponse({
+          status: 'error',
+          code: 'SCHOOL_NOT_FOUND',
+          message: 'قاعدة بيانات مدرسة المعلم غير متوفرة',
+          requestId: requestId
+        }, 404);
+      }
+
       if (action === 'teacherLogout') {
         revokeTeacherSessionToken(ss, incomingTeacherToken);
         output.message = 'تم تسجيل خروج المعلم بنجاح';
@@ -405,12 +450,12 @@ function doPost(e) {
       }
 
       if (action === 'getTeacherPortalData') {
-        output.data = getTeacherPortalDataBundle(ss, tSession);
+        output.data = getTeacherPortalDataBundle(teacherSchoolSs, tSession);
         return createJsonResponse(output, 200);
       }
 
       if (action === 'saveTeacherHomeworkDraft') {
-        var hwResult = saveTeacherHomeworkDraft(ss, tSession, payload, requestId);
+        var hwResult = saveTeacherHomeworkDraft(teacherSchoolSs, tSession, payload, requestId);
         if (!hwResult.success) {
           return createJsonResponse({
             status: 'error',
@@ -425,7 +470,7 @@ function doPost(e) {
       }
 
       if (action === 'saveTeacherResourceDraft') {
-        var resResult = saveTeacherResourceDraft(ss, tSession, payload, requestId);
+        var resResult = saveTeacherResourceDraft(teacherSchoolSs, tSession, payload, requestId);
         if (!resResult.success) {
           return createJsonResponse({
             status: 'error',
@@ -464,17 +509,19 @@ function doPost(e) {
     }
 
     var activeSession = sessionAuth.session;
+    activeSession.sessionToken = incomingStaffToken; // Wire sessionToken in-memory for authorization pipeline
     var authenticatedUserId = activeSession.userId;
     var authenticatedRole = activeSession.role;
     var authenticatedUsername = activeSession.username;
-    var sessionSchoolId = activeSession.schoolId || 'SCH-BADR';
+    var sessionSchoolId = activeSession.schoolId || '';
 
-    // School Management for SystemAdmin
+    // School Management for SystemAdmin (Master Spreadsheet only)
     if (action === 'adminGetSchools' || action === 'adminCreateSchool' || action === 'adminUpdateSchool') {
-      if (authenticatedRole !== 'SystemAdmin') {
+      var schoolAdminAuth = authorize(activeSession, action, null, ss, requestId);
+      if (!schoolAdminAuth.allowed || authenticatedRole !== 'SystemAdmin') {
         return createJsonResponse({
           status: 'error',
-          code: 'FORBIDDEN_SYSTEM_ADMIN_ONLY',
+          code: schoolAdminAuth.code || 'FORBIDDEN_SYSTEM_ADMIN_ONLY',
           message: 'صلاحية مرفوضة: هذا الإجراء مخصص حصرياً لمدير النظام الشامل (SystemAdmin).',
           requestId: requestId
         }, 403);
@@ -604,6 +651,15 @@ function doPost(e) {
 
     var effectiveSchoolId = authResult.effectiveSchoolId;
     var targetSchoolSs = getSchoolSpreadsheet(effectiveSchoolId, ss);
+    if (!targetSchoolSs) {
+      return createJsonResponse({
+        status: 'error',
+        code: 'SCHOOL_NOT_FOUND',
+        message: 'قاعدة بيانات المدرسة المطلوبة غير متوفرة',
+        requestId: requestId
+      }, 404);
+    }
+    var schoolSs = targetSchoolSs;
 
     // -------------------------------------------------------------
     // 6. PROTECTED STAFF ACTIONS DISPATCH
@@ -628,36 +684,83 @@ function doPost(e) {
       return createJsonResponse(output, 200);
     }
 
-    // B. Students Master Data
+    // B. Students Master Data (School-Scoped strictly to schoolSs)
     if (action === 'getStudents') {
-      output.data = getSheetData(ss, SHEETS.STUDENTS);
+      output.data = getSheetData(schoolSs, SHEETS.STUDENTS);
       return createJsonResponse(output, 200);
     }
 
     if (action === 'saveStudent' && payload) {
-      upsertRecord(ss, SHEETS.STUDENTS, 'id', payload);
-      recordAuthoritativeAudit(ss, requestId, authenticatedUsername, authenticatedRole, 'SAVE', 'STUDENTS', payload.id || '', 'حفظ سجل طالب');
+      if (payload.id) {
+        var curStudents = getSheetData(schoolSs, SHEETS.STUDENTS);
+        for (var csIdx = 0; csIdx < curStudents.length; csIdx++) {
+          if (curStudents[csIdx].id === payload.id) {
+            var exStd = curStudents[csIdx];
+            if (exStd.schoolId && String(exStd.schoolId).trim().toUpperCase() !== String(effectiveSchoolId).trim().toUpperCase()) {
+              recordAuthoritativeAudit(ss, requestId, authenticatedUsername, authenticatedRole, 'CROSS_SCHOOL_ACCESS_DENIED', 'STUDENTS', payload.id, 'محاولة تعديل طالب من مدرسة أخرى');
+              return createJsonResponse({
+                status: 'error',
+                code: 'CROSS_SCHOOL_ACCESS_DENIED',
+                message: 'تم رفض العملية: الطالب المطلوب ينتمي إلى مدرسة أخرى',
+                requestId: requestId
+              }, 403);
+            }
+            break;
+          }
+        }
+      }
+      payload.schoolId = effectiveSchoolId;
+      upsertRecord(schoolSs, SHEETS.STUDENTS, 'id', payload);
+      recordAuthoritativeAudit(schoolSs, requestId, authenticatedUsername, authenticatedRole, 'SAVE', 'STUDENTS', payload.id || '', 'حفظ سجل طالب');
       output.message = 'تم حفظ بيانات الطالب بنجاح';
       return createJsonResponse(output, 200);
     }
 
     if (action === 'deleteStudent' && payload && payload.id) {
-      deleteRecord(ss, SHEETS.STUDENTS, 'id', payload.id);
-      recordAuthoritativeAudit(ss, requestId, authenticatedUsername, authenticatedRole, 'DELETE', 'STUDENTS', payload.id, 'حذف سجل طالب');
+      var existingStudents = getSheetData(schoolSs, SHEETS.STUDENTS);
+      var targetStudent = null;
+      for (var sIdx = 0; sIdx < existingStudents.length; sIdx++) {
+        if (existingStudents[sIdx].id === payload.id) {
+          targetStudent = existingStudents[sIdx];
+          break;
+        }
+      }
+      if (!targetStudent) {
+        return createJsonResponse({
+          status: 'error',
+          code: 'RESOURCE_NOT_FOUND',
+          message: 'سجل الطالب غير موجود في قاعدة بيانات هذه المدرسة',
+          requestId: requestId
+        }, 404);
+      }
+      if (targetStudent.schoolId && String(targetStudent.schoolId).trim().toUpperCase() !== String(effectiveSchoolId).trim().toUpperCase()) {
+        recordAuthoritativeAudit(ss, requestId, authenticatedUsername, authenticatedRole, 'CROSS_SCHOOL_ACCESS_DENIED', 'STUDENTS', payload.id, 'محاولة حذف طالب يتبع مدرسة أخرى');
+        return createJsonResponse({
+          status: 'error',
+          code: 'CROSS_SCHOOL_ACCESS_DENIED',
+          message: 'تم رفض العملية: الطالب المطلوب ينتمي إلى مدرسة أخرى',
+          requestId: requestId
+        }, 403);
+      }
+      deleteRecord(schoolSs, SHEETS.STUDENTS, 'id', payload.id);
+      recordAuthoritativeAudit(schoolSs, requestId, authenticatedUsername, authenticatedRole, 'DELETE', 'STUDENTS', payload.id, 'حذف سجل طالب');
       output.message = 'تم حذف سجل الطالب بنجاح';
       return createJsonResponse(output, 200);
     }
 
     if (action === 'bulkSaveStudents' && payload && Array.isArray(payload)) {
-      payload.forEach(function(rec) { upsertRecord(ss, SHEETS.STUDENTS, 'id', rec); });
-      recordAuthoritativeAudit(ss, requestId, authenticatedUsername, authenticatedRole, 'BULK_SAVE', 'STUDENTS', payload.length + ' records', 'حفظ دفعة طلاب');
+      payload.forEach(function(rec) {
+        rec.schoolId = effectiveSchoolId;
+        upsertRecord(schoolSs, SHEETS.STUDENTS, 'id', rec);
+      });
+      recordAuthoritativeAudit(schoolSs, requestId, authenticatedUsername, authenticatedRole, 'BULK_SAVE', 'STUDENTS', payload.length + ' records', 'حفظ دفعة طلاب');
       output.message = 'تم حفظ ' + payload.length + ' سجل طالب بنجاح';
       return createJsonResponse(output, 200);
     }
 
-    // C. Student Access Token Management (Staff Only)
+    // C. Student Access Token Management (School-Scoped strictly to schoolSs)
     if (action === 'issueStudentAccessToken' && payload) {
-      var issueResult = issueStudentAccessToken(ss, payload.studentId, authenticatedUserId, requestId);
+      var issueResult = issueStudentAccessToken(schoolSs, payload.studentId, authenticatedUserId, requestId);
       if (!issueResult.success) {
         return createJsonResponse({
           status: 'error',
@@ -666,22 +769,22 @@ function doPost(e) {
           requestId: requestId
         }, 400);
       }
-      recordAuthoritativeAudit(ss, requestId, authenticatedUsername, authenticatedRole, 'ISSUE_TOKEN', 'STUDENT_ACCESS', payload.studentId, 'إصدار رمز وصول طالب');
+      recordAuthoritativeAudit(schoolSs, requestId, authenticatedUsername, authenticatedRole, 'ISSUE_TOKEN', 'STUDENT_ACCESS', payload.studentId, 'إصدار رمز وصول طالب');
       output.message = 'تم إصدار رمز الوصول بنجاح';
-      output.rawToken = issueResult.rawToken; // Returned ONCE for QR/link generation
+      output.rawToken = issueResult.rawToken;
       output.tokenRecord = issueResult.tokenRecord;
       return createJsonResponse(output, 200);
     }
 
     if (action === 'revokeStudentAccessToken' && payload) {
-      revokeStudentAccessToken(ss, payload.id || payload.studentId);
-      recordAuthoritativeAudit(ss, requestId, authenticatedUsername, authenticatedRole, 'REVOKE_TOKEN', 'STUDENT_ACCESS', payload.id || payload.studentId, 'إلغاء رمز وصول طالب');
+      revokeStudentAccessToken(schoolSs, payload.id || payload.studentId);
+      recordAuthoritativeAudit(schoolSs, requestId, authenticatedUsername, authenticatedRole, 'REVOKE_TOKEN', 'STUDENT_ACCESS', payload.id || payload.studentId, 'إلغاء رمز وصول طالب');
       output.message = 'تم إلغاء رمز الوصول بنجاح';
       return createJsonResponse(output, 200);
     }
 
     if (action === 'getStudentAccessTokensList') {
-      var allTokens = getSheetData(ss, SHEETS.STUDENT_ACCESS_TOKENS);
+      var allTokens = getSheetData(schoolSs, SHEETS.STUDENT_ACCESS_TOKENS);
       output.data = allTokens.map(function(t) {
         var clean = Object.assign({}, t);
         delete clean.tokenHash; // Do not leak hash
@@ -690,27 +793,31 @@ function doPost(e) {
       return createJsonResponse(output, 200);
     }
 
-    // D. Daily Student Attendance (School-day level only)
+    // D. Daily Student Attendance (School-Scoped strictly to schoolSs)
     if (action === 'getStudentAttendance') {
-      output.data = getSheetData(ss, SHEETS.STUDENT_ATTENDANCE);
+      output.data = getSheetData(schoolSs, SHEETS.STUDENT_ATTENDANCE);
       return createJsonResponse(output, 200);
     }
 
     if (action === 'saveStudentAttendance' && payload) {
-      upsertRecord(ss, SHEETS.STUDENT_ATTENDANCE, 'id', payload);
-      recordAuthoritativeAudit(ss, requestId, authenticatedUsername, authenticatedRole, 'SAVE', 'STUDENT_ATTENDANCE', payload.id || '', 'تسجيل حضور طالب');
+      payload.schoolId = effectiveSchoolId;
+      upsertRecord(schoolSs, SHEETS.STUDENT_ATTENDANCE, 'id', payload);
+      recordAuthoritativeAudit(schoolSs, requestId, authenticatedUsername, authenticatedRole, 'SAVE', 'STUDENT_ATTENDANCE', payload.id || '', 'تسجيل حضور طالب');
       output.message = 'تم تسجيل حضور الطالب بنجاح';
       return createJsonResponse(output, 200);
     }
 
     if (action === 'bulkSaveStudentAttendance' && payload && Array.isArray(payload)) {
-      payload.forEach(function(rec) { upsertRecord(ss, SHEETS.STUDENT_ATTENDANCE, 'id', rec); });
+      payload.forEach(function(rec) {
+        rec.schoolId = effectiveSchoolId;
+        upsertRecord(schoolSs, SHEETS.STUDENT_ATTENDANCE, 'id', rec);
+      });
       output.message = 'تم حفظ دفعة حضور الطلاب بنجاح (' + payload.length + ' سجل)';
       return createJsonResponse(output, 200);
     }
 
     if (action === 'saveDailyStudentAttendanceBatch' && payload) {
-      var stdBatchRes = saveDailyStudentAttendanceBatch(ss, payload, authenticatedUsername, authenticatedRole, requestId);
+      var stdBatchRes = saveDailyStudentAttendanceBatch(schoolSs, payload, authenticatedUsername, authenticatedRole, requestId);
       if (!stdBatchRes.success) {
         return createJsonResponse({
           status: 'error',
@@ -724,9 +831,9 @@ function doPost(e) {
       return createJsonResponse(output, 200);
     }
 
-    // E. Staff & Employees (Financial fields stripped, Phase 2 model enforced)
+    // E. Staff & Employees (School-Scoped strictly to schoolSs)
     if (action === 'getEmployees') {
-      var rawEmployees = getSheetData(ss, SHEETS.EMPLOYEES);
+      var rawEmployees = getSheetData(schoolSs, SHEETS.EMPLOYEES);
       output.data = rawEmployees.map(function(emp) {
         var cleanEmp = Object.assign({}, emp);
         delete cleanEmp.basicSalary;
@@ -741,6 +848,23 @@ function doPost(e) {
     }
 
     if (action === 'saveEmployee' && payload) {
+      if (payload.id) {
+        var exEmps = getSheetData(schoolSs, SHEETS.EMPLOYEES);
+        for (var eI = 0; eI < exEmps.length; eI++) {
+          if (exEmps[eI].id === payload.id) {
+            if (exEmps[eI].schoolId && String(exEmps[eI].schoolId).trim().toUpperCase() !== String(effectiveSchoolId).trim().toUpperCase()) {
+              recordAuthoritativeAudit(ss, requestId, authenticatedUsername, authenticatedRole, 'CROSS_SCHOOL_ACCESS_DENIED', 'EMPLOYEES', payload.id, 'محاولة تعديل موظف من مدرسة أخرى');
+              return createJsonResponse({
+                status: 'error',
+                code: 'CROSS_SCHOOL_ACCESS_DENIED',
+                message: 'تم رفض العملية: الموظف المطلوب ينتمي إلى مدرسة أخرى',
+                requestId: requestId
+              }, 403);
+            }
+            break;
+          }
+        }
+      }
       var sanitizedEmp = Object.assign({}, payload);
       delete sanitizedEmp.basicSalary;
       delete sanitizedEmp.allowances;
@@ -753,8 +877,9 @@ function doPost(e) {
       if (sanitizedEmp.employeeType === 'Teacher' && !sanitizedEmp.teacherCode && sanitizedEmp.id) {
         sanitizedEmp.teacherCode = sanitizedEmp.id;
       }
-      upsertRecord(ss, SHEETS.EMPLOYEES, 'id', sanitizedEmp);
-      recordAuthoritativeAudit(ss, requestId, authenticatedUsername, authenticatedRole, 'SAVE', 'EMPLOYEES', payload.id || '', 'حفظ سجل موظف');
+      sanitizedEmp.schoolId = effectiveSchoolId;
+      upsertRecord(schoolSs, SHEETS.EMPLOYEES, 'id', sanitizedEmp);
+      recordAuthoritativeAudit(schoolSs, requestId, authenticatedUsername, authenticatedRole, 'SAVE', 'EMPLOYEES', payload.id || '', 'حفظ سجل موظف');
       output.message = 'تم حفظ بيانات الموظف بنجاح';
       return createJsonResponse(output, 200);
     }
@@ -762,7 +887,7 @@ function doPost(e) {
     if (action === 'bulkSaveEmployees' && payload && Array.isArray(payload)) {
       var addedCount = 0;
       var updatedCount = 0;
-      var existingEmps = getSheetData(ss, SHEETS.EMPLOYEES);
+      var existingEmps = getSheetData(schoolSs, SHEETS.EMPLOYEES);
 
       payload.forEach(function(emp) {
         var clean = Object.assign({}, emp);
@@ -778,6 +903,7 @@ function doPost(e) {
         if (clean.employeeType === 'Teacher' && !clean.teacherCode && clean.id) {
           clean.teacherCode = clean.id;
         }
+        clean.schoolId = effectiveSchoolId;
 
         // Match existing by immutable id, or by unique nationalId if present
         var matchIdx = -1;
@@ -800,51 +926,80 @@ function doPost(e) {
 
         if (matchIdx >= 0) {
           clean.id = existingEmps[matchIdx].id;
-          upsertRecord(ss, SHEETS.EMPLOYEES, 'id', clean);
+          upsertRecord(schoolSs, SHEETS.EMPLOYEES, 'id', clean);
           updatedCount++;
         } else {
           if (!clean.id) {
             clean.id = 'EMP' + Utilities.getUuid().substring(0, 6).toUpperCase();
           }
-          upsertRecord(ss, SHEETS.EMPLOYEES, 'id', clean);
+          upsertRecord(schoolSs, SHEETS.EMPLOYEES, 'id', clean);
           existingEmps.push(clean);
           addedCount++;
         }
       });
 
-      recordAuthoritativeAudit(ss, requestId, authenticatedUsername, authenticatedRole, 'BULK_SAVE', 'EMPLOYEES', payload.length + ' records', 'استيراد وحفظ دفعة عاملين ومدرسين');
+      recordAuthoritativeAudit(schoolSs, requestId, authenticatedUsername, authenticatedRole, 'BULK_SAVE', 'EMPLOYEES', payload.length + ' records', 'استيراد وحفظ دفعة عاملين ومدرسين');
       output.message = 'تم حفظ واستيراد ' + payload.length + ' سجل بنجاح (' + addedCount + ' جديد، ' + updatedCount + ' تحديث)';
       output.stats = { added: addedCount, updated: updatedCount };
       return createJsonResponse(output, 200);
     }
 
     if (action === 'deleteEmployee' && payload && payload.id) {
-      deleteRecord(ss, SHEETS.EMPLOYEES, 'id', payload.id);
-      recordAuthoritativeAudit(ss, requestId, authenticatedUsername, authenticatedRole, 'DELETE', 'EMPLOYEES', payload.id, 'حذف موظف');
+      var allEmpsForDel = getSheetData(schoolSs, SHEETS.EMPLOYEES);
+      var targetEmpForDel = null;
+      for (var edIdx = 0; edIdx < allEmpsForDel.length; edIdx++) {
+        if (allEmpsForDel[edIdx].id === payload.id) {
+          targetEmpForDel = allEmpsForDel[edIdx];
+          break;
+        }
+      }
+      if (!targetEmpForDel) {
+        return createJsonResponse({
+          status: 'error',
+          code: 'RESOURCE_NOT_FOUND',
+          message: 'سجل الموظف غير موجود في قاعدة بيانات هذه المدرسة',
+          requestId: requestId
+        }, 404);
+      }
+      if (targetEmpForDel.schoolId && String(targetEmpForDel.schoolId).trim().toUpperCase() !== String(effectiveSchoolId).trim().toUpperCase()) {
+        recordAuthoritativeAudit(ss, requestId, authenticatedUsername, authenticatedRole, 'CROSS_SCHOOL_ACCESS_DENIED', 'EMPLOYEES', payload.id, 'محاولة حذف موظف يتبع مدرسة أخرى');
+        return createJsonResponse({
+          status: 'error',
+          code: 'CROSS_SCHOOL_ACCESS_DENIED',
+          message: 'تم رفض العملية: الموظف المطلوب ينتمي إلى مدرسة أخرى',
+          requestId: requestId
+        }, 403);
+      }
+      deleteRecord(schoolSs, SHEETS.EMPLOYEES, 'id', payload.id);
+      recordAuthoritativeAudit(schoolSs, requestId, authenticatedUsername, authenticatedRole, 'DELETE', 'EMPLOYEES', payload.id, 'حذف موظف');
       output.message = 'تم حذف سجل الموظف بنجاح';
       return createJsonResponse(output, 200);
     }
 
-    // F. Employee Attendance, Leaves, Permissions
+    // F. Employee Attendance, Leaves, Permissions (School-Scoped strictly to schoolSs)
     if (action === 'getAttendance') {
-      output.data = getSheetData(ss, SHEETS.ATTENDANCE);
+      output.data = getSheetData(schoolSs, SHEETS.ATTENDANCE);
       return createJsonResponse(output, 200);
     }
 
     if (action === 'saveAttendance' && payload) {
-      upsertRecord(ss, SHEETS.ATTENDANCE, 'id', payload);
+      payload.schoolId = effectiveSchoolId;
+      upsertRecord(schoolSs, SHEETS.ATTENDANCE, 'id', payload);
       output.message = 'تم تسجيل دوام الموظف بنجاح';
       return createJsonResponse(output, 200);
     }
 
     if (action === 'bulkSaveAttendance' && payload && Array.isArray(payload)) {
-      payload.forEach(function(rec) { upsertRecord(ss, SHEETS.ATTENDANCE, 'id', rec); });
+      payload.forEach(function(rec) {
+        rec.schoolId = effectiveSchoolId;
+        upsertRecord(schoolSs, SHEETS.ATTENDANCE, 'id', rec);
+      });
       output.message = 'تم حفظ دوام الموظفين (' + payload.length + ' سجل)';
       return createJsonResponse(output, 200);
     }
 
     if ((action === 'saveDailyStaffAttendanceBatch' || action === 'saveDailyTeacherAttendanceBatch') && payload) {
-      var staffBatchRes = saveDailyStaffAttendanceBatch(ss, payload, authenticatedUsername, authenticatedRole, requestId);
+      var staffBatchRes = saveDailyStaffAttendanceBatch(schoolSs, payload, authenticatedUsername, authenticatedRole, requestId);
       if (!staffBatchRes.success) {
         return createJsonResponse({
           status: 'error',
@@ -859,63 +1014,69 @@ function doPost(e) {
     }
 
     if (action === 'getLeaves') {
-      output.data = getSheetData(ss, SHEETS.LEAVES);
+      output.data = getSheetData(schoolSs, SHEETS.LEAVES);
       return createJsonResponse(output, 200);
     }
 
     if (action === 'saveLeave' && payload) {
-      upsertRecord(ss, SHEETS.LEAVES, 'id', payload);
-      recordAuthoritativeAudit(ss, requestId, authenticatedUsername, authenticatedRole, 'SAVE', 'LEAVES', payload.id || '', 'طلب / اعتماد إجازة');
+      payload.schoolId = effectiveSchoolId;
+      upsertRecord(schoolSs, SHEETS.LEAVES, 'id', payload);
+      recordAuthoritativeAudit(schoolSs, requestId, authenticatedUsername, authenticatedRole, 'SAVE', 'LEAVES', payload.id || '', 'طلب / اعتماد إجازة');
       output.message = 'تم حفظ سجل الإجازة بنجاح';
       return createJsonResponse(output, 200);
     }
 
     if (action === 'deleteLeave' && payload && payload.id) {
-      deleteRecord(ss, SHEETS.LEAVES, 'id', payload.id);
+      deleteRecord(schoolSs, SHEETS.LEAVES, 'id', payload.id);
       output.message = 'تم حذف سجل الإجازة بنجاح';
       return createJsonResponse(output, 200);
     }
 
     if (action === 'getPermissions') {
-      output.data = getSheetData(ss, SHEETS.PERMISSIONS);
+      output.data = getSheetData(schoolSs, SHEETS.PERMISSIONS);
       return createJsonResponse(output, 200);
     }
 
     if (action === 'savePermission' && payload) {
-      upsertRecord(ss, SHEETS.PERMISSIONS, 'id', payload);
+      payload.schoolId = effectiveSchoolId;
+      upsertRecord(schoolSs, SHEETS.PERMISSIONS, 'id', payload);
       output.message = 'تم حفظ سجل الإذن بنجاح';
       return createJsonResponse(output, 200);
     }
 
-    // G. Timetable - Teacher Teaching Assignments
+    // G. Timetable - Teacher Teaching Assignments (School-Scoped strictly to schoolSs)
     if (action === 'getTeacherAssignments') {
-      output.data = getSheetData(ss, SHEETS.TEACHER_TEACHING_ASSIGNMENTS);
+      output.data = getSheetData(schoolSs, SHEETS.TEACHER_TEACHING_ASSIGNMENTS);
       return createJsonResponse(output, 200);
     }
 
     if (action === 'saveTeacherAssignment' && payload) {
-      upsertRecord(ss, SHEETS.TEACHER_TEACHING_ASSIGNMENTS, 'id', payload);
-      recordAuthoritativeAudit(ss, requestId, authenticatedUsername, authenticatedRole, 'SAVE', 'TEACHING_ASSIGNMENT', payload.id || '', 'إسناد تدريس لمعلم');
+      payload.schoolId = effectiveSchoolId;
+      upsertRecord(schoolSs, SHEETS.TEACHER_TEACHING_ASSIGNMENTS, 'id', payload);
+      recordAuthoritativeAudit(schoolSs, requestId, authenticatedUsername, authenticatedRole, 'SAVE', 'TEACHING_ASSIGNMENT', payload.id || '', 'إسناد تدريس لمعلم');
       output.message = 'تم حفظ إسناد التدريس بنجاح';
       return createJsonResponse(output, 200);
     }
 
     if (action === 'deleteTeacherAssignment' && payload && payload.id) {
-      deleteRecord(ss, SHEETS.TEACHER_TEACHING_ASSIGNMENTS, 'id', payload.id);
-      recordAuthoritativeAudit(ss, requestId, authenticatedUsername, authenticatedRole, 'DELETE', 'TEACHING_ASSIGNMENT', payload.id, 'حذف إسناد تدريس');
+      deleteRecord(schoolSs, SHEETS.TEACHER_TEACHING_ASSIGNMENTS, 'id', payload.id);
+      recordAuthoritativeAudit(schoolSs, requestId, authenticatedUsername, authenticatedRole, 'DELETE', 'TEACHING_ASSIGNMENT', payload.id, 'حذف إسناد تدريس');
       output.message = 'تم حذف إسناد التدريس بنجاح';
       return createJsonResponse(output, 200);
     }
 
     if (action === 'bulkSaveTeacherAssignments' && payload && Array.isArray(payload)) {
-      payload.forEach(function(rec) { upsertRecord(ss, SHEETS.TEACHER_TEACHING_ASSIGNMENTS, 'id', rec); });
+      payload.forEach(function(rec) {
+        rec.schoolId = effectiveSchoolId;
+        upsertRecord(schoolSs, SHEETS.TEACHER_TEACHING_ASSIGNMENTS, 'id', rec);
+      });
       output.message = 'تم حفظ ' + payload.length + ' إسناد تدريس بنجاح';
       return createJsonResponse(output, 200);
     }
 
-    // H. Timetable - Schedule Entries (Weekly Timetable)
+    // H. Timetable - Schedule Entries (Weekly Timetable - School-Scoped strictly to schoolSs)
     if (action === 'getSchedule') {
-      output.data = getSheetData(ss, SHEETS.SCHEDULE);
+      output.data = getSheetData(schoolSs, SHEETS.SCHEDULE);
       return createJsonResponse(output, 200);
     }
 
@@ -932,7 +1093,7 @@ function doPost(e) {
           }, 429);
         }
 
-        var scheduleConflict = validateServerScheduleConflicts(ss, payload);
+        var scheduleConflict = validateServerScheduleConflicts(schoolSs, payload);
         if (!scheduleConflict.success) {
           return createJsonResponse({
             status: 'error',
@@ -942,8 +1103,9 @@ function doPost(e) {
           }, 400);
         }
 
-        upsertRecord(ss, SHEETS.SCHEDULE, 'id', payload);
-        recordAuthoritativeAudit(ss, requestId, authenticatedUsername, authenticatedRole, 'SAVE', 'SCHEDULE', payload.id || '', 'حفظ حصة دراسية مع التحقق الأمني');
+        payload.schoolId = effectiveSchoolId;
+        upsertRecord(schoolSs, SHEETS.SCHEDULE, 'id', payload);
+        recordAuthoritativeAudit(schoolSs, requestId, authenticatedUsername, authenticatedRole, 'SAVE', 'SCHEDULE', payload.id || '', 'حفظ حصة دراسية مع التحقق الأمني');
         output.message = 'تم حفظ الحصة الدراسية بنجاح';
         return createJsonResponse(output, 200);
       } finally {
@@ -952,33 +1114,36 @@ function doPost(e) {
     }
 
     if (action === 'bulkSaveSchedule' && payload && Array.isArray(payload)) {
-      payload.forEach(function(rec) { upsertRecord(ss, SHEETS.SCHEDULE, 'id', rec); });
-      recordAuthoritativeAudit(ss, requestId, authenticatedUsername, authenticatedRole, 'BULK_SAVE', 'SCHEDULE', payload.length + ' slots', 'حفظ دفعة جدول دراسي');
+      payload.forEach(function(rec) {
+        rec.schoolId = effectiveSchoolId;
+        upsertRecord(schoolSs, SHEETS.SCHEDULE, 'id', rec);
+      });
+      recordAuthoritativeAudit(schoolSs, requestId, authenticatedUsername, authenticatedRole, 'BULK_SAVE', 'SCHEDULE', payload.length + ' slots', 'حفظ دفعة جدول دراسي');
       output.message = 'تم حفظ ' + payload.length + ' حصة في الجدول بنجاح';
       return createJsonResponse(output, 200);
     }
 
     if (action === 'deleteScheduleEntry' && payload && payload.id) {
-      deleteRecord(ss, SHEETS.SCHEDULE, 'id', payload.id);
+      deleteRecord(schoolSs, SHEETS.SCHEDULE, 'id', payload.id);
       output.message = 'تم حذف الحصة الدراسية بنجاح';
       return createJsonResponse(output, 200);
     }
 
     if (action === 'publishSchedule' && payload) {
-      var pubResult = publishScheduleBatch(ss, payload.classroomOrGrade, payload.version, authenticatedUsername);
-      recordAuthoritativeAudit(ss, requestId, authenticatedUsername, authenticatedRole, 'PUBLISH', 'SCHEDULE', payload.classroomOrGrade || 'ALL', 'نشر الجدول الدراسي رسمياً');
+      var pubResult = publishScheduleBatch(schoolSs, payload.classroomOrGrade, payload.version, authenticatedUsername);
+      recordAuthoritativeAudit(schoolSs, requestId, authenticatedUsername, authenticatedRole, 'PUBLISH', 'SCHEDULE', payload.classroomOrGrade || 'ALL', 'نشر الجدول الدراسي رسمياً');
       output.message = pubResult.message;
       return createJsonResponse(output, 200);
     }
 
-    // I. Schedule Breaks
+    // I. Schedule Breaks (School-Scoped strictly to schoolSs)
     if (action === 'getScheduleBreaks') {
-      output.data = getSheetData(ss, SHEETS.SCHEDULE_BREAKS);
+      output.data = getSheetData(schoolSs, SHEETS.SCHEDULE_BREAKS);
       return createJsonResponse(output, 200);
     }
 
     if (action === 'saveScheduleBreaks' && payload && Array.isArray(payload)) {
-      var breaksSheet = ss.getSheetByName(SHEETS.SCHEDULE_BREAKS);
+      var breaksSheet = schoolSs.getSheetByName(SHEETS.SCHEDULE_BREAKS);
       if (breaksSheet) {
         breaksSheet.clearContents();
         var headers = ['id', 'name', 'afterPeriod', 'startTime', 'endTime', 'durationMinutes', 'isActive'];
@@ -992,25 +1157,29 @@ function doPost(e) {
       return createJsonResponse(output, 200);
     }
 
-    // J. Teacher Availability
+    // J. Teacher Availability (School-Scoped strictly to schoolSs)
     if (action === 'getTeacherAvailability') {
-      output.data = getSheetData(ss, SHEETS.TEACHER_AVAILABILITY);
+      output.data = getSheetData(schoolSs, SHEETS.TEACHER_AVAILABILITY);
       return createJsonResponse(output, 200);
     }
 
     if (action === 'saveTeacherAvailability' && payload) {
       if (Array.isArray(payload)) {
-        payload.forEach(function(rec) { upsertRecord(ss, SHEETS.TEACHER_AVAILABILITY, 'id', rec); });
+        payload.forEach(function(rec) {
+          rec.schoolId = effectiveSchoolId;
+          upsertRecord(schoolSs, SHEETS.TEACHER_AVAILABILITY, 'id', rec);
+        });
       } else {
-        upsertRecord(ss, SHEETS.TEACHER_AVAILABILITY, 'id', payload);
+        payload.schoolId = effectiveSchoolId;
+        upsertRecord(schoolSs, SHEETS.TEACHER_AVAILABILITY, 'id', payload);
       }
       output.message = 'تم حفظ بيانات تفرغ المعلم بنجاح';
       return createJsonResponse(output, 200);
     }
 
-    // K. Reserve Substitutions (With Server-Side Hard-Block & LockService)
+    // K. Reserve Substitutions (School-Scoped strictly to schoolSs)
     if (action === 'getReserveAssignments') {
-      output.data = getSheetData(ss, SHEETS.RESERVE_ASSIGNMENTS);
+      output.data = getSheetData(schoolSs, SHEETS.RESERVE_ASSIGNMENTS);
       return createJsonResponse(output, 200);
     }
 
@@ -1027,7 +1196,8 @@ function doPost(e) {
           }, 429);
         }
 
-        var reserveResult = handleSaveReserveAssignment(ss, payload, authenticatedUsername, requestId);
+        payload.schoolId = effectiveSchoolId;
+        var reserveResult = handleSaveReserveAssignment(schoolSs, payload, authenticatedUsername, requestId);
         if (!reserveResult.success) {
           return createJsonResponse({
             status: 'error',
@@ -1037,7 +1207,7 @@ function doPost(e) {
           }, 400);
         }
 
-        recordAuthoritativeAudit(ss, requestId, authenticatedUsername, authenticatedRole, 'ASSIGN', 'RESERVE', payload.id || '', 'إسناد حصة احتياطي');
+        recordAuthoritativeAudit(schoolSs, requestId, authenticatedUsername, authenticatedRole, 'ASSIGN', 'RESERVE', payload.id || '', 'إسناد حصة احتياطي');
         output.message = reserveResult.message;
         output.record = reserveResult.record;
         return createJsonResponse(output, 200);
@@ -1047,30 +1217,32 @@ function doPost(e) {
     }
 
     if (action === 'cancelReserveAssignment' && payload && payload.id) {
-      var cancelRes = cancelReserveAssignmentRecord(ss, payload.id, payload.reason, authenticatedUsername);
+      var cancelRes = cancelReserveAssignmentRecord(schoolSs, payload.id, payload.reason, authenticatedUsername);
       output.message = cancelRes.message;
       return createJsonResponse(output, 200);
     }
 
-    // L. Supervision Schedule
+    // L. Supervision Schedule (School-Scoped strictly to schoolSs)
     if (action === 'getSupervisionLocations') {
-      output.data = getSheetData(ss, SHEETS.SUPERVISION_LOCATIONS);
+      output.data = getSheetData(schoolSs, SHEETS.SUPERVISION_LOCATIONS);
       return createJsonResponse(output, 200);
     }
 
     if (action === 'saveSupervisionLocation' && payload) {
-      upsertRecord(ss, SHEETS.SUPERVISION_LOCATIONS, 'id', payload);
+      payload.schoolId = effectiveSchoolId;
+      upsertRecord(schoolSs, SHEETS.SUPERVISION_LOCATIONS, 'id', payload);
       output.message = 'تم حفظ موقع الإشراف بنجاح';
       return createJsonResponse(output, 200);
     }
 
     if (action === 'getSupervisionAssignments') {
-      output.data = getSheetData(ss, SHEETS.SUPERVISION_ASSIGNMENTS);
+      output.data = getSheetData(schoolSs, SHEETS.SUPERVISION_ASSIGNMENTS);
       return createJsonResponse(output, 200);
     }
 
     if (action === 'saveSupervisionAssignment' && payload) {
-      var supResult = handleSaveSupervisionAssignment(ss, payload, authenticatedUsername, requestId);
+      payload.schoolId = effectiveSchoolId;
+      var supResult = handleSaveSupervisionAssignment(schoolSs, payload, authenticatedUsername, requestId);
       if (!supResult.success) {
         return createJsonResponse({
           status: 'error',
@@ -1083,63 +1255,66 @@ function doPost(e) {
       return createJsonResponse(output, 200);
     }
 
-    // M. Homework Management (Staff-Level Review & Approval)
+    // M. Homework Management (School-Scoped strictly to schoolSs)
     if (action === 'getHomework') {
-      output.data = getSheetData(ss, SHEETS.HOMEWORK);
+      output.data = getSheetData(schoolSs, SHEETS.HOMEWORK);
       return createJsonResponse(output, 200);
     }
 
     if (action === 'saveHomework' && payload) {
-      upsertRecord(ss, SHEETS.HOMEWORK, 'id', payload);
-      recordAuthoritativeAudit(ss, requestId, authenticatedUsername, authenticatedRole, 'SAVE', 'HOMEWORK', payload.id || '', 'حفظ / اعتماد واجب منزلي');
+      payload.schoolId = effectiveSchoolId;
+      upsertRecord(schoolSs, SHEETS.HOMEWORK, 'id', payload);
+      recordAuthoritativeAudit(schoolSs, requestId, authenticatedUsername, authenticatedRole, 'SAVE', 'HOMEWORK', payload.id || '', 'حفظ / اعتماد واجب منزلي');
       output.message = 'تم حفظ سجل الواجب بنجاح';
       return createJsonResponse(output, 200);
     }
 
     if (action === 'deleteHomework' && payload && payload.id) {
-      deleteRecord(ss, SHEETS.HOMEWORK, 'id', payload.id);
+      deleteRecord(schoolSs, SHEETS.HOMEWORK, 'id', payload.id);
       output.message = 'تم حذف الواجب بنجاح';
       return createJsonResponse(output, 200);
     }
 
-    // N. Teacher Lesson Resources (Staff-Level)
+    // N. Teacher Lesson Resources (School-Scoped strictly to schoolSs)
     if (action === 'getTeacherResources') {
-      output.data = getSheetData(ss, SHEETS.TEACHER_RESOURCES);
+      output.data = getSheetData(schoolSs, SHEETS.TEACHER_RESOURCES);
       return createJsonResponse(output, 200);
     }
 
     if (action === 'saveTeacherResource' && payload) {
-      upsertRecord(ss, SHEETS.TEACHER_RESOURCES, 'id', payload);
+      payload.schoolId = effectiveSchoolId;
+      upsertRecord(schoolSs, SHEETS.TEACHER_RESOURCES, 'id', payload);
       output.message = 'تم حفظ المورد التعليمي بنجاح';
       return createJsonResponse(output, 200);
     }
 
     if (action === 'deleteTeacherResource' && payload && payload.id) {
-      deleteRecord(ss, SHEETS.TEACHER_RESOURCES, 'id', payload.id);
+      deleteRecord(schoolSs, SHEETS.TEACHER_RESOURCES, 'id', payload.id);
       output.message = 'تم حذف المورد بنجاح';
       return createJsonResponse(output, 200);
     }
 
-    // O. Exam Schedules
+    // O. Exam Schedules (School-Scoped strictly to schoolSs)
     if (action === 'getExamSchedules') {
-      output.data = getSheetData(ss, SHEETS.EXAM_SCHEDULES);
+      output.data = getSheetData(schoolSs, SHEETS.EXAM_SCHEDULES);
       return createJsonResponse(output, 200);
     }
 
     if (action === 'saveExamSchedule' && payload) {
-      upsertRecord(ss, SHEETS.EXAM_SCHEDULES, 'id', payload);
-      recordAuthoritativeAudit(ss, requestId, authenticatedUsername, authenticatedRole, 'SAVE', 'EXAM_SCHEDULE', payload.id || '', 'حفظ جدول امتحان');
+      payload.schoolId = effectiveSchoolId;
+      upsertRecord(schoolSs, SHEETS.EXAM_SCHEDULES, 'id', payload);
+      recordAuthoritativeAudit(schoolSs, requestId, authenticatedUsername, authenticatedRole, 'SAVE', 'EXAM_SCHEDULE', payload.id || '', 'حفظ جدول امتحان');
       output.message = 'تم حفظ جدول الامتحان بنجاح';
       return createJsonResponse(output, 200);
     }
 
     if (action === 'deleteExamSchedule' && payload && payload.id) {
-      deleteRecord(ss, SHEETS.EXAM_SCHEDULES, 'id', payload.id);
+      deleteRecord(schoolSs, SHEETS.EXAM_SCHEDULES, 'id', payload.id);
       output.message = 'تم حذف موعد الامتحان بنجاح';
       return createJsonResponse(output, 200);
     }
 
-    // P. Teacher Portal PIN (Retired) & Account Management (By Staff)
+    // P. Teacher Portal PIN (Retired) & Account Management (School-Scoped strictly to schoolSs)
     if (action === 'setTeacherPortalPin') {
       return createJsonResponse({
         status: 'error',
@@ -1151,7 +1326,7 @@ function doPost(e) {
     }
 
     if (action === 'createTeacherAccount' && payload) {
-      var createAccRes = createTeacherAccount(ss, payload, authenticatedUsername, authenticatedRole, requestId);
+      var createAccRes = createTeacherAccount(schoolSs, payload, authenticatedUsername, authenticatedRole, requestId);
       if (!createAccRes.success) {
         return createJsonResponse({
           status: 'error',
@@ -1166,7 +1341,7 @@ function doPost(e) {
     }
 
     if (action === 'resetTeacherPassword' && payload) {
-      var resetPassRes = resetTeacherPassword(ss, payload, authenticatedUsername, authenticatedRole, requestId);
+      var resetPassRes = resetTeacherPassword(schoolSs, payload, authenticatedUsername, authenticatedRole, requestId);
       if (!resetPassRes.success) {
         return createJsonResponse({
           status: 'error',
@@ -1180,7 +1355,7 @@ function doPost(e) {
     }
 
     if (action === 'setTeacherAccountStatus' && payload) {
-      var statusRes = setTeacherAccountStatus(ss, payload, authenticatedUsername, authenticatedRole, requestId);
+      var statusRes = setTeacherAccountStatus(schoolSs, payload, authenticatedUsername, authenticatedRole, requestId);
       if (!statusRes.success) {
         return createJsonResponse({
           status: 'error',
@@ -1194,80 +1369,85 @@ function doPost(e) {
     }
 
     if (action === 'getTeacherAccounts') {
-      output.data = getTeacherAccountsSafeList(ss);
+      output.data = getTeacherAccountsSafeList(schoolSs);
       return createJsonResponse(output, 200);
     }
 
-    // Q. Behavior & Social Support
+    // Q. Behavior & Social Support (School-Scoped strictly to schoolSs)
     if (action === 'getBehaviorRecords') {
-      output.violations = getSheetData(ss, SHEETS.BEHAVIOR_VIOLATIONS);
-      output.cases = getSheetData(ss, SHEETS.BEHAVIOR_CASES);
-      output.positiveTypes = getSheetData(ss, SHEETS.POSITIVE_BEHAVIOR_TYPES);
+      output.violations = getSheetData(schoolSs, SHEETS.BEHAVIOR_VIOLATIONS);
+      output.cases = getSheetData(schoolSs, SHEETS.BEHAVIOR_CASES);
+      output.positiveTypes = getSheetData(schoolSs, SHEETS.POSITIVE_BEHAVIOR_TYPES);
       return createJsonResponse(output, 200);
     }
 
     if (action === 'saveBehaviorViolation' && payload) {
-      upsertRecord(ss, SHEETS.BEHAVIOR_VIOLATIONS, 'id', payload);
+      payload.schoolId = effectiveSchoolId;
+      upsertRecord(schoolSs, SHEETS.BEHAVIOR_VIOLATIONS, 'id', payload);
       output.message = 'تم تسجيل المخالفة السلوكية بنجاح';
       return createJsonResponse(output, 200);
     }
 
     if (action === 'saveBehaviorCase' && payload) {
-      upsertRecord(ss, SHEETS.BEHAVIOR_CASES, 'id', payload);
+      payload.schoolId = effectiveSchoolId;
+      upsertRecord(schoolSs, SHEETS.BEHAVIOR_CASES, 'id', payload);
       output.message = 'تم حفظ دراسة الحالة بنجاح';
       return createJsonResponse(output, 200);
     }
 
-    // R. Academic Years & Enrollments
+    // R. Academic Years & Enrollments (School-Scoped strictly to schoolSs)
     if (action === 'getAcademicYears') {
-      output.academicYears = getSheetData(ss, SHEETS.ACADEMIC_YEARS);
-      output.enrollments = getSheetData(ss, SHEETS.STUDENT_ENROLLMENTS);
+      output.academicYears = getSheetData(schoolSs, SHEETS.ACADEMIC_YEARS);
+      output.enrollments = getSheetData(schoolSs, SHEETS.STUDENT_ENROLLMENTS);
       return createJsonResponse(output, 200);
     }
 
     if (action === 'saveAcademicYear' && payload) {
-      upsertRecord(ss, SHEETS.ACADEMIC_YEARS, 'id', payload);
+      payload.schoolId = effectiveSchoolId;
+      upsertRecord(schoolSs, SHEETS.ACADEMIC_YEARS, 'id', payload);
       output.message = 'تم حفظ العام الدراسي بنجاح';
       return createJsonResponse(output, 200);
     }
 
     if (action === 'saveStudentEnrollment' && payload) {
-      upsertRecord(ss, SHEETS.STUDENT_ENROLLMENTS, 'id', payload);
+      payload.schoolId = effectiveSchoolId;
+      upsertRecord(schoolSs, SHEETS.STUDENT_ENROLLMENTS, 'id', payload);
       output.message = 'تم حفظ قيد الطالب بنجاح';
       return createJsonResponse(output, 200);
     }
 
-    // S. Parent Communications (Staff Log Only)
+    // S. Parent Communications (School-Scoped strictly to schoolSs)
     if (action === 'getParentCommunications') {
-      output.data = getSheetData(ss, SHEETS.PARENT_COMMUNICATIONS);
+      output.data = getSheetData(schoolSs, SHEETS.PARENT_COMMUNICATIONS);
       return createJsonResponse(output, 200);
     }
 
     if (action === 'saveParentCommunication' && payload) {
-      upsertRecord(ss, SHEETS.PARENT_COMMUNICATIONS, 'id', payload);
+      payload.schoolId = effectiveSchoolId;
+      upsertRecord(schoolSs, SHEETS.PARENT_COMMUNICATIONS, 'id', payload);
       output.message = 'تم تسجيل محضر التواصل بنجاح';
       return createJsonResponse(output, 200);
     }
 
-    // T. Settings & Audit
+    // T. Settings & Audit (School-Scoped strictly to schoolSs)
     if (action === 'getSettings') {
-      output.data = getSettingsDataClean(ss);
+      output.data = getSettingsDataClean(schoolSs);
       return createJsonResponse(output, 200);
     }
 
     if (action === 'saveSettings' && payload) {
-      saveSettingsDataClean(ss, payload);
+      saveSettingsDataClean(schoolSs, payload);
       output.message = 'تم حفظ إعدادات المدرسة بنجاح';
       return createJsonResponse(output, 200);
     }
 
     if (action === 'getAuditLogs') {
-      output.data = getSheetData(ss, SHEETS.AUDIT_LOGS);
+      output.data = getSheetData(schoolSs, SHEETS.AUDIT_LOGS);
       return createJsonResponse(output, 200);
     }
 
     if (action === 'addAuditLog' && payload) {
-      recordAuthoritativeAudit(ss, requestId, authenticatedUsername, authenticatedRole, payload.action || 'CUSTOM', payload.entity || 'SYSTEM', payload.targetId || '', payload.details || '');
+      recordAuthoritativeAudit(schoolSs, requestId, authenticatedUsername, authenticatedRole, payload.action || 'CUSTOM', payload.entity || 'SYSTEM', payload.targetId || '', payload.details || '');
       output.message = 'تم قيد العملية في سجل الرقابة';
       return createJsonResponse(output, 200);
     }
@@ -1426,16 +1606,41 @@ function handleStaffLogin(masterSs, inputUsername, inputPassword, requestId, sch
     return { success: false, code: 'CREDENTIALS_REQUIRED', message: 'يرجى إدخال اسم المستخدم وكلمة المرور' };
   }
 
-  var targetSchoolId = String(schoolId || 'SCH-BADR').trim().toUpperCase();
-  var schoolCtx = resolveSchoolContext(targetSchoolId, masterSs);
-  if (!schoolCtx) {
-    return { success: false, code: 'SCHOOL_NOT_FOUND', message: 'المدرسة المحددة غير مسجلة في النظام.' };
-  }
-  if (String(schoolCtx.status || 'Active').trim() !== 'Active') {
-    return { success: false, code: 'SCHOOL_INACTIVE', message: 'المدرسة المحددة غير مفعلة حالياً.' };
+  var targetSchoolId = schoolId ? String(schoolId).trim().toUpperCase() : '';
+  if (!targetSchoolId) {
+    // Attempt lookup in master USERS to determine bound school or SystemAdmin
+    var masterUsers = getSheetData(masterSs, SHEETS.USERS);
+    var foundMasterUser = null;
+    for (var mU = 0; mU < masterUsers.length; mU++) {
+      var muName = String(masterUsers[mU].username || '').trim().toLowerCase();
+      var muId = String(masterUsers[mU].id || '').trim().toLowerCase();
+      var muLogin = String(masterUsers[mU].loginNumber || '').trim();
+      if (muName === inputUsername || muId === inputUsername || (muLogin && muLogin === inputUsername)) {
+        foundMasterUser = masterUsers[mU];
+        break;
+      }
+    }
+    if (foundMasterUser && foundMasterUser.schoolId) {
+      targetSchoolId = String(foundMasterUser.schoolId).trim().toUpperCase();
+    } else if (foundMasterUser && foundMasterUser.role === 'SystemAdmin') {
+      // System admin may use master spreadsheet directly
+      targetSchoolId = '';
+    } else {
+      return { success: false, code: 'SCHOOL_ID_REQUIRED', message: 'يرجى تحديد المدرسة لتسجيل الدخول.' };
+    }
   }
 
-  var targetSs = getSchoolSpreadsheet(targetSchoolId, masterSs);
+  var targetSs = masterSs;
+  if (targetSchoolId) {
+    var schoolCtx = resolveSchoolContext(targetSchoolId, masterSs);
+    if (!schoolCtx) {
+      return { success: false, code: 'SCHOOL_NOT_FOUND', message: 'المدرسة المحددة غير مسجلة في النظام.' };
+    }
+    if (String(schoolCtx.status || 'Active').trim() !== 'Active') {
+      return { success: false, code: 'SCHOOL_INACTIVE', message: 'المدرسة المحددة غير مفعلة حالياً.' };
+    }
+    targetSs = getSchoolSpreadsheet(targetSchoolId, masterSs);
+  }
   var users = getSheetData(targetSs, SHEETS.USERS);
   if (!users || users.length === 0) {
     return {
@@ -1593,7 +1798,10 @@ function handleTeacherLogin(masterSs, usernameOrCode, password, requestId, schoo
     return { success: false, code: 'INVALID_CREDENTIALS', message: 'اسم المستخدم أو كلمة المرور غير صحيحة' };
   }
 
-  var targetSchoolId = String(schoolId || 'SCH-BADR').trim().toUpperCase();
+  var targetSchoolId = schoolId ? String(schoolId).trim().toUpperCase() : '';
+  if (!targetSchoolId) {
+    return { success: false, code: 'SCHOOL_ID_REQUIRED', message: 'يرجى تحديد المدرسة لتسجيل الدخول.' };
+  }
   var schoolCtx = resolveSchoolContext(targetSchoolId, masterSs);
   if (!schoolCtx) {
     return { success: false, code: 'SCHOOL_NOT_FOUND', message: 'المدرسة المحددة غير مسجلة في النظام.' };
@@ -1984,16 +2192,18 @@ function validateSessionToken(ss, token) {
   var userActive = true;
   var userStatus = 'Active';
   var userEmployeeId = matched.employeeId || '';
+  var userRecord = null;
   try {
     var users = getSheetData(ss, SHEETS.USERS);
     for (var uIdx = 0; uIdx < users.length; uIdx++) {
       if (String(users[uIdx].id || '') === String(matched.userId || '') || String(users[uIdx].username || '').toLowerCase() === String(matched.username || '').toLowerCase()) {
-        userStatus = String(users[uIdx].status || 'Active');
-        var isAct = users[uIdx].isActive;
+        userRecord = users[uIdx];
+        userStatus = String(userRecord.status || 'Active');
+        var isAct = userRecord.isActive;
         if (userStatus.toLowerCase() === 'inactive' || userStatus.toLowerCase() === 'suspended' || isAct === false || isAct === 'false') {
           userActive = false;
         }
-        if (users[uIdx].employeeId) userEmployeeId = String(users[uIdx].employeeId).trim();
+        if (userRecord.employeeId) userEmployeeId = String(userRecord.employeeId).trim();
         break;
       }
     }
@@ -2001,17 +2211,31 @@ function validateSessionToken(ss, token) {
 
   var role = String(matched.role || '').trim();
   var accessScope = 'SCHOOL';
-  var boundSchoolId = String(matched.schoolId || 'SCH-BADR').trim();
-  var allowedSchoolIds = [boundSchoolId];
+  var boundSchoolId = String(matched.schoolId || (userRecord && userRecord.schoolId) || '').trim();
+  var allowedSchoolIds = boundSchoolId ? [boundSchoolId] : [];
 
   if (role === 'SystemAdmin') {
     accessScope = 'GLOBAL';
-    try {
-      var allSchools = getSheetData(ss, SHEETS.MASTER_SCHOOLS);
-      allowedSchoolIds = allSchools.map(function(s) { return String(s.schoolId || '').trim(); }).filter(Boolean);
-    } catch (sErr) {
-      allowedSchoolIds = [boundSchoolId];
+    var userAllowedSchools = [];
+    if (userRecord && userRecord.allowedSchoolIds) {
+      if (Array.isArray(userRecord.allowedSchoolIds)) {
+        userAllowedSchools = userRecord.allowedSchoolIds;
+      } else if (typeof userRecord.allowedSchoolIds === 'string') {
+        try {
+          userAllowedSchools = JSON.parse(userRecord.allowedSchoolIds);
+        } catch (e) {
+          userAllowedSchools = userRecord.allowedSchoolIds.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+        }
+      }
+    } else if (matched.allowedSchoolIds) {
+      try {
+        userAllowedSchools = typeof matched.allowedSchoolIds === 'string' ? JSON.parse(matched.allowedSchoolIds) : matched.allowedSchoolIds;
+      } catch (e) {
+        userAllowedSchools = String(matched.allowedSchoolIds).split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+      }
     }
+    // Fail-Closed: only explicitly granted schools
+    allowedSchoolIds = userAllowedSchools.map(function(s) { return String(s).trim(); }).filter(Boolean);
   } else if (role === 'Admin') {
     accessScope = 'SCHOOL'; // Legacy Admin is strictly SCHOOL
     allowedSchoolIds = boundSchoolId ? [boundSchoolId] : [];
@@ -2027,6 +2251,7 @@ function validateSessionToken(ss, token) {
     valid: true,
     session: {
       sessionId: matched.sessionId,
+      sessionToken: token, // Attached in-memory for authorization pipeline
       userId: matched.userId,
       username: matched.username,
       fullName: matched.fullName,
@@ -2069,6 +2294,8 @@ function validateTeacherSessionToken(ss, token) {
     return { valid: false, code: 'TEACHER_SESSION_EXPIRED', message: 'انتهت صلاحية جلسة المعلم' };
   }
 
+  var teacherSchoolId = String(matched.schoolId || '').trim();
+
   return {
     valid: true,
     session: {
@@ -2079,9 +2306,9 @@ function validateTeacherSessionToken(ss, token) {
       teacherName: matched.teacherName,
       role: 'Teacher',
       accessScope: 'SELF',
-      schoolId: matched.schoolId || 'SCH-BADR',
-      allowedSchoolIds: [matched.schoolId || 'SCH-BADR'],
-      activeSchoolId: matched.schoolId || 'SCH-BADR',
+      schoolId: teacherSchoolId,
+      allowedSchoolIds: teacherSchoolId ? [teacherSchoolId] : [],
+      activeSchoolId: teacherSchoolId,
       isActive: true,
       status: 'Active',
       expiresAt: matched.expiresAt
@@ -4392,13 +4619,13 @@ function resolveSchoolContext(schoolIdOrSession, requestedSchoolIdOrMasterSs) {
         }
         schoolId = requestedId;
       } else {
-        schoolId = session.activeSchoolId || session.schoolId || 'SCH-BADR';
+        schoolId = session.activeSchoolId || session.schoolId || '';
       }
     } else {
       if (requestedId && requestedId.toUpperCase() !== String(session.schoolId || '').trim().toUpperCase()) {
         return null;
       }
-      schoolId = session.schoolId || 'SCH-BADR';
+      schoolId = session.schoolId || '';
     }
   } else {
     schoolId = schoolIdOrSession;
@@ -4415,15 +4642,6 @@ function resolveSchoolContext(schoolIdOrSession, requestedSchoolIdOrMasterSs) {
 
   var schools = getSheetData(masterSs, SHEETS.MASTER_SCHOOLS);
   if (!schools || schools.length === 0) {
-    if (cleanId === 'SCH-BADR' || cleanId === 'BADR') {
-      return {
-        schoolId: 'SCH-BADR',
-        schoolCode: 'BADR',
-        schoolName: 'مدرسة بدر الإعدادية بنين',
-        spreadsheetId: masterSs.getId(),
-        status: 'Active'
-      };
-    }
     return null;
   }
 
@@ -4443,17 +4661,6 @@ function resolveSchoolContext(schoolIdOrSession, requestedSchoolIdOrMasterSs) {
         updatedAt: s.updatedAt
       };
     }
-  }
-
-  // Fallback for default primary school
-  if (cleanId === 'SCH-BADR' || cleanId === 'BADR') {
-    return {
-      schoolId: 'SCH-BADR',
-      schoolCode: 'BADR',
-      schoolName: 'مدرسة بدر الإعدادية بنين',
-      spreadsheetId: masterSs.getId(),
-      status: 'Active'
-    };
   }
 
   return null;

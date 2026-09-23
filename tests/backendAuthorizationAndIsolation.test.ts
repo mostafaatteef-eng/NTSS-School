@@ -494,5 +494,61 @@ describe('RBAC Phase 2: Backend Authorization Engine & Multi-School Isolation', 
       expect(sheetAlnoor).toBeDefined();
       expect(sheetBadr).not.toBe(sheetAlnoor);
     });
+
+    it('Phase 2B Hardening: authorize rejects requests without sessionToken with SESSION_MISSING', () => {
+      const tokenlessSession: any = {
+        userId: 'usr-admin-badr',
+        role: 'SchoolAdmin',
+        accessScope: 'SCHOOL',
+        schoolId: 'SCH-BADR',
+        allowedSchoolIds: ['SCH-BADR'],
+        activeSchoolId: 'SCH-BADR',
+        expiresAt: new Date(Date.now() + 3600000).toISOString(),
+        isActive: true,
+        status: 'Active',
+      };
+
+      const result = authorize(tokenlessSession, 'students.view', { schoolId: 'SCH-BADR' });
+      expect(result.allowed).toBe(false);
+      expect(result.code).toBe('SESSION_MISSING');
+    });
+
+    it('Phase 2B Hardening: server resource ownership blocks cross-school student or employee tampering', async () => {
+      const { verifyServerResourceOwnership, getIsolatedSchoolStore } = await import('../src/services/backendAuthService');
+      
+      const storeBadr = getIsolatedSchoolStore('SCH-BADR');
+      const storeAlnoor = getIsolatedSchoolStore('SCH-ALNOOR');
+
+      expect(storeBadr).toBeDefined();
+      expect(storeAlnoor).toBeDefined();
+
+      const studentFromAlnoor = { id: 'STU-200', schoolId: 'SCH-ALNOOR', name: 'طالب النور' };
+
+      // Attempting to operate on Alnoor student within Badr school context
+      const ownershipCheck = verifyServerResourceOwnership(studentFromAlnoor, 'SCH-BADR');
+      expect(ownershipCheck.valid).toBe(false);
+      expect(ownershipCheck.code).toBe('CROSS_SCHOOL_ACCESS_DENIED');
+
+      // Operating on Badr student within Badr school context
+      const studentFromBadr = { id: 'STU-100', schoolId: 'SCH-BADR', name: 'طالب بدر' };
+      const validOwnershipCheck = verifyServerResourceOwnership(studentFromBadr, 'SCH-BADR');
+      expect(validOwnershipCheck.valid).toBe(true);
+    });
+
+    it('Phase 2B Hardening: ACTION_PERMISSION_MAP maps backend actions strictly to canonical permission keys', async () => {
+      const { ACTION_PERMISSION_MAP } = await import('../src/services/backendAuthService');
+
+      expect(ACTION_PERMISSION_MAP['getStudents']).toBe('students.view');
+      expect(ACTION_PERMISSION_MAP['saveStudent']).toBe('students.create');
+      expect(ACTION_PERMISSION_MAP['deleteStudent']).toBe('students.delete');
+      expect(ACTION_PERMISSION_MAP['getEmployees']).toBe('employees.view');
+      expect(ACTION_PERMISSION_MAP['saveEmployee']).toBe('employees.create');
+      expect(ACTION_PERMISSION_MAP['deleteEmployee']).toBe('employees.delete');
+      expect(ACTION_PERMISSION_MAP['getSchedule']).toBe('schedule.view');
+      expect(ACTION_PERMISSION_MAP['saveScheduleEntry']).toBe('timetable.manage');
+      expect(ACTION_PERMISSION_MAP['publishSchedule']).toBe('timetable.publish');
+      expect(ACTION_PERMISSION_MAP['adminCreateSchool']).toBe('schools.manage');
+      expect(ACTION_PERMISSION_MAP['adminUpdateSchool']).toBe('schools.manage');
+    });
   });
 });
