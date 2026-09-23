@@ -10,6 +10,7 @@ export const ROLE_LABELS: Record<LegacyUserRole, string> = {
   SocialSpecialist: 'أخصائي اجتماعي',
   TrainingOfficer: 'مسئول التدريب والتوجيه المهني',
   QualityOfficer: 'مسئول الجودة',
+  AdministrativeEmployee: 'موظف إداري',
   HR: 'مسئول شئون المعلمين والعاملين',
   Supervisor: 'مشرف تربوي',
   BehaviorOfficer: 'مسؤول الانضباط المدرسي',

@@ -10,6 +10,7 @@ export const ROLE_DISPLAY_NAMES: Record<LegacyUserRole, string> = {
   SocialSpecialist: 'الأخصائي الاجتماعي',
   TrainingOfficer: 'مسئول التدريب والتوجيه المهني',
   QualityOfficer: 'مسئول الجودة',
+  AdministrativeEmployee: 'موظف إداري',
   HR: 'الموارد البشرية وشئون العاملين',
   Supervisor: 'مشرف تربوي / إداري',
   BehaviorOfficer: 'مسؤول السلوك والانضباط',
@@ -1042,6 +1043,10 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<LegacyUserRole, Partial<Record<Per
     'quality.viewDashboard': true,
   },
   Student: {},
+  AdministrativeEmployee: {
+    'leaves.view': true,
+    'leaves.create': true,
+  },
 };
 
 /**

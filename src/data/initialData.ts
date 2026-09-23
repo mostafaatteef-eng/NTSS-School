@@ -315,6 +315,23 @@ export const DEFAULT_PERMISSION_MATRIX: Record<LegacyUserRole, PermissionMatrix>
     canManageSettings: false,
     canViewAuditLogs: false,
   },
+  AdministrativeEmployee: {
+    canViewStudents: false,
+    canEditStudents: false,
+    canImportStudents: false,
+    canTakeStudentAttendance: false,
+    canEditStudentAttendance: false,
+    canCreateViolation: false,
+    canApproveViolation: false,
+    canViewPayroll: false,
+    canProcessPayroll: false,
+    canApprovePayroll: false,
+    canManageSchedule: false,
+    canAddLessonContent: false,
+    canViewParentPortal: false,
+    canManageSettings: false,
+    canViewAuditLogs: false,
+  },
 };
 
 export const DEFAULT_DEPARTMENTS: DepartmentItem[] = [
