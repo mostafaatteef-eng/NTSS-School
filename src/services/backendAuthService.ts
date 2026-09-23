@@ -309,6 +309,22 @@ export function createAuthoritativeSession(
   };
 }
 
+export const SELF_SAFE_ACTIONS = new Set<string>([
+  'validateSession',
+  'logout',
+  'getLeaves',
+  'saveLeave',
+  'getPermissions',
+  'savePermission',
+  'getSchedule',
+  'teacherSchedule.viewOwn',
+  'leaves.own.view',
+  'leaves.own.create',
+  'homework.create',
+  'lessonResources.manage',
+  'teacherPortal.access',
+]);
+
 /**
  * Authoritative Central Backend Authorization Engine.
  * 
@@ -443,6 +459,37 @@ export function authorize(
         reason: 'حساب المشرف القديم غير مربوط بمدرسة محددة، يتطلب مراجعة مدير النظام',
         actorUserId: session.userId,
         actorRole: 'Admin',
+        auditEvent: audit,
+      };
+    }
+  }
+
+  // 3.5. SELF Scope Fail-Closed Check: Broad/non-self actions rejected immediately
+  if (scope === 'SELF') {
+    const permStr = String(permission);
+    const isSelfSafe =
+      SELF_SAFE_ACTIONS.has(permStr) ||
+      (ACTION_PERMISSION_MAP[permStr] && SELF_SAFE_ACTIONS.has(ACTION_PERMISSION_MAP[permStr])) ||
+      permStr.includes('.own.');
+
+    if (!isSelfSafe) {
+      const audit = recordSecurityAuditEvent({
+        requestId: reqId,
+        actorUserId: session.userId,
+        actorRole: String(role),
+        actorSchoolId: session.schoolId || 'UNKNOWN',
+        targetSchoolId: resourceContext?.schoolId || session.schoolId || 'UNKNOWN',
+        action: permission,
+        code: 'SELF_SCOPE_VIOLATION',
+        reason: `تم حجب الإجراء لانتهاك حدود النطاق الذاتي (SELF Scope Fail-Closed): ${permission}`,
+        resourceId: resourceContext?.resourceId,
+      });
+      return {
+        allowed: false,
+        code: 'SELF_SCOPE_VIOLATION',
+        reason: `تم حجب الإجراء لانتهاك حدود النطاق الذاتي (SELF Scope Fail-Closed): ${permission}`,
+        actorUserId: session.userId,
+        actorRole: String(role),
         auditEvent: audit,
       };
     }
@@ -683,7 +730,7 @@ export const ACTION_PERMISSION_MAP: Record<string, PermissionKey> = {
   // Students
   getStudents: 'students.view',
   saveStudent: 'students.create',
-  bulkSaveStudents: 'students.edit',
+  bulkSaveStudents: 'students.import',
   deleteStudent: 'students.delete',
 
   // Student Attendance
@@ -701,7 +748,7 @@ export const ACTION_PERMISSION_MAP: Record<string, PermissionKey> = {
   // Employees / Staff
   getEmployees: 'employees.view',
   saveEmployee: 'employees.create',
-  bulkSaveEmployees: 'employees.create',
+  bulkSaveEmployees: 'employees.import',
   deleteEmployee: 'employees.delete',
 
   // Staff Attendance
@@ -723,7 +770,7 @@ export const ACTION_PERMISSION_MAP: Record<string, PermissionKey> = {
   saveTeacherAssignment: 'timetable.manage',
   deleteTeacherAssignment: 'timetable.manage',
   bulkSaveTeacherAssignments: 'timetable.manage',
-  commitTimetableImport: 'timetable.manage',
+  commitTimetableImport: 'timetable.import',
 
   // Timetable & Schedule
   getSchedule: 'schedule.view',
@@ -789,7 +836,7 @@ export const ACTION_PERMISSION_MAP: Record<string, PermissionKey> = {
   resetUserPassword: 'users.resetPassword',
   issueUserActivationToken: 'users.manageRoles',
   revokeUserSessions: 'users.manageRoles',
-  toggleUserStatus: 'users.manageRoles',
+  toggleUserStatus: 'users.disable',
 
   // Master Schools (Master spreadsheet only)
   adminGetSchools: 'schools.manage',
@@ -805,7 +852,7 @@ export const ACTION_PERMISSION_MAP: Record<string, PermissionKey> = {
   // Lifecycle
   logout: 'settings.view',
   validateSession: 'settings.view',
-  syncData: 'settings.view',
+  syncData: 'data.sync.full',
   createArchiveSnapshot: 'settings.manage',
 };
 
@@ -1087,18 +1134,33 @@ export function saveUserSecure(
   session: ServerSession,
   payload: Partial<BackendUserRecord>
 ): { success: boolean; user?: BackendUserRecord; code?: string; message?: string } {
-  const auth = authorize(session, 'users.create');
+  const existingUser = masterUsersStore.find(u => (payload.id && u.id === payload.id) || (payload.username && u.username === payload.username));
+
+  // Dynamic authorization check: new user -> users.create; edit existing user -> users.edit
+  const requiredPerm = existingUser ? 'users.edit' : 'users.create';
+  const auth = authorize(session, requiredPerm);
   if (!auth.allowed) {
     return { success: false, code: auth.code, message: auth.reason };
   }
 
+  // If role is changed on an existing user, additionally require users.manageRoles
+  if (existingUser && payload.role && payload.role !== existingUser.role) {
+    const roleAuth = authorize(session, 'users.manageRoles');
+    if (!roleAuth.allowed) {
+      return {
+        success: false,
+        code: roleAuth.code || 'ROLE_PERMISSION_DENIED',
+        message: 'تعديل دور المستخدم يتطلب صلاحية users.manageRoles',
+      };
+    }
+  }
+
   const role = session.role;
   const sessionSchool = String(session.schoolId || '').trim().toUpperCase();
-  const existingUser = masterUsersStore.find(u => u.id === payload.id || (payload.username && u.username === payload.username));
 
   if (role === 'SchoolAdmin') {
     if (payload.role === 'SystemAdmin') {
-      return { success: false, code: 'FORBIDDEN_ROLE_ELEVATION', message: 'لا يمكن لمدير المدرسة إنشاء أو ترقية مستخدم إلى مدير نظام عام (SystemAdmin)' };
+      return { success: false, code: 'ROLE_ESCALATION_DENIED', message: 'لا يمكن لمدير المدرسة إنشاء أو ترقية مستخدم إلى مدير نظام عام (SystemAdmin)' };
     }
     if (existingUser) {
       if (existingUser.role === 'SystemAdmin') {
@@ -1217,7 +1279,7 @@ export function toggleUserStatusSecure(
   targetUserId: string,
   newStatus?: string
 ): { success: boolean; status?: string; code?: string; message?: string } {
-  const auth = authorize(session, 'users.manageRoles');
+  const auth = authorize(session, 'users.disable');
   if (!auth.allowed) {
     return { success: false, code: auth.code, message: auth.reason };
   }

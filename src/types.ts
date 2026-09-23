@@ -235,6 +235,7 @@ export type PermissionKey =
   | 'parentCommunication.view'
   | 'parentCommunication.create'
   // Settings & Audit & Reports
+  | 'data.sync.full'
   | 'settings.view'
   | 'settings.manage'
   | 'audit.view'

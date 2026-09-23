@@ -1469,11 +1469,34 @@ function doPost(e) {
         }
       }
 
+      // Dynamic authorization: new user requires users.create; edit requires users.edit
+      var requiredPermission = existingUser ? 'users.edit' : 'users.create';
+      if (!hasEffectivePermissionGas(activeSession, requiredPermission)) {
+        return createJsonResponse({
+          status: 'error',
+          code: 'ROLE_PERMISSION_DENIED',
+          message: 'ليس لديك صلاحية ' + requiredPermission + ' لتنفيذ هذا الإجراء',
+          requestId: requestId
+        }, 403);
+      }
+
+      // If role is changed on an existing user, additionally require users.manageRoles
+      if (existingUser && targetRole && targetRole !== existingUser.role) {
+        if (!hasEffectivePermissionGas(activeSession, 'users.manageRoles')) {
+          return createJsonResponse({
+            status: 'error',
+            code: 'ROLE_PERMISSION_DENIED',
+            message: 'تعديل دور المستخدم يتطلب صلاحية users.manageRoles',
+            requestId: requestId
+          }, 403);
+        }
+      }
+
       if (authenticatedRole === 'SchoolAdmin') {
         if (targetRole === 'SystemAdmin') {
           return createJsonResponse({
             status: 'error',
-            code: 'FORBIDDEN_ROLE_ELEVATION',
+            code: 'ROLE_ESCALATION_DENIED',
             message: 'لا يمكن لمدير المدرسة إنشاء أو ترقية مستخدم إلى مدير نظام عام (SystemAdmin)',
             requestId: requestId
           }, 403);
@@ -1678,8 +1701,6 @@ function doPost(e) {
       recordAuthoritativeAudit(schoolSs, requestId, authenticatedUsername, authenticatedRole, 'ARCHIVE', 'OPERATIONAL_SNAPSHOT', '', 'أرشفة وتجميد الجداول التشغيلية للمدرسة');
       output.message = 'تم أرشفة وتجميد الجداول الملغاة وحفظ إيصال الأرشفة بنجاح';
       output.archiveReceipt = archiveReceipt;
-      return createJsonResponse(output, 200);
-    }
       return createJsonResponse(output, 200);
     }
 
@@ -2469,11 +2490,27 @@ function revokeTeacherSessionToken(ss, token) {
 // CANONICAL BACKEND PERMISSION ENGINE & ROLE MATRIX
 // -------------------------------------------------------------
 
+var SELF_SAFE_ACTIONS = {
+  validateSession: true,
+  logout: true,
+  getLeaves: true,
+  saveLeave: true,
+  getPermissions: true,
+  savePermission: true,
+  getSchedule: true,
+  'leaves.own.view': true,
+  'leaves.own.create': true,
+  'teacherSchedule.viewOwn': true,
+  'homework.create': true,
+  'lessonResources.manage': true,
+  'teacherPortal.access': true
+};
+
 var ACTION_PERMISSION_MAP = {
   // Students
   getStudents: 'students.view',
   saveStudent: 'students.create',
-  bulkSaveStudents: 'students.edit',
+  bulkSaveStudents: 'students.import',
   deleteStudent: 'students.delete',
 
   // Student Attendance
@@ -2491,7 +2528,7 @@ var ACTION_PERMISSION_MAP = {
   // Employees / Staff
   getEmployees: 'employees.view',
   saveEmployee: 'employees.create',
-  bulkSaveEmployees: 'employees.create',
+  bulkSaveEmployees: 'employees.import',
   deleteEmployee: 'employees.delete',
 
   // Staff Attendance
@@ -2513,7 +2550,7 @@ var ACTION_PERMISSION_MAP = {
   saveTeacherAssignment: 'timetable.manage',
   deleteTeacherAssignment: 'timetable.manage',
   bulkSaveTeacherAssignments: 'timetable.manage',
-  commitTimetableImport: 'timetable.manage',
+  commitTimetableImport: 'timetable.import',
 
   // Timetable & Schedule
   getSchedule: 'schedule.view',
@@ -2579,7 +2616,7 @@ var ACTION_PERMISSION_MAP = {
   resetUserPassword: 'users.resetPassword',
   issueUserActivationToken: 'users.manageRoles',
   revokeUserSessions: 'users.manageRoles',
-  toggleUserStatus: 'users.manageRoles',
+  toggleUserStatus: 'users.disable',
 
   // Master Schools (Master spreadsheet only)
   adminGetSchools: 'schools.manage',
@@ -2595,7 +2632,7 @@ var ACTION_PERMISSION_MAP = {
   // Lifecycle
   logout: 'settings.view',
   validateSession: 'settings.view',
-  syncData: 'settings.view',
+  syncData: 'data.sync.full',
   createArchiveSnapshot: 'settings.manage'
 };
 
@@ -2686,6 +2723,7 @@ var BASE_ADMIN_PERMISSIONS = {
   'academicYears.edit': true,
   'parentCommunication.view': true,
   'parentCommunication.create': true,
+  'data.sync.full': true,
   'settings.view': true,
   'settings.manage': true,
   'audit.view': true,
@@ -3001,7 +3039,6 @@ function hasEffectivePermissionGas(session, permission) {
 
   var rolePerms = CANONICAL_ROLE_PERMISSIONS[role];
   if (!rolePerms) {
-    if (role === 'Admin') return true;
     return false;
   }
 
@@ -3023,7 +3060,6 @@ function hasEffectivePermissionGas(session, permission) {
     }
   }
 
-  if (role === 'Admin') return true;
   return false;
 }
 
@@ -3076,6 +3112,18 @@ function authorize(session, action, resourceContext, masterSs, requestId) {
     if (!session.schoolId || String(session.schoolId).trim() === '') {
       recordAuthoritativeAudit(ss, reqId, session.username || session.userId, role, 'ACCESS_DENIED', 'AUTH', session.userId, 'حساب المشرف القديم غير مربوط بمدرسة');
       return { allowed: false, code: 'NEEDS_ADMIN_REVIEW', message: 'حساب المشرف القديم غير مربوط بمدرسة محددة، يتطلب مراجعة مدير النظام' };
+    }
+  }
+
+  // 3.5. SELF Scope Fail-Closed Check: Broad/non-self actions rejected immediately
+  if (scope === 'SELF') {
+    if (!SELF_SAFE_ACTIONS.hasOwnProperty(action) && action.indexOf('.own.') === -1) {
+      recordAuthoritativeAudit(ss, reqId, session.username || session.userId, role, 'SELF_SCOPE_VIOLATION', 'AUTH', session.userId, 'تم حجب الإجراء لانتهاك حدود النطاق الذاتي (SELF Scope Fail-Closed): ' + action);
+      return {
+        allowed: false,
+        code: 'SELF_SCOPE_VIOLATION',
+        message: 'تم حجب الإجراء: حسابات النطاق الذاتي (SELF) غير مصرح لها بتنفيذ هذا الإجراء العام'
+      };
     }
   }
 

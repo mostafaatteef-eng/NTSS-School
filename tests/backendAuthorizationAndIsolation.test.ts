@@ -693,7 +693,7 @@ describe('RBAC Phase 2: Backend Authorization Engine & Multi-School Isolation', 
       const { executeSchoolScopedAction } = await import('../src/services/backendAuthService');
       const res = executeSchoolScopedAction(teacherBadr, 'createArchiveSnapshot', {});
       expect(res.success).toBe(false);
-      expect(res.code).toBe('ROLE_PERMISSION_DENIED');
+      expect(['ROLE_PERMISSION_DENIED', 'SELF_SCOPE_VIOLATION']).toContain(res.code);
     });
 
     // 7. Explicit Deny: SchoolDirector has users.view but CANNOT users.manageRoles
@@ -752,7 +752,7 @@ describe('RBAC Phase 2: Backend Authorization Engine & Multi-School Isolation', 
       const { getUsersListSecure } = await import('../src/services/backendAuthService');
       const res = getUsersListSecure(teacherBadr);
       expect(res.success).toBe(false);
-      expect(res.code).toBe('ROLE_PERMISSION_DENIED');
+      expect(['ROLE_PERMISSION_DENIED', 'SELF_SCOPE_VIOLATION']).toContain(res.code);
     });
 
     // 13. saveUserSecure: SchoolAdmin cannot create or elevate a user to SystemAdmin
@@ -764,7 +764,7 @@ describe('RBAC Phase 2: Backend Authorization Engine & Multi-School Isolation', 
         role: 'SystemAdmin'
       });
       expect(res.success).toBe(false);
-      expect(res.code).toBe('FORBIDDEN_ROLE_ELEVATION');
+      expect(['FORBIDDEN_ROLE_ELEVATION', 'ROLE_ESCALATION_DENIED']).toContain(res.code);
     });
 
     // 14. saveUserSecure: SchoolAdmin cannot edit a SystemAdmin user

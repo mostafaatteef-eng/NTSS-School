@@ -167,6 +167,7 @@ const ADMIN_ROLE_PERMISSIONS: Partial<Record<PermissionKey, boolean>> = {
     'positiveBehavior.create': true,
     'parentCommunication.view': true,
     'parentCommunication.create': true,
+    'data.sync.full': true,
     'settings.view': true,
     'settings.manage': true,
     'audit.view': true,
@@ -1236,8 +1237,6 @@ export function hasPermission(
   customRoleMatrix?: Record<UserRole, Partial<Record<PermissionKey, boolean>>>
 ): boolean {
   if (!user) return false;
-  // Legacy Admin role keeps backward compatibility
-  if (user.role === 'Admin') return true;
   // Explicit permission overrides on user object
   if (Array.isArray(user.permissions) && user.permissions.includes(permission)) return true;
 
@@ -1330,11 +1329,6 @@ export function hasEffectivePermission(
         return true;
       }
     }
-  }
-
-  // Legacy Admin role keeps backward compatibility only for own school
-  if (role === 'Admin') {
-    return true;
   }
 
   return false;
