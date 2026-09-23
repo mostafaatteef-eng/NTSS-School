@@ -579,33 +579,34 @@ function doPost(e) {
       }
     }
 
-    // Cross-School Access Security Gate:
-    // If request attempts to target another school than the session's bound school, REJECT immediately!
+    // -------------------------------------------------------------
+    // 5. UNIFIED BACKEND AUTHORIZATION ENGINE (RBAC Phase 2)
+    // -------------------------------------------------------------
     var requestedSchoolId = postData.schoolId || (payload && payload.schoolId);
-    if (requestedSchoolId && String(requestedSchoolId).trim().toUpperCase() !== String(sessionSchoolId).trim().toUpperCase()) {
-      return createJsonResponse({
-        status: 'error',
-        code: 'SCHOOL_MISMATCH_FORBIDDEN',
-        message: 'تم رفض الطلب: لا يمكن الوصول إلى بيانات مدرسة أخرى باستخدام هذه الجلسة.',
-        requestId: requestId
-      }, 403);
-    }
+    var resourceOwnerEmployeeId = (payload && (payload.employeeId || payload.ownerEmployeeId)) || postData.employeeId;
+    var resourceContext = {
+      schoolId: requestedSchoolId,
+      ownerEmployeeId: resourceOwnerEmployeeId,
+      resourceId: (payload && payload.id) || postData.id
+    };
 
-    // Central Role-Based Authorization Gate
-    var authzResult = authorizeStaffAction(authenticatedRole, action);
-    if (!authzResult.allowed) {
+    var authResult = authorize(activeSession, action, resourceContext, ss, requestId);
+    if (!authResult.allowed) {
       return createJsonResponse({
         status: 'error',
-        code: 'FORBIDDEN',
-        message: authzResult.message || 'ليس لديك الصلاحيات الإدارية الكافية لتنفيذ هذا الإجراء',
+        code: authResult.code || 'FORBIDDEN',
+        message: authResult.message || 'ليس لديك الصلاحيات الإدارية الكافية لتنفيذ هذا الإجراء',
         userRole: authenticatedRole,
         action: action,
         requestId: requestId
       }, 403);
     }
 
+    var effectiveSchoolId = authResult.effectiveSchoolId;
+    var targetSchoolSs = getSchoolSpreadsheet(effectiveSchoolId, ss);
+
     // -------------------------------------------------------------
-    // 5. PROTECTED STAFF ACTIONS DISPATCH
+    // 6. PROTECTED STAFF ACTIONS DISPATCH
     // -------------------------------------------------------------
 
     // A. Session Lifecycle
@@ -1979,6 +1980,49 @@ function validateSessionToken(ss, token) {
     return { valid: false, code: 'SESSION_EXPIRED', message: 'انتهت صلاحية جلسة العمل. يرجى تسجيل الدخول مجدداً.' };
   }
 
+  // Look up user to verify active status and get employeeId
+  var userActive = true;
+  var userStatus = 'Active';
+  var userEmployeeId = matched.employeeId || '';
+  try {
+    var users = getSheetData(ss, SHEETS.USERS);
+    for (var uIdx = 0; uIdx < users.length; uIdx++) {
+      if (String(users[uIdx].id || '') === String(matched.userId || '') || String(users[uIdx].username || '').toLowerCase() === String(matched.username || '').toLowerCase()) {
+        userStatus = String(users[uIdx].status || 'Active');
+        var isAct = users[uIdx].isActive;
+        if (userStatus.toLowerCase() === 'inactive' || userStatus.toLowerCase() === 'suspended' || isAct === false || isAct === 'false') {
+          userActive = false;
+        }
+        if (users[uIdx].employeeId) userEmployeeId = String(users[uIdx].employeeId).trim();
+        break;
+      }
+    }
+  } catch (uErr) {}
+
+  var role = String(matched.role || '').trim();
+  var accessScope = 'SCHOOL';
+  var boundSchoolId = String(matched.schoolId || 'SCH-BADR').trim();
+  var allowedSchoolIds = [boundSchoolId];
+
+  if (role === 'SystemAdmin') {
+    accessScope = 'GLOBAL';
+    try {
+      var allSchools = getSheetData(ss, SHEETS.MASTER_SCHOOLS);
+      allowedSchoolIds = allSchools.map(function(s) { return String(s.schoolId || '').trim(); }).filter(Boolean);
+    } catch (sErr) {
+      allowedSchoolIds = [boundSchoolId];
+    }
+  } else if (role === 'Admin') {
+    accessScope = 'SCHOOL'; // Legacy Admin is strictly SCHOOL
+    allowedSchoolIds = boundSchoolId ? [boundSchoolId] : [];
+  } else if (role === 'Teacher' || role === 'AdministrativeEmployee') {
+    accessScope = 'SELF';
+    allowedSchoolIds = boundSchoolId ? [boundSchoolId] : [];
+  } else {
+    accessScope = 'SCHOOL';
+    allowedSchoolIds = boundSchoolId ? [boundSchoolId] : [];
+  }
+
   return {
     valid: true,
     session: {
@@ -1986,8 +2030,14 @@ function validateSessionToken(ss, token) {
       userId: matched.userId,
       username: matched.username,
       fullName: matched.fullName,
-      role: matched.role,
-      schoolId: matched.schoolId || 'SCH-BADR',
+      role: role,
+      accessScope: accessScope,
+      schoolId: boundSchoolId,
+      allowedSchoolIds: allowedSchoolIds,
+      activeSchoolId: boundSchoolId,
+      employeeId: userEmployeeId,
+      isActive: userActive,
+      status: userStatus,
       expiresAt: matched.expiresAt
     }
   };
@@ -2027,7 +2077,13 @@ function validateTeacherSessionToken(ss, token) {
       employeeId: matched.employeeId,
       teacherCode: matched.teacherCode,
       teacherName: matched.teacherName,
+      role: 'Teacher',
+      accessScope: 'SELF',
       schoolId: matched.schoolId || 'SCH-BADR',
+      allowedSchoolIds: [matched.schoolId || 'SCH-BADR'],
+      activeSchoolId: matched.schoolId || 'SCH-BADR',
+      isActive: true,
+      status: 'Active',
       expiresAt: matched.expiresAt
     }
   };
@@ -2079,12 +2135,15 @@ function revokeTeacherSessionToken(ss, token) {
  * Authorize Action based on Staff Role
  */
 function authorizeStaffAction(role, action) {
-  // Admin has access to all active actions
+  // SystemAdmin & SchoolAdmin have full administrative authority within their authorized scope
+  if (role === 'SystemAdmin' || role === 'SchoolAdmin') return { allowed: true };
+
+  // Legacy Admin role (within its single bound school only)
   if (role === 'Admin') return { allowed: true };
 
   // School Director
   if (role === 'SchoolDirector') {
-    var forbiddenForDirector = ['saveUser', 'deleteUser', 'resetUserPassword'];
+    var forbiddenForDirector = ['saveUser', 'deleteUser', 'resetUserPassword', 'adminCreateSchool', 'adminUpdateSchool'];
     if (forbiddenForDirector.indexOf(action) !== -1) {
       return { allowed: false, message: 'إدارة حسابات المستخدمين وصلاحياتهم مقتصرة على مدير النظام (Admin)' };
     }
@@ -2156,7 +2215,145 @@ function authorizeStaffAction(role, action) {
     return { allowed: false, message: 'صلاحيات هذا الدور مخصصة للمتابعة والرقابة والتقارير دون إمكانية التعديل' };
   }
 
+  // Teacher (Self-scoped operations)
+  if (role === 'Teacher') {
+    var teacherActions = [
+      'getLeaves', 'saveLeave', 'getPermissions', 'savePermission',
+      'getSchedule', 'getExamSchedules', 'getHomework', 'saveHomework',
+      'getTeacherResources', 'saveTeacherResource',
+      'logout', 'validateSession', 'syncData'
+    ];
+    if (teacherActions.indexOf(action) !== -1) return { allowed: true };
+    return { allowed: false, message: 'هذا الإجراء خارج صلاحيات المعلم الذاتية' };
+  }
+
+  // AdministrativeEmployee (Self-scoped operations only)
+  if (role === 'AdministrativeEmployee') {
+    var adminEmpActions = [
+      'getLeaves', 'saveLeave', 'getPermissions', 'savePermission',
+      'logout', 'validateSession', 'syncData'
+    ];
+    if (adminEmpActions.indexOf(action) !== -1) return { allowed: true };
+    return { allowed: false, message: 'الموظف الإداري مصرح له بالعمليات الذاتية فقط' };
+  }
+
   return { allowed: false, message: 'دور غير مصرح له بتنفيذ هذا الإجراء' };
+}
+
+/**
+ * Authoritative Backend Authorization Engine (RBAC Phase 2)
+ * Enforces the strict 8-step order:
+ * 1. validateSession()
+ * 2. verify account is Active
+ * 3. resolve effective canonical role & validate scope
+ * 4. verify permission
+ * 5. verify AccessScope
+ * 6. verify target school & cross-school object access
+ * 7. verify SELF ownership
+ * 8. execute action (Fail-Closed)
+ */
+function authorize(session, action, resourceContext, masterSs, requestId) {
+  var reqId = requestId || ('REQ_AUTH_' + Utilities.getUuid().substring(0, 8));
+  var ss = masterSs || SpreadsheetApp.getActiveSpreadsheet();
+
+  // 1. validateSession()
+  if (!session || !session.userId || !session.sessionToken) {
+    return { allowed: false, code: 'SESSION_MISSING', message: 'جلسة العمل مفقودة أو غير صالحة' };
+  }
+
+  if (session.expiresAt && new Date() > new Date(session.expiresAt)) {
+    return { allowed: false, code: 'SESSION_EXPIRED', message: 'انتهت صلاحية جلسة العمل. يرجى تسجيل الدخول مجدداً.' };
+  }
+
+  // 2. verify account is Active
+  if (session.isActive === false || String(session.status || '').toLowerCase() === 'inactive' || String(session.status || '').toLowerCase() === 'suspended') {
+    recordAuthoritativeAudit(ss, reqId, session.username || session.userId, session.role, 'ACCESS_DENIED', 'AUTH', session.userId, 'تم رفض الوصول: الحساب غير مفعل');
+    return { allowed: false, code: 'ACCOUNT_INACTIVE', message: 'هذا الحساب غير مفعل حالياً' };
+  }
+
+  // 3. resolve effective canonical role & validate scope
+  var role = String(session.role || '').trim();
+  var scope = String(session.accessScope || '').trim().toUpperCase();
+
+  if (!scope || (scope !== 'GLOBAL' && scope !== 'SCHOOL' && scope !== 'SELF')) {
+    recordAuthoritativeAudit(ss, reqId, session.username || session.userId, role, 'ACCESS_DENIED', 'AUTH', session.userId, 'نطاق وصول غير صالح أو مفقود');
+    return { allowed: false, code: 'MISSING_OR_INVALID_SCOPE', message: 'نطاق الوصول غير محدد أو غير مصرح به' };
+  }
+
+  // Legacy Admin rule (Section 7)
+  if (role === 'Admin') {
+    if (scope === 'GLOBAL') {
+      recordAuthoritativeAudit(ss, reqId, session.username || session.userId, role, 'ACCESS_DENIED', 'AUTH', session.userId, 'دور Admin القديم لا يمكن أن يمتلك نطاق GLOBAL');
+      return { allowed: false, code: 'ACCESS_DENIED', message: 'دور Admin القديم لا يمكن أن يمتلك نطاق GLOBAL' };
+    }
+    if (!session.schoolId || String(session.schoolId).trim() === '') {
+      recordAuthoritativeAudit(ss, reqId, session.username || session.userId, role, 'ACCESS_DENIED', 'AUTH', session.userId, 'حساب المشرف القديم غير مربوط بمدرسة');
+      return { allowed: false, code: 'NEEDS_ADMIN_REVIEW', message: 'حساب المشرف القديم غير مربوط بمدرسة محددة، يتطلب مراجعة مدير النظام' };
+    }
+  }
+
+  // 4. verify permission
+  var permCheck = authorizeStaffAction(role, action);
+  if (!permCheck.allowed) {
+    recordAuthoritativeAudit(ss, reqId, session.username || session.userId, role, 'ROLE_PERMISSION_DENIED', 'AUTH', session.userId, 'تم رفض الإجراء: صلاحيات غير كافية لـ ' + action);
+    return { allowed: false, code: 'ROLE_PERMISSION_DENIED', message: permCheck.message || 'ليس لديك الصلاحيات الإدارية الكافية لتنفيذ هذا الإجراء' };
+  }
+
+  // 5. verify AccessScope & Target School
+  var targetSchoolId = (resourceContext && resourceContext.schoolId) || session.schoolId;
+
+  if (scope === 'GLOBAL') {
+    // SystemAdmin: targetSchoolId must be inside session.allowedSchoolIds
+    var allowedList = (session.allowedSchoolIds || []).map(function(id) { return String(id).trim().toUpperCase(); });
+    if (allowedList.indexOf(String(targetSchoolId).trim().toUpperCase()) === -1) {
+      recordAuthoritativeAudit(ss, reqId, session.username || session.userId, role, 'ACCESS_DENIED', 'AUTH', session.userId, 'المدرسة خارج نطاق الصلاحيات: ' + targetSchoolId);
+      return { allowed: false, code: 'ACCESS_DENIED_SCHOOL_SCOPE', message: 'المدرسة المطلوبة خارج نطاق المدارس المصرح لك بالوصول إليها' };
+    }
+  } else if (scope === 'SCHOOL') {
+    // School-bound roles: session.schoolId is authoritative.
+    if (resourceContext && resourceContext.schoolId && String(resourceContext.schoolId).trim().toUpperCase() !== String(session.schoolId).trim().toUpperCase()) {
+      recordAuthoritativeAudit(ss, reqId, session.username || session.userId, role, 'SCHOOL_CONTEXT_MISMATCH', 'AUTH', session.userId, 'محاولة تجاوز نطاق مدرسة الجلسة: ' + resourceContext.schoolId);
+      return { allowed: false, code: 'SCHOOL_CONTEXT_MISMATCH', message: 'تم رفض الطلب: لا يمكن تجاوز نطاق المدرسة المربوطة بالجلسة بمدرسة أخرى في الطلب' };
+    }
+  } else if (scope === 'SELF') {
+    if (resourceContext && resourceContext.schoolId && String(resourceContext.schoolId).trim().toUpperCase() !== String(session.schoolId).trim().toUpperCase()) {
+      recordAuthoritativeAudit(ss, reqId, session.username || session.userId, role, 'CROSS_SCHOOL_ACCESS_DENIED', 'AUTH', session.userId, 'محاولة وصول لمدرسة أخرى بنطاق SELF');
+      return { allowed: false, code: 'CROSS_SCHOOL_ACCESS_DENIED', message: 'تم رفض الطلب: غير مصرح بالوصول إلى بيانات مدرسة أخرى' };
+    }
+  }
+
+  // 6. Cross-School Object Access Check (Section 13)
+  var effectiveSchoolId = (scope === 'GLOBAL') ? targetSchoolId : session.schoolId;
+  if (resourceContext && resourceContext.schoolId && String(resourceContext.schoolId).trim().toUpperCase() !== String(effectiveSchoolId).trim().toUpperCase()) {
+    recordAuthoritativeAudit(ss, reqId, session.username || session.userId, role, 'CROSS_SCHOOL_ACCESS_DENIED', 'AUTH', session.userId, 'تم رفض الوصول لكائن مدرسة أخرى: ' + resourceContext.schoolId);
+    return { allowed: false, code: 'CROSS_SCHOOL_ACCESS_DENIED', message: 'تم حجب المورد: كائن البيانات المطلوب يتبع لمدرسة أخرى' };
+  }
+
+  // 7. Verify SELF ownership (Section 8 & 9)
+  if (scope === 'SELF' || (action && action.indexOf('.own.') !== -1)) {
+    if (role === 'AdministrativeEmployee' && (action === 'getEmployees' || action === 'employees.view' || action === 'teachers.view')) {
+      recordAuthoritativeAudit(ss, reqId, session.username || session.userId, role, 'SELF_SCOPE_VIOLATION', 'AUTH', session.userId, 'محاولة استعراض جميع الموظفين من حساب إداري ذاتي');
+      return { allowed: false, code: 'SELF_SCOPE_VIOLATION', message: 'الموظف الإداري مصرح له بالعمليات الذاتية فقط ولا يمكنه استعراض جميع العاملين' };
+    }
+
+    if (resourceContext && resourceContext.ownerEmployeeId) {
+      var sessionEmpId = String(session.employeeId || session.userId || '').trim().toLowerCase();
+      var ownerEmpId = String(resourceContext.ownerEmployeeId).trim().toLowerCase();
+      if (ownerEmpId !== sessionEmpId && ownerEmpId !== String(session.userId || '').trim().toLowerCase()) {
+        recordAuthoritativeAudit(ss, reqId, session.username || session.userId, role, 'SELF_SCOPE_VIOLATION', 'AUTH', session.userId, 'محاولة الوصول إلى بيانات موظف آخر: ' + resourceContext.ownerEmployeeId);
+        return { allowed: false, code: 'SELF_SCOPE_VIOLATION', message: 'تم رفض العملية: غير مصرح بالوصول إلى بيانات أو طلبات موظف آخر' };
+      }
+    }
+  }
+
+  // 8. Authorized
+  return {
+    allowed: true,
+    effectiveSchoolId: effectiveSchoolId,
+    accessScope: scope,
+    actorUserId: session.userId,
+    actorRole: role
+  };
 }
 
 // -------------------------------------------------------------
@@ -4177,7 +4374,37 @@ function runMigrationScope015MultiSchoolAndDecommissionActivation(ss) {
  * @param {Spreadsheet} masterSs
  * @returns {Object|null}
  */
-function resolveSchoolContext(schoolId, masterSs) {
+function resolveSchoolContext(schoolIdOrSession, requestedSchoolIdOrMasterSs) {
+  var session = null;
+  var schoolId = null;
+  var masterSs = null;
+
+  if (schoolIdOrSession && typeof schoolIdOrSession === 'object' && schoolIdOrSession.sessionToken) {
+    session = schoolIdOrSession;
+    var requestedId = (requestedSchoolIdOrMasterSs && typeof requestedSchoolIdOrMasterSs === 'string') ? requestedSchoolIdOrMasterSs.trim() : null;
+    masterSs = SpreadsheetApp.getActiveSpreadsheet();
+
+    if (session.accessScope === 'GLOBAL') {
+      if (requestedId) {
+        var allowed = (session.allowedSchoolIds || []).map(function(id) { return String(id).trim().toUpperCase(); });
+        if (allowed.indexOf(requestedId.toUpperCase()) === -1) {
+          return null;
+        }
+        schoolId = requestedId;
+      } else {
+        schoolId = session.activeSchoolId || session.schoolId || 'SCH-BADR';
+      }
+    } else {
+      if (requestedId && requestedId.toUpperCase() !== String(session.schoolId || '').trim().toUpperCase()) {
+        return null;
+      }
+      schoolId = session.schoolId || 'SCH-BADR';
+    }
+  } else {
+    schoolId = schoolIdOrSession;
+    masterSs = requestedSchoolIdOrMasterSs || SpreadsheetApp.getActiveSpreadsheet();
+  }
+
   if (!schoolId) return null;
   var cleanId = String(schoolId).trim().toUpperCase();
   var masterSheet = masterSs.getSheetByName(SHEETS.MASTER_SCHOOLS);

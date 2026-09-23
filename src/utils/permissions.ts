@@ -1,4 +1,4 @@
-import { PermissionKey, Student, User, UserRole, LegacyUserRole } from '../types';
+import { PermissionKey, Student, User, UserRole, LegacyUserRole, ServerSession } from '../types';
 
 export const ROLE_DISPLAY_NAMES: Record<LegacyUserRole, string> = {
   SystemAdmin: 'مدير النظام المركزي',
@@ -1258,6 +1258,83 @@ export function hasPermission(
         return !!rolePerms[alias];
       }
     }
+  }
+
+  return false;
+}
+
+/**
+ * Resolves whether a user, session, or role has effective permission.
+ * - Respects explicit false/deny in the role matrix or user overrides.
+ * - An alias can NEVER turn an explicit false into true.
+ * - Inactive/disabled users or sessions are denied immediately.
+ */
+export function hasEffectivePermission(
+  userOrSessionOrRole: User | ServerSession | UserRole | string | null | undefined,
+  permission: PermissionKey,
+  customRoleMatrix?: Record<string, Partial<Record<PermissionKey, boolean>>>
+): boolean {
+  if (!userOrSessionOrRole) return false;
+
+  let role = '';
+  let userObj: User | null = null;
+  let sessionObj: ServerSession | null = null;
+
+  if (typeof userOrSessionOrRole === 'string') {
+    role = userOrSessionOrRole;
+  } else if ('accessScope' in userOrSessionOrRole) {
+    sessionObj = userOrSessionOrRole as ServerSession;
+    role = sessionObj.role;
+  } else {
+    userObj = userOrSessionOrRole as User;
+    role = userObj.role;
+  }
+
+  // Verify active status
+  if (userObj && (userObj.isActive === false || userObj.status === 'Inactive' || userObj.status === 'Suspended')) {
+    return false;
+  }
+  if (sessionObj && (sessionObj.isActive === false || sessionObj.status === 'Inactive' || sessionObj.status === 'Suspended')) {
+    return false;
+  }
+
+  // Explicit user permission overrides
+  if (userObj?.permissions && Array.isArray(userObj.permissions)) {
+    if (userObj.permissions.includes(permission)) return true;
+  }
+
+  const matrix = (customRoleMatrix || DEFAULT_ROLE_PERMISSIONS) as Record<string, Partial<Record<PermissionKey, boolean>>>;
+  const rolePerms = matrix[role];
+  if (!rolePerms) return false;
+
+  // 1. Direct explicit check
+  if (rolePerms[permission] !== undefined) {
+    // If explicitly false, DENY immediately. An alias MUST NOT turn an explicit false into true.
+    if (rolePerms[permission] === false) {
+      return false;
+    }
+    if (rolePerms[permission] === true) {
+      return true;
+    }
+  }
+
+  // 2. Check aliases only if direct permission was undefined
+  const aliases = PERMISSION_ALIASES[permission];
+  if (aliases && aliases.length > 0) {
+    for (const alias of aliases) {
+      // If any alias is explicitly false in the role, that also counts as explicit false
+      if (rolePerms[alias] === false) {
+        return false;
+      }
+      if (rolePerms[alias] === true) {
+        return true;
+      }
+    }
+  }
+
+  // Legacy Admin role keeps backward compatibility only for own school
+  if (role === 'Admin') {
+    return true;
   }
 
   return false;

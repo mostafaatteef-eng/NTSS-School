@@ -32,13 +32,50 @@ export type UserRole = StaffRole;
 export interface ServerSession {
   sessionToken: string;
   userId: string;
-  email: string;
+  email?: string;
+  username?: string;
+  fullName?: string;
   role: UserRole;
   accessScope: AccessScope;
   schoolId: string;
   allowedSchoolIds: string[];
   activeSchoolId: string;
   expiresAt: string;
+  employeeId?: string;
+  teacherId?: string;
+  isActive?: boolean;
+  status?: string;
+}
+
+export interface ResourceContext {
+  schoolId?: string;
+  ownerEmployeeId?: string;
+  resourceId?: string;
+  resourceType?: string;
+}
+
+export interface BackendSecurityAuditEvent {
+  requestId: string;
+  actorUserId: string;
+  actorRole: string;
+  actorSchoolId: string;
+  targetSchoolId: string;
+  action: string;
+  timestamp: string;
+  code?: string;
+  reason?: string;
+  resourceId?: string;
+}
+
+export interface AuthorizationResult {
+  allowed: boolean;
+  code?: string;
+  reason?: string;
+  effectiveSchoolId?: string;
+  accessScope?: AccessScope;
+  actorUserId?: string;
+  actorRole?: string;
+  auditEvent?: BackendSecurityAuditEvent;
 }
 
 // Legacy and Historical Roles for Audit, Archive, and Migration
