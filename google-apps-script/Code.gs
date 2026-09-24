@@ -5725,3 +5725,325 @@ function getSchoolSpreadsheet(schoolId, masterSs) {
   }
 }
 
+/**
+ * Manual, server-only idempotent provisioning function.
+ * Strictly forbidden from public invocation: NOT called from doGet or doPost.
+ * Must be executed manually in Google Apps Script Editor by project owner.
+ *
+ * Reads:
+ * - INITIAL_ADMIN_EMAIL
+ * - INITIAL_ADMIN_PASSWORD
+ * - BADR_SPREADSHEET_ID
+ * - DAMIETTA_SPREADSHEET_ID
+ * - INITIAL_ADMIN_FULL_NAME (optional)
+ *
+ * Validates spreadsheets, creates/updates Master_Schools, creates/updates SystemAdmin,
+ * deletes password property from ScriptProperties, sets INITIAL_SYSTEM_PROVISIONED=true,
+ * records safe audit log without sensitive data.
+ *
+ * @returns {Object} { success: boolean, message: string, ... }
+ */
+function provisionInitialSystemFromScriptProperties() {
+  var props = PropertiesService.getScriptProperties();
+  if (!props) {
+    Logger.log('[PROVISIONING_ERROR] PropertiesService not available');
+    return { success: false, code: 'PROPERTIES_UNAVAILABLE', message: 'Script Properties are not available.' };
+  }
+
+  var adminEmail = props.getProperty('INITIAL_ADMIN_EMAIL');
+  var adminPassword = props.getProperty('INITIAL_ADMIN_PASSWORD');
+  var badrSpreadsheetId = props.getProperty('BADR_SPREADSHEET_ID');
+  var damiettaSpreadsheetId = props.getProperty('DAMIETTA_SPREADSHEET_ID');
+  var adminFullName = props.getProperty('INITIAL_ADMIN_FULL_NAME');
+
+  var cleanEmail = String(adminEmail || '').trim().toLowerCase();
+  var cleanPassword = String(adminPassword || '').trim();
+  var cleanBadrId = String(badrSpreadsheetId || '').trim();
+  var cleanDamiettaId = String(damiettaSpreadsheetId || '').trim();
+  var cleanFullName = String(adminFullName || '').trim() || 'مدير النظام';
+
+  // Check if already provisioned and properties were already deleted
+  var alreadyProvisioned = props.getProperty('INITIAL_SYSTEM_PROVISIONED') === 'true';
+
+  if (!cleanEmail || !cleanPassword || !cleanBadrId || !cleanDamiettaId) {
+    if (alreadyProvisioned) {
+      Logger.log('[PROVISIONING] System was already provisioned and initial credentials were safely removed.');
+      return {
+        success: true,
+        alreadyProvisioned: true,
+        message: 'System was already provisioned and initial credentials were removed from Script Properties.'
+      };
+    }
+    Logger.log('[PROVISIONING_ERROR] Missing required Script Properties. Fail-Closed.');
+    return {
+      success: false,
+      code: 'MISSING_PROPERTIES',
+      message: 'Missing required Script Properties: INITIAL_ADMIN_EMAIL, INITIAL_ADMIN_PASSWORD, BADR_SPREADSHEET_ID, DAMIETTA_SPREADSHEET_ID.'
+    };
+  }
+
+  // 1. Verify reachability of both spreadsheets before modifying any data (Fail-Closed)
+  try {
+    var badrSs = SpreadsheetApp.openById(cleanBadrId);
+    if (!badrSs) {
+      Logger.log('[PROVISIONING_ERROR] Could not open BADR spreadsheet: ' + cleanBadrId);
+      return { success: false, code: 'INVALID_SPREADSHEET_ID', message: 'Could not access Badr spreadsheet.' };
+    }
+  } catch (errBadr) {
+    Logger.log('[PROVISIONING_ERROR] Failed to open BADR spreadsheet: ' + errBadr);
+    return { success: false, code: 'INVALID_SPREADSHEET_ID', message: 'Failed to access Badr spreadsheet: ' + errBadr };
+  }
+
+  try {
+    var damiettaSs = SpreadsheetApp.openById(cleanDamiettaId);
+    if (!damiettaSs) {
+      Logger.log('[PROVISIONING_ERROR] Could not open DAMIETTA spreadsheet: ' + cleanDamiettaId);
+      return { success: false, code: 'INVALID_SPREADSHEET_ID', message: 'Could not access Damietta spreadsheet.' };
+    }
+  } catch (errDamietta) {
+    Logger.log('[PROVISIONING_ERROR] Failed to open DAMIETTA spreadsheet: ' + errDamietta);
+    return { success: false, code: 'INVALID_SPREADSHEET_ID', message: 'Failed to access Damietta spreadsheet: ' + errDamietta };
+  }
+
+  var masterSs = SpreadsheetApp.getActiveSpreadsheet();
+  ensureProductionStaffSheetsExist(masterSs);
+
+  var nowIso = getCairoISOString();
+  var masterSheet = masterSs.getSheetByName(SHEETS.MASTER_SCHOOLS);
+  if (!masterSheet) {
+    masterSheet = masterSs.insertSheet(SHEETS.MASTER_SCHOOLS);
+    var mHeaders = ['schoolId', 'schoolCode', 'schoolName', 'spreadsheetId', 'status', 'createdAt', 'updatedAt'];
+    masterSheet.getRange(1, 1, 1, mHeaders.length).setValues([mHeaders]);
+    styleHeaderRow(masterSheet, mHeaders.length);
+  }
+
+  // 2. Real Master Schools Registry (Idempotent Update/Insert)
+  var targetSchools = [
+    {
+      schoolId: 'SCH-BADR',
+      schoolCode: 'BADR',
+      schoolName: 'مدرسة إبدأ الوطنية للعلوم التقنية - بدر',
+      spreadsheetId: cleanBadrId,
+      status: 'Active'
+    },
+    {
+      schoolId: 'SCH-DAMIETTA',
+      schoolCode: 'DAMIETTA',
+      schoolName: 'مدرسة إبدأ الوطنية للعلوم التقنية - دمياط',
+      spreadsheetId: cleanDamiettaId,
+      status: 'Active'
+    }
+  ];
+
+  var existingSchools = getSheetData(masterSs, SHEETS.MASTER_SCHOOLS);
+  var schoolHeaders = masterSheet.getRange(1, 1, 1, masterSheet.getLastColumn()).getValues()[0];
+  var sIdCol = schoolHeaders.indexOf('schoolId');
+  var sCodeCol = schoolHeaders.indexOf('schoolCode');
+  var sNameCol = schoolHeaders.indexOf('schoolName');
+  var sSsCol = schoolHeaders.indexOf('spreadsheetId');
+  var sStatusCol = schoolHeaders.indexOf('status');
+  var sUpdatedCol = schoolHeaders.indexOf('updatedAt');
+
+  for (var t = 0; t < targetSchools.length; t++) {
+    var target = targetSchools[t];
+    var rowIndex = -1;
+    for (var r = 0; r < existingSchools.length; r++) {
+      if (
+        String(existingSchools[r].schoolId || '').trim().toUpperCase() === target.schoolId.toUpperCase() ||
+        String(existingSchools[r].schoolCode || '').trim().toUpperCase() === target.schoolCode.toUpperCase()
+      ) {
+        rowIndex = r + 2; // 1-indexed header + 1
+        break;
+      }
+    }
+
+    if (rowIndex > 1) {
+      // Update existing row
+      if (sNameCol >= 0) masterSheet.getRange(rowIndex, sNameCol + 1).setValue(target.schoolName);
+      if (sSsCol >= 0) masterSheet.getRange(rowIndex, sSsCol + 1).setValue(target.spreadsheetId);
+      if (sStatusCol >= 0) masterSheet.getRange(rowIndex, sStatusCol + 1).setValue(target.status);
+      if (sUpdatedCol >= 0) masterSheet.getRange(rowIndex, sUpdatedCol + 1).setValue(nowIso);
+    } else {
+      // Append new row
+      masterSheet.appendRow([
+        target.schoolId,
+        target.schoolCode,
+        target.schoolName,
+        target.spreadsheetId,
+        target.status,
+        nowIso,
+        nowIso
+      ]);
+    }
+  }
+
+  // 3. System Admin Account (Idempotent by normalized email)
+  var usersSheet = masterSs.getSheetByName(SHEETS.USERS);
+  var usersData = usersSheet.getDataRange().getValues();
+  var uHeaders = usersData[0];
+  var uEmailCol = uHeaders.indexOf('email');
+  var uRoleCol = uHeaders.indexOf('role');
+  var uStatusCol = uHeaders.indexOf('status');
+  var uAllowedCol = uHeaders.indexOf('allowedSchoolIds');
+  var uHashCol = uHeaders.indexOf('passwordHash');
+  var uSaltCol = uHeaders.indexOf('passwordSalt');
+  var uAlgoCol = uHeaders.indexOf('passwordAlgorithm');
+  var uIterCol = uHeaders.indexOf('passwordIterations');
+  var uPassChangeCol = uHeaders.indexOf('passwordChangedAt');
+  var uFullNameCol = uHeaders.indexOf('fullName');
+
+  // Compute password hash
+  var salt = generateSecureRandomToken(16);
+  var hash = computeSaltedHash(cleanPassword, salt, PBKDF2_ITERATIONS);
+  var allowedSchoolsJson = JSON.stringify(['SCH-BADR', 'SCH-DAMIETTA']);
+
+  var userRowIndex = -1;
+  for (var u = 1; u < usersData.length; u++) {
+    var rowEmail = String(usersData[u][uEmailCol] || '').trim().toLowerCase();
+    if (rowEmail === cleanEmail) {
+      userRowIndex = u + 1; // 1-indexed
+      break;
+    }
+  }
+
+  if (userRowIndex > 1) {
+    // Update existing user safely
+    if (uRoleCol >= 0) usersSheet.getRange(userRowIndex, uRoleCol + 1).setValue('SystemAdmin');
+    if (uStatusCol >= 0) usersSheet.getRange(userRowIndex, uStatusCol + 1).setValue('Active');
+    if (uAllowedCol >= 0) usersSheet.getRange(userRowIndex, uAllowedCol + 1).setValue(allowedSchoolsJson);
+    if (uHashCol >= 0) usersSheet.getRange(userRowIndex, uHashCol + 1).setValue(hash);
+    if (uSaltCol >= 0) usersSheet.getRange(userRowIndex, uSaltCol + 1).setValue(salt);
+    if (uAlgoCol >= 0) usersSheet.getRange(userRowIndex, uAlgoCol + 1).setValue('PBKDF2-HMAC-SHA256');
+    if (uIterCol >= 0) usersSheet.getRange(userRowIndex, uIterCol + 1).setValue(PBKDF2_ITERATIONS);
+    if (uPassChangeCol >= 0) usersSheet.getRange(userRowIndex, uPassChangeCol + 1).setValue(nowIso);
+    if (uFullNameCol >= 0 && cleanFullName) usersSheet.getRange(userRowIndex, uFullNameCol + 1).setValue(cleanFullName);
+  } else {
+    // Insert new user
+    var newUserId = 'usr-admin-' + Utilities.getUuid().replace(/-/g, '').substring(0, 12);
+    var newUserRow = [];
+    for (var h = 0; h < uHeaders.length; h++) {
+      var headerName = uHeaders[h];
+      switch (headerName) {
+        case 'id': newUserRow.push(newUserId); break;
+        case 'username': newUserRow.push('systemadmin'); break;
+        case 'passwordHash': newUserRow.push(hash); break;
+        case 'passwordSalt': newUserRow.push(salt); break;
+        case 'passwordAlgorithm': newUserRow.push('PBKDF2-HMAC-SHA256'); break;
+        case 'passwordIterations': newUserRow.push(PBKDF2_ITERATIONS); break;
+        case 'fullName': newUserRow.push(cleanFullName); break;
+        case 'role': newUserRow.push('SystemAdmin'); break;
+        case 'status': newUserRow.push('Active'); break;
+        case 'department': newUserRow.push('إدارة النظام'); break;
+        case 'email': newUserRow.push(cleanEmail); break;
+        case 'schoolId': newUserRow.push(''); break;
+        case 'allowedSchoolIds': newUserRow.push(allowedSchoolsJson); break;
+        case 'employeeId': newUserRow.push(''); break;
+        case 'createdAt': newUserRow.push(nowIso); break;
+        case 'lastLogin': newUserRow.push(''); break;
+        case 'passwordChangedAt': newUserRow.push(nowIso); break;
+        default: newUserRow.push('');
+      }
+    }
+    usersSheet.appendRow(newUserRow);
+  }
+
+  // 4. One-Time Safety: purge password and sensitive initial setup properties from ScriptProperties
+  props.deleteProperty('INITIAL_ADMIN_PASSWORD');
+  props.deleteProperty('INITIAL_ADMIN_EMAIL');
+  props.deleteProperty('INITIAL_ADMIN_FULL_NAME');
+  props.deleteProperty('BADR_SPREADSHEET_ID');
+  props.deleteProperty('DAMIETTA_SPREADSHEET_ID');
+  props.setProperty('INITIAL_SYSTEM_PROVISIONED', 'true');
+
+  // 5. Authoritative Audit Log (Zero sensitive fields)
+  recordAuthoritativeAudit(
+    masterSs,
+    'PROVISION_' + Utilities.getUuid().substring(0, 8),
+    cleanEmail,
+    'SystemAdmin',
+    'SYSTEM_INITIAL_PROVISIONING',
+    'SYSTEM',
+    'SYSTEM',
+    'تهيئة النظام الأولي بنجاح: SCH-BADR, SCH-DAMIETTA'
+  );
+
+  Logger.log('[PROVISIONING_SUCCESS] Initial system and schools provisioned successfully for ' + cleanEmail);
+  return {
+    success: true,
+    alreadyProvisioned: false,
+    message: 'Initial system, schools, and SystemAdmin account provisioned successfully.'
+  };
+}
+
+/**
+ * Manual verification helper function.
+ * Strictly non-public: logs verification findings to Logger without revealing secrets.
+ *
+ * @returns {Object} Safe status summary
+ */
+function verifyInitialSystemProvisioning() {
+  var masterSs = SpreadsheetApp.getActiveSpreadsheet();
+  var users = getSheetData(masterSs, SHEETS.USERS);
+  var schools = getSheetData(masterSs, SHEETS.MASTER_SCHOOLS);
+
+  var sysAdmin = null;
+  for (var u = 0; u < users.length; u++) {
+    if (String(users[u].role || '').trim() === 'SystemAdmin') {
+      sysAdmin = users[u];
+      break;
+    }
+  }
+
+  var badr = null;
+  var damietta = null;
+  for (var s = 0; s < schools.length; s++) {
+    var sid = String(schools[s].schoolId || '').trim().toUpperCase();
+    if (sid === 'SCH-BADR') badr = schools[s];
+    if (sid === 'SCH-DAMIETTA') damietta = schools[s];
+  }
+
+  var badrReachable = false;
+  if (badr && badr.spreadsheetId) {
+    try {
+      badrReachable = !!SpreadsheetApp.openById(badr.spreadsheetId);
+    } catch (e) {
+      badrReachable = false;
+    }
+  }
+
+  var damiettaReachable = false;
+  if (damietta && damietta.spreadsheetId) {
+    try {
+      damiettaReachable = !!SpreadsheetApp.openById(damietta.spreadsheetId);
+    } catch (e) {
+      damiettaReachable = false;
+    }
+  }
+
+  var result = {
+    systemAdminExists: !!sysAdmin,
+    email: sysAdmin ? String(sysAdmin.email || '') : 'NONE',
+    role: sysAdmin ? String(sysAdmin.role || '') : 'NONE',
+    accountStatus: sysAdmin ? String(sysAdmin.status || '') : 'NONE',
+    allowedSchoolIds: sysAdmin ? (sysAdmin.allowedSchoolIds || '[]') : '[]',
+    badrRegistered: !!badr,
+    damiettaRegistered: !!damietta,
+    badrSpreadsheetReachable: badrReachable,
+    damiettaSpreadsheetReachable: damiettaReachable
+  };
+
+  Logger.log('=== INITIAL SYSTEM PROVISIONING VERIFICATION ===');
+  Logger.log('SystemAdmin exists: ' + (result.systemAdminExists ? 'YES' : 'NO'));
+  Logger.log('Email: ' + result.email);
+  Logger.log('Role: ' + result.role);
+  Logger.log('Account status: ' + result.accountStatus);
+  Logger.log('Allowed school IDs: ' + result.allowedSchoolIds);
+  Logger.log('SCH-BADR registered: ' + (result.badrRegistered ? 'YES' : 'NO'));
+  Logger.log('SCH-DAMIETTA registered: ' + (result.damiettaRegistered ? 'YES' : 'NO'));
+  Logger.log('Badr spreadsheet reachable: ' + (result.badrSpreadsheetReachable ? 'YES' : 'NO'));
+  Logger.log('Damietta spreadsheet reachable: ' + (result.damiettaSpreadsheetReachable ? 'YES' : 'NO'));
+  Logger.log('================================================');
+
+  return result;
+}
+
