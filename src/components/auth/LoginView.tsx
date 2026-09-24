@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   Lock,
-  User as UserIcon,
+  Mail,
   Eye,
   EyeOff,
   LogIn,
@@ -9,10 +9,8 @@ import {
   ShieldCheck,
   CalendarDays,
   GraduationCap,
-  Building,
-  ChevronDown,
 } from 'lucide-react';
-import { School, User } from '../../types';
+import { User } from '../../types';
 import { storageService } from '../../services/storageService';
 import { NTSSLogo } from '../common/NTSSLogo';
 
@@ -27,34 +25,18 @@ export const LoginView: React.FC<LoginViewProps> = ({
   onOpenPublicSchedule,
   onOpenTeacherPortal,
 }) => {
-  const [schools, setSchools] = useState<School[]>(() => storageService.getSchools());
-  const [selectedSchoolId, setSelectedSchoolId] = useState<string>(() => storageService.getActiveSchoolId());
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
-  // Fetch registered schools from Master Registry on mount
-  useEffect(() => {
-    storageService.fetchPublicSchoolsFromBackend().then(list => {
-      if (list && list.length > 0) {
-        setSchools(list);
-      }
-    });
-  }, []);
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
 
-    if (!selectedSchoolId) {
-      setErrorMessage('يرجى اختيار المدرسة التابع لها الحساب');
-      return;
-    }
-
-    if (!username.trim()) {
-      setErrorMessage('يرجى إدخال اسم المستخدم');
+    if (!email.trim()) {
+      setErrorMessage('يرجى إدخال البريد الإلكتروني');
       return;
     }
 
@@ -66,7 +48,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
     setIsLoading(true);
 
     try {
-      const result = await storageService.login(username.trim(), password, selectedSchoolId);
+      const result = await storageService.login(email.trim(), password);
 
       if (result.success && result.user) {
         onLoginSuccess(result.user);
@@ -79,8 +61,6 @@ export const LoginView: React.FC<LoginViewProps> = ({
       setIsLoading(false);
     }
   };
-
-  const selectedSchoolObj = schools.find(s => s.schoolId === selectedSchoolId);
 
   return (
     <div
@@ -101,7 +81,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
               تسجيل الدخول للنظام
             </h1>
             <p className="text-xs sm:text-sm text-slate-500 font-normal">
-              منظومة المدارس المتعددة — اختر مدرستك ثم أدخل بيانات الحساب
+              أدخل البريد الإلكتروني وكلمة المرور
             </p>
           </div>
 
@@ -113,81 +93,41 @@ export const LoginView: React.FC<LoginViewProps> = ({
             </div>
           )}
 
-          {/* Login Form: 1. School, 2. Username, 3. Password */}
+          {/* Login Form: 1. Email, 2. Password */}
           <form onSubmit={handleSubmit} className="space-y-4">
-            {/* 1. School Selector */}
+            {/* 1. Email Input */}
             <div className="space-y-1.5 text-right">
               <label
-                htmlFor="select-school"
+                htmlFor="input-email"
                 className="block text-xs font-bold text-slate-700 select-none"
               >
-                1. المدرسة
-              </label>
-              <div className="relative flex items-center">
-                <div className="absolute right-3.5 text-[#008e8b] pointer-events-none">
-                  <Building className="w-4 h-4" />
-                </div>
-                <select
-                  id="select-school"
-                  required
-                  value={selectedSchoolId}
-                  onChange={e => {
-                    const newId = e.target.value;
-                    setSelectedSchoolId(newId);
-                    storageService.setActiveSchoolId(newId);
-                  }}
-                  className="w-full pr-10 pl-9 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#008e8b]/20 focus:border-[#008e8b] transition-all cursor-pointer appearance-none"
-                >
-                  {schools.map(s => (
-                    <option key={s.schoolId} value={s.schoolId}>
-                      {s.schoolName} ({s.schoolCode || s.schoolId})
-                    </option>
-                  ))}
-                </select>
-                <div className="absolute left-3 text-slate-400 pointer-events-none">
-                  <ChevronDown className="w-4 h-4" />
-                </div>
-              </div>
-              {selectedSchoolObj && (
-                <div className="text-[11px] text-teal-700 font-medium px-1 flex items-center justify-between">
-                  <span>كود المدرسة: {selectedSchoolObj.schoolCode || selectedSchoolObj.schoolId}</span>
-                  <span className="text-slate-400">قاعدة بيانات مستقلة</span>
-                </div>
-              )}
-            </div>
-
-            {/* 2. Username Input */}
-            <div className="space-y-1.5 text-right">
-              <label
-                htmlFor="input-username"
-                className="block text-xs font-bold text-slate-700 select-none"
-              >
-                2. اسم المستخدم
+                البريد الإلكتروني
               </label>
               <div className="relative flex items-center">
                 <div className="absolute right-3.5 text-slate-400 pointer-events-none">
-                  <UserIcon className="w-4 h-4" />
+                  <Mail className="w-4 h-4" />
                 </div>
                 <input
-                  id="input-username"
-                  type="text"
-                  autoComplete="username"
+                  id="input-email"
+                  type="email"
+                  autoComplete="email"
                   required
-                  value={username}
-                  onChange={e => setUsername(e.target.value)}
-                  placeholder="مثال: admin"
-                  className="w-full pr-10 pl-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#008e8b]/20 focus:border-[#008e8b] transition-all"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  placeholder="name@school.edu.eg"
+                  className="w-full pr-10 pl-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#008e8b]/20 focus:border-[#008e8b] transition-all text-left"
+                  dir="ltr"
                 />
               </div>
             </div>
 
-            {/* 3. Password Input */}
+            {/* 2. Password Input */}
             <div className="space-y-1.5 text-right">
               <label
                 htmlFor="input-password"
                 className="block text-xs font-bold text-slate-700 select-none"
               >
-                3. كلمة المرور
+                كلمة المرور
               </label>
               <div className="relative flex items-center">
                 <div className="absolute right-3.5 text-slate-400 pointer-events-none">
@@ -230,7 +170,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
                 {isLoading ? (
                   <>
                     <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    <span>جارٍ التحقق من الحساب والمدرسة...</span>
+                    <span>جارٍ التحقق من الحساب...</span>
                   </>
                 ) : (
                   <>

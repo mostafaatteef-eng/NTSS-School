@@ -141,7 +141,7 @@ describe('RBAC Phase 2F-C — Backend Version Compatibility', () => {
     });
     global.fetch = fetchSpy as any;
 
-    const loginRes = await storageService.login('admin', 'SecretPassword123!', 'SCH-1');
+    const loginRes = await storageService.login('admin@badr.edu.eg', 'SecretPassword123!');
     expect(loginRes.success).toBe(false);
     expect(loginRes.code).toBe('BACKEND_VERSION_MISMATCH');
 

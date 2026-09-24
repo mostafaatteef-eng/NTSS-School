@@ -315,11 +315,14 @@ export interface MasterSchoolRegistryRecord extends School {
 export interface User {
   id: string;
   schoolId?: string;
-  username: string;
+  username?: string;
   loginNumber?: number | string;
   fullName: string;
   name?: string; // compatibility alias for fullName
   role: UserRole | LegacyUserRole | 'Unknown';
+  accessScope?: AccessScope;
+  allowedSchoolIds?: string[];
+  activeSchoolId?: string;
   employeeId?: string;
   email?: string;
   password?: string; // write-only when creating/resetting

@@ -536,9 +536,6 @@ class StorageService {
         body: JSON.stringify({
           action: 'validateSession',
           sessionToken: targetUser.sessionToken,
-          userId: targetUser.id,
-          userRole: targetUser.role,
-          schoolId: targetUser.schoolId || this.getActiveSchoolId(),
         }),
         signal: controller.signal,
       });
@@ -660,28 +657,14 @@ class StorageService {
   }
 
   public async login(
-    username: string,
-    password: string,
-    schoolId?: string
+    email: string,
+    password: string
   ): Promise<{ success: boolean; message?: string; user?: User; code?: string; loginNumber?: string | number }> {
-    const cleanUsername = (username || '').trim().toLowerCase();
-    const cleanPassword = (password || '').trim();
-    const cleanSchoolId = (schoolId || this.getActiveSchoolId()).trim();
+    const cleanEmail = String(email || '').trim().toLowerCase();
+    const cleanPassword = String(password || '').trim();
 
-    if (!cleanUsername || !cleanPassword) {
-      return { success: false, message: 'يرجى إدخال اسم المستخدم وكلمة المرور' };
-    }
-
-    // Security Rule: Teacher accounts are strictly forbidden from entering administrative ERP
-    const teacherAccounts = this.getTeacherAccounts();
-    const isTeacher = teacherAccounts.some(
-      t => (t.username || '').trim().toLowerCase() === cleanUsername
-    );
-    if (isTeacher) {
-      return {
-        success: false,
-        message: 'حساب معلم: غير مصرح بالدخول إلى نظام ERP الإداري. يرجى تسجيل الدخول عبر بوابة المعلم المخصصة.'
-      };
+    if (!cleanEmail || !cleanPassword) {
+      return { success: false, code: 'INVALID_CREDENTIALS', message: 'يرجى إدخال البريد الإلكتروني وكلمة المرور' };
     }
 
     const settings = this.getSettings();
@@ -721,29 +704,25 @@ class StorageService {
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({
           action: 'login',
-          username: cleanUsername,
+          email: cleanEmail,
           password: cleanPassword,
-          schoolId: cleanSchoolId,
         }),
       });
 
       if (!response.ok) {
-        return { success: false, message: `خطأ اتصال بخادم المصادقة (${response.status}). تعذر التحقق من الهوية.` };
+        return {
+          success: false,
+          code: 'AUTH_SERVICE_UNAVAILABLE',
+          message: `خطأ اتصال بخادم المصادقة (${response.status}). تعذر التحقق من الهوية.`
+        };
       }
 
       const result = await response.json();
       if (result.status === 'success' && result.user) {
         const canonicalRole = normalizeStaffRole(result.user.role);
-        const resolvedToken = (
-          result.sessionToken ||
-          result.token ||
-          result.data?.sessionToken ||
-          result.data?.token ||
-          result.user?.sessionToken ||
-          result.user?.token ||
-          result.session_token ||
-          result.authToken
-        );
+
+        // Strict session token check: ONLY accept result.sessionToken, NO token alias fallbacks
+        const resolvedToken = result.sessionToken;
         if (!resolvedToken || typeof resolvedToken !== 'string' || !resolvedToken.trim()) {
           return {
             success: false,
@@ -751,23 +730,40 @@ class StorageService {
             message: 'فشل تسجيل الدخول: استجابة الخادم تفتقر إلى رمز جلسة موثوق (sessionToken).',
           };
         }
-        const resolvedSchoolId = (
-          result.schoolId ||
-          cleanSchoolId ||
-          result.user?.schoolId ||
-          DEFAULT_PRIMARY_SCHOOL.schoolId
-        );
+
+        // Server-derived user context (NO client resolution, NO DEFAULT_PRIMARY_SCHOOL fallback)
+        const serverSchoolId = result.schoolId !== undefined ? result.schoolId : result.user.schoolId;
+        const serverActiveSchoolId = result.activeSchoolId !== undefined ? result.activeSchoolId : result.user.activeSchoolId;
+        const serverAllowedSchoolIds = result.allowedSchoolIds !== undefined ? result.allowedSchoolIds : result.user.allowedSchoolIds;
+        const serverAccessScope = result.accessScope !== undefined ? result.accessScope : result.user.accessScope;
+
         const userWithToken: User = {
           ...result.user,
-          schoolId: resolvedSchoolId,
+          email: cleanEmail,
           role: canonicalRole,
+          schoolId: serverSchoolId,
+          activeSchoolId: serverActiveSchoolId,
+          allowedSchoolIds: serverAllowedSchoolIds,
+          accessScope: serverAccessScope,
           sessionToken: String(resolvedToken).trim(),
         };
+
         if (result.expiresAt || result.sessionExpiresAt) {
           userWithToken.sessionExpiresAt = result.expiresAt || result.sessionExpiresAt;
         }
         delete userWithToken.password;
-        this.setActiveSchoolId(resolvedSchoolId);
+
+        // Active School Cache handling (UX cache only, strictly NOT an authority)
+        // If SystemAdmin GLOBAL and activeSchoolId is empty/undefined, DO NOT set active school or fallback!
+        if (serverAccessScope === 'GLOBAL') {
+          if (serverActiveSchoolId) {
+            this.setActiveSchoolId(serverActiveSchoolId);
+          }
+          // Do NOT call setActiveSchoolId if serverActiveSchoolId is empty or undefined
+        } else if (serverActiveSchoolId || serverSchoolId) {
+          this.setActiveSchoolId(serverActiveSchoolId || serverSchoolId);
+        }
+
         this.setCurrentUser(userWithToken);
         return { success: true, user: userWithToken };
       } else if (result.status === 'error') {
@@ -778,12 +774,21 @@ class StorageService {
             message: result.message || 'قاعدة بيانات المستخدمين فارغة، يلزم تهيئة حساب مدير النظام الأول.'
           };
         }
-        return { success: false, message: result.message || 'بيانات الدخول غير صحيحة' };
+        return {
+          success: false,
+          code: result.code || 'INVALID_CREDENTIALS',
+          message: result.message || 'بيانات الدخول غير صحيحة.'
+        };
       }
-      return { success: false, message: 'استجابة غير متوقعة من خادم المصادقة' };
+      return {
+        success: false,
+        code: 'UNEXPECTED_RESPONSE',
+        message: 'استجابة غير متوقعة من خادم المصادقة'
+      };
     } catch (err: any) {
       return {
         success: false,
+        code: 'AUTH_SERVICE_UNAVAILABLE',
         message: `تعذر الاتصال بخادم المصادقة المعتمد: ${err?.message || 'خطأ في الشبكة'}. تم إغلاق مسار الدخول أمنياً (Fail-Closed).`
       };
     }
