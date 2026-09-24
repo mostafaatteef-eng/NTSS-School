@@ -151,7 +151,7 @@ describe('RBAC Phase 2F-C — Backend Version Compatibility', () => {
     expect(calledUrl).toContain('action=health');
   });
 
-  it('6. SecurityAudit mock uses 5.1.0-RBAC-SECURE and BOOTSTRAP_PUBLIC_ROUTE_RETIRED', async () => {
+  it('6. SecurityAudit mock uses 5.2.0-AUTH-MULTISCHOOL and BOOTSTRAP_PUBLIC_ROUTE_RETIRED', async () => {
     const report = await SecurityAuditTestSuite.runSuite();
     expect(report.totalTests).toBeGreaterThanOrEqual(16);
 
@@ -167,7 +167,7 @@ describe('RBAC Phase 2F-C — Backend Version Compatibility', () => {
     const auditFilePath = path.resolve(process.cwd(), 'src/services/securityAuditTest.ts');
     const content = fs.readFileSync(auditFilePath, 'utf-8');
     expect(content).not.toContain('4.0.0-PROD-STAFF-ONLY');
-    expect(content).toContain('5.1.0-RBAC-SECURE');
+    expect(content).toContain('5.2.0-AUTH-MULTISCHOOL');
     expect(content).toContain('BOOTSTRAP_PUBLIC_ROUTE_RETIRED');
   });
 

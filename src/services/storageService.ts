@@ -70,8 +70,6 @@ import {
 import {
   MASTER_SCHOOLS_KEY,
   ACTIVE_SCHOOL_KEY,
-  DEFAULT_PRIMARY_SCHOOL,
-  SECONDARY_SEED_SCHOOL,
 } from './migrationScope014MultiSchool';
 import {
   DEFAULT_ACADEMIC_YEARS,
@@ -308,26 +306,33 @@ class StorageService {
         }
       }
     } catch {}
-    return [DEFAULT_PRIMARY_SCHOOL, SECONDARY_SEED_SCHOOL];
+    return [];
   }
 
   /**
    * Returns the currently active school ID.
    * Priority:
-   * 1. The authenticated user's bound schoolId
-   * 2. The active school selected on the client / login screen
-   * 3. Fallback to SCH-BADR
+   * 1. Authenticated user authoritative context (currentUser.activeSchoolId -> currentUser.schoolId -> '')
+   *    (Strictly no localStorage authority for authenticated users).
+   * 2. Unauthenticated user: stored client UX preference (ACTIVE_SCHOOL_KEY), fallback to ''.
+   *    (Zero fake defaults like SCH-BADR).
    */
   public getActiveSchoolId(): string {
     const current = this.getCurrentUser();
-    if (current && current.schoolId && current.schoolId.trim()) {
-      return current.schoolId.trim();
+    if (current) {
+      if (current.activeSchoolId && current.activeSchoolId.trim()) {
+        return current.activeSchoolId.trim();
+      }
+      if (current.schoolId && current.schoolId.trim()) {
+        return current.schoolId.trim();
+      }
+      return '';
     }
     const stored = localStorage.getItem(ACTIVE_SCHOOL_KEY);
     if (stored && stored.trim()) {
       return stored.trim();
     }
-    return DEFAULT_PRIMARY_SCHOOL.schoolId;
+    return '';
   }
 
   /**
@@ -342,12 +347,17 @@ class StorageService {
 
   /**
    * Returns the complete School descriptor object for the currently active school.
+   * Returns School | null.
+   * If no activeSchoolId or school not in cache: returns null (Zero fake fallbacks).
    */
-  public getActiveSchool(): School {
+  public getActiveSchool(): School | null {
     const activeId = this.getActiveSchoolId();
+    if (!activeId) {
+      return null;
+    }
     const schools = this.getSchools();
     const found = schools.find(s => s.schoolId === activeId);
-    return found || schools[0] || DEFAULT_PRIMARY_SCHOOL;
+    return found || null;
   }
 
   /**
@@ -355,7 +365,8 @@ class StorageService {
    */
   public async fetchPublicSchoolsFromBackend(): Promise<School[]> {
     const scriptUrl = this.getBackendUrl();
-    if (!scriptUrl || scriptUrl.length < 15 || !navigator.onLine) {
+    const isOnline = typeof navigator === 'undefined' || navigator.onLine !== false;
+    if (!scriptUrl || scriptUrl.length < 15 || !isOnline) {
       return this.getSchools();
     }
     try {
@@ -366,7 +377,7 @@ class StorageService {
       });
       if (response.ok) {
         const res = await response.json();
-        if (res.status === 'success' && Array.isArray(res.schools) && res.schools.length > 0) {
+        if (res.status === 'success' && Array.isArray(res.schools)) {
           const cleanSchools: School[] = res.schools.map((s: any) => ({
             schoolId: s.schoolId,
             schoolCode: s.schoolCode,
@@ -591,7 +602,7 @@ class StorageService {
    * Calls GET ?action=health and validates:
    * 1. serviceAvailable === true
    * 2. canonicalSource === CANONICAL_BACKEND_SOURCE ('google-apps-script/Code.gs')
-   * 3. version === CANONICAL_BACKEND_VERSION ('5.1.0-RBAC-SECURE')
+   * 3. version === CANONICAL_BACKEND_VERSION ('5.2.0-AUTH-MULTISCHOOL')
    */
   public async checkBackendCompatibility(targetScriptUrl?: string): Promise<{
     compatible: boolean;

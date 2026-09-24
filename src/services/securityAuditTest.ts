@@ -476,7 +476,7 @@ export class SecurityAuditTestSuite {
       } catch {}
     }
 
-    // Local Verification Interceptor matching Google Apps Script Code.gs specification (5.1.0-RBAC-SECURE)
+    // Local Verification Interceptor matching Google Apps Script Code.gs specification (5.2.0-AUTH-MULTISCHOOL)
     const action = params.action;
     if (action === 'ping' || action === 'health') {
       return {
@@ -485,7 +485,7 @@ export class SecurityAuditTestSuite {
           status: 'success',
           serviceAvailable: true,
           canonicalSource: CANONICAL_BACKEND_SOURCE,
-          version: CANONICAL_BACKEND_VERSION, // 5.1.0-RBAC-SECURE
+          version: CANONICAL_BACKEND_VERSION, // 5.2.0-AUTH-MULTISCHOOL
           systemMode: 'PRODUCTION_RBAC',
           timestamp: new Date().toISOString(),
         },

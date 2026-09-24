@@ -284,8 +284,8 @@ describe('RBAC Phase 2E: Self Data Enforcement & Backend Deployment Readiness', 
     expect(authEdit.code).toBe('ROLE_PERMISSION_DENIED');
   });
 
-  // 18. SchoolAdmin privilege escalation blocked and backend version is 5.1.0-RBAC-SECURE
-  it('18. SchoolAdmin privilege escalation is blocked and backend version is 5.1.0-RBAC-SECURE', () => {
+  // 18. SchoolAdmin privilege escalation blocked and backend version is 5.2.0-AUTH-MULTISCHOOL
+  it('18. SchoolAdmin privilege escalation is blocked and backend version is 5.2.0-AUTH-MULTISCHOOL', () => {
     // 18a: SchoolAdmin cannot escalate to SystemAdmin
     const escalationRes = saveUserSecure(schoolAdminSession, {
       id: 'usr-attempt-sysadmin',
@@ -308,12 +308,12 @@ describe('RBAC Phase 2E: Self Data Enforcement & Backend Deployment Readiness', 
     expect(sysAdminEditRes.success).toBe(false);
     expect(sysAdminEditRes.code).toBe('FORBIDDEN');
 
-    // 18c: Verify canonical backend version matches 5.1.0-RBAC-SECURE
-    expect(CANONICAL_BACKEND_VERSION).toBe('5.1.0-RBAC-SECURE');
+    // 18c: Verify canonical backend version matches 5.2.0-AUTH-MULTISCHOOL
+    expect(CANONICAL_BACKEND_VERSION).toBe('5.2.0-AUTH-MULTISCHOOL');
 
-    // 18d: Verify Code.gs code contains CANONICAL_BACKEND_VERSION = '5.1.0-RBAC-SECURE'
+    // 18d: Verify Code.gs code contains CANONICAL_BACKEND_VERSION = '5.2.0-AUTH-MULTISCHOOL'
     const codeGsPath = path.resolve(__dirname, '../google-apps-script/Code.gs');
     const codeGsContent = fs.readFileSync(codeGsPath, 'utf8');
-    expect(codeGsContent).toContain("var CANONICAL_BACKEND_VERSION = '5.1.0-RBAC-SECURE';");
+    expect(codeGsContent).toContain("var CANONICAL_BACKEND_VERSION = '5.2.0-AUTH-MULTISCHOOL';");
   });
 });

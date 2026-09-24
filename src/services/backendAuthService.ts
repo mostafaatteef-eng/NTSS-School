@@ -31,7 +31,7 @@ import {
 } from '../types';
 import { hasEffectivePermission, DEFAULT_ROLE_PERMISSIONS } from '../utils/permissions';
 
-export const CANONICAL_BACKEND_VERSION = '5.1.0-RBAC-SECURE';
+export const CANONICAL_BACKEND_VERSION = '5.2.0-AUTH-MULTISCHOOL';
 
 // In-Memory Security Audit Logs Store (Server Authoritative)
 const securityAuditLogs: BackendSecurityAuditEvent[] = [];

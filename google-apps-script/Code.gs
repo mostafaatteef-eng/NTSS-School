@@ -2,7 +2,7 @@
  * ==============================================================================
  * NTSS SCHOOL ERP & TIMETABLE SYSTEM - AUTHORITATIVE GOOGLE APPS SCRIPT BACKEND
  * ==============================================================================
- * Version: 5.1.0-RBAC-SECURE
+ * Version: 5.2.0-AUTH-MULTISCHOOL
  * Runtime: V8 (Google Apps Script)
  * Authoritative Storage: Google Sheets Spreadsheet
  *
@@ -41,7 +41,7 @@
  */
 
 var CANONICAL_BACKEND_SOURCE = 'google-apps-script/Code.gs';
-var CANONICAL_BACKEND_VERSION = '5.1.0-RBAC-SECURE';
+var CANONICAL_BACKEND_VERSION = '5.2.0-AUTH-MULTISCHOOL';
 var PBKDF2_ITERATIONS = 10000;
 var SESSION_DURATION_HOURS = 24;
 var TEACHER_SESSION_DURATION_HOURS = 24;
@@ -124,7 +124,7 @@ function doGet(e) {
   }
 
   // Public Active Schools Registry (No spreadsheetId returned)
-  if (action === 'publicSchools' || action === 'getPublicSchools') {
+  if (action === 'publicSchools' || action === 'getPublicSchools' || action === 'getSchools') {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     ensureProductionStaffSheetsExist(ss);
     var schools = getPublicActiveSchools(ss);
@@ -192,7 +192,7 @@ function doPost(e) {
     }
 
     // Public Active Schools Registry (No spreadsheetId returned)
-    if (action === 'publicSchools' || action === 'getPublicSchools') {
+    if (action === 'publicSchools' || action === 'getPublicSchools' || action === 'getSchools') {
       ensureProductionStaffSheetsExist(ss);
       output.schools = getPublicActiveSchools(ss);
       output.status = 'success';
@@ -330,30 +330,6 @@ function doPost(e) {
       return createJsonResponse(output, 200);
     }
 
-    // Public Schools Registry List (School selection on Login Screen, NO auth required, returns active schools)
-    if (action === 'getPublicSchools' || action === 'getSchools') {
-      var masterSchoolsList = getSheetData(ss, SHEETS.MASTER_SCHOOLS);
-      if (!masterSchoolsList || masterSchoolsList.length === 0) {
-        masterSchoolsList = [{
-          schoolId: 'SCH-BADR',
-          schoolCode: 'BADR',
-          schoolName: 'مدرسة بدر الإعدادية بنين',
-          status: 'Active'
-        }];
-      }
-      var publicSchools = masterSchoolsList
-        .filter(function(s) { return String(s.status || 'Active').trim() === 'Active'; })
-        .map(function(s) {
-          return {
-            schoolId: String(s.schoolId || '').trim(),
-            schoolCode: String(s.schoolCode || '').trim(),
-            schoolName: String(s.schoolName || '').trim(),
-            status: 'Active'
-          };
-        });
-      output.schools = publicSchools;
-      return createJsonResponse(output, 200);
-    }
 
     // Public Student Class Schedule (School-Scoped, NO login, NO token, strictly published lessons only)
     if (action === 'getPublicClassSchedule') {
@@ -5567,8 +5543,8 @@ function ensureTeacherSessionHeaders(sheet) {
 
 /**
  * Idempotent Migration: MIG_SCOPE_015_MULTI_SCHOOL_AND_DECOMMISSION_ACTIVATION
- * 1. Ensures Master_Schools registry exists with default school.
- * 2. Ensures Sessions and Teacher_Sessions contain schoolId column.
+ * 1. Ensures Master_Schools registry exists with headers only (Zero fake school seeds).
+ * 2. Ensures Sessions and Teacher_Sessions contain schoolId column (No fake backfill).
  * 3. Decommissions activation token columns from Users sheet.
  */
 function runMigrationScope015MultiSchoolAndDecommissionActivation(ss) {
@@ -5580,56 +5556,16 @@ function runMigrationScope015MultiSchoolAndDecommissionActivation(ss) {
     styleHeaderRow(masterSheet, mHeaders.length);
   }
 
-  // Seed default school if empty
-  if (masterSheet.getLastRow() <= 1) {
-    var nowIso = getCairoISOString();
-    masterSheet.appendRow([
-      'SCH-BADR',
-      'BADR',
-      'مدرسة بدر الحديثة',
-      ss.getId(),
-      'Active',
-      nowIso,
-      nowIso
-    ]);
-  }
-
-  // Ensure Sessions has schoolId column
+  // Ensure Sessions has schoolId column without guessing/backfilling schoolId
   var sessionsSheet = ss.getSheetByName(SHEETS.SESSIONS);
   if (sessionsSheet) {
-    var sCol = ensureHeaderColumn(sessionsSheet, 'schoolId');
-    if (sessionsSheet.getLastRow() > 1 && sCol > 0) {
-      var sData = sessionsSheet.getRange(2, sCol, sessionsSheet.getLastRow() - 1, 1).getValues();
-      var sNeedsUpdate = false;
-      for (var si = 0; si < sData.length; si++) {
-        if (!sData[si][0]) {
-          sData[si][0] = 'SCH-BADR';
-          sNeedsUpdate = true;
-        }
-      }
-      if (sNeedsUpdate) {
-        sessionsSheet.getRange(2, sCol, sData.length, 1).setValues(sData);
-      }
-    }
+    ensureHeaderColumn(sessionsSheet, 'schoolId');
   }
 
-  // Ensure Teacher_Sessions has schoolId column
+  // Ensure Teacher_Sessions has schoolId column without guessing/backfilling schoolId
   var teacherSessionsSheet = ss.getSheetByName(SHEETS.TEACHER_SESSIONS);
   if (teacherSessionsSheet) {
-    var tsCol = ensureHeaderColumn(teacherSessionsSheet, 'schoolId');
-    if (teacherSessionsSheet.getLastRow() > 1 && tsCol > 0) {
-      var tsData = teacherSessionsSheet.getRange(2, tsCol, teacherSessionsSheet.getLastRow() - 1, 1).getValues();
-      var tsNeedsUpdate = false;
-      for (var tsi = 0; tsi < tsData.length; tsi++) {
-        if (!tsData[tsi][0]) {
-          tsData[tsi][0] = 'SCH-BADR';
-          tsNeedsUpdate = true;
-        }
-      }
-      if (tsNeedsUpdate) {
-        teacherSessionsSheet.getRange(2, tsCol, tsData.length, 1).setValues(tsData);
-      }
-    }
+    ensureHeaderColumn(teacherSessionsSheet, 'schoolId');
   }
 
   // Clear legacy activation tokens from Users sheet
@@ -5659,9 +5595,39 @@ function runMigrationScope015MultiSchoolAndDecommissionActivation(ss) {
 }
 
 /**
+ * Returns public active schools list from Master_Schools registry.
+ * Strictly Fail-Closed: returns [] if registry is empty or missing.
+ * Zero fallback objects.
+ * @param {Spreadsheet} ss
+ * @returns {Array<Object>}
+ */
+function getPublicActiveSchools(ss) {
+  var masterSheet = ss.getSheetByName(SHEETS.MASTER_SCHOOLS);
+  if (!masterSheet) {
+    return [];
+  }
+  var masterSchoolsList = getSheetData(ss, SHEETS.MASTER_SCHOOLS);
+  if (!masterSchoolsList || masterSchoolsList.length === 0) {
+    return [];
+  }
+  return masterSchoolsList
+    .filter(function(s) { return String(s.status || 'Active').trim() === 'Active'; })
+    .map(function(s) {
+      return {
+        schoolId: String(s.schoolId || '').trim(),
+        schoolCode: String(s.schoolCode || '').trim(),
+        schoolName: String(s.schoolName || '').trim(),
+        status: 'Active'
+      };
+    });
+}
+
+/**
  * Resolves a school context from Master_Schools in masterSs.
- * @param {string} schoolId
- * @param {Spreadsheet} masterSs
+ * Strictly Fail-Closed: returns null if Master_Schools is missing or empty.
+ * Never runs migrations or creates schools automatically.
+ * @param {string|Object} schoolIdOrSession
+ * @param {string|Spreadsheet} requestedSchoolIdOrMasterSs
  * @returns {Object|null}
  */
 function resolveSchoolContext(schoolIdOrSession, requestedSchoolIdOrMasterSs) {
@@ -5699,8 +5665,7 @@ function resolveSchoolContext(schoolIdOrSession, requestedSchoolIdOrMasterSs) {
   var cleanId = String(schoolId).trim().toUpperCase();
   var masterSheet = masterSs.getSheetByName(SHEETS.MASTER_SCHOOLS);
   if (!masterSheet) {
-    runMigrationScope015MultiSchoolAndDecommissionActivation(masterSs);
-    masterSheet = masterSs.getSheetByName(SHEETS.MASTER_SCHOOLS);
+    return null;
   }
 
   var schools = getSheetData(masterSs, SHEETS.MASTER_SCHOOLS);
@@ -5731,22 +5696,32 @@ function resolveSchoolContext(schoolIdOrSession, requestedSchoolIdOrMasterSs) {
 
 /**
  * Returns the isolated Google Spreadsheet instance for a given school.
- * Each school has its own independent Google Spreadsheet.
+ * Strictly Fail-Closed:
+ * - If school context not found or spreadsheetId is blank: returns null.
+ * - If spreadsheetId is explicitly registered and equals masterSs.getId(): returns masterSs.
+ * - If SpreadsheetApp.openById fails: returns null (Zero fallback to masterSs).
  * @param {string} schoolId
  * @param {Spreadsheet} masterSs
- * @returns {Spreadsheet}
+ * @returns {Spreadsheet|null}
  */
 function getSchoolSpreadsheet(schoolId, masterSs) {
   var ctx = resolveSchoolContext(schoolId, masterSs);
-  if (!ctx || !ctx.spreadsheetId || ctx.spreadsheetId === masterSs.getId()) {
+  if (!ctx || !ctx.spreadsheetId || !String(ctx.spreadsheetId).trim()) {
+    return null;
+  }
+
+  var targetSpreadsheetId = String(ctx.spreadsheetId).trim();
+  if (masterSs && masterSs.getId && targetSpreadsheetId === masterSs.getId()) {
     return masterSs;
   }
 
   try {
-    return SpreadsheetApp.openById(ctx.spreadsheetId);
+    var opened = SpreadsheetApp.openById(targetSpreadsheetId);
+    if (!opened) return null;
+    return opened;
   } catch (err) {
     console.error('Failed to open spreadsheet for school ' + schoolId + ': ' + err);
-    return masterSs;
+    return null;
   }
 }
 

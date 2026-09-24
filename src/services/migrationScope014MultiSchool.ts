@@ -1,37 +1,17 @@
 /**
  * MIG_SCOPE_014_MULTI_SCHOOL
  * 
- * Multi-School ERP Migration (Idempotent):
- * 1. Registers the existing primary school (SCH-BADR) into the Master School Registry
- *    without moving, altering, or losing any existing school data.
- * 2. Seeds secondary active school (SCH-DAMIETTA) for multi-school readiness.
- * 3. Sets SCH-BADR as the default active school if none is selected.
- * 4. Ensures all local caches adhere to school-isolation boundaries.
- * 5. Strictly guards against duplicate records when run repeatedly.
+ * Multi-School ERP Migration (Idempotent & Fail-Closed):
+ * 1. Strictly stops all fake school seeding (zero auto-added schools).
+ * 2. Preserves existing schools in Master School Registry cache without alteration.
+ * 3. Does NOT set a default active school: if not set, activeSchoolId is ''.
+ * 4. Deduplicates existing records by schoolId cleanly.
  */
 
 import { School } from '../types';
 
 export const MASTER_SCHOOLS_KEY = 'ntss_master_schools_registry_v1';
 export const ACTIVE_SCHOOL_KEY = 'ntss_active_school_id_v1';
-
-export const DEFAULT_PRIMARY_SCHOOL: School = {
-  schoolId: 'SCH-BADR',
-  schoolCode: 'BADR',
-  schoolName: 'مدرسة إبدأ الوطنية للعلوم التقنية - بدر',
-  status: 'Active',
-  createdAt: '2026-09-01T00:00:00.000Z',
-  updatedAt: '2026-09-01T00:00:00.000Z',
-};
-
-export const SECONDARY_SEED_SCHOOL: School = {
-  schoolId: 'SCH-DAMIETTA',
-  schoolCode: 'DAMIETTA',
-  schoolName: 'مدرسة إبدأ الوطنية للعلوم التقنية - دمياط',
-  status: 'Active',
-  createdAt: '2026-09-01T00:00:00.000Z',
-  updatedAt: '2026-09-01T00:00:00.000Z',
-};
 
 export interface MigrationScope014Result {
   migrated: boolean;
@@ -42,14 +22,17 @@ export interface MigrationScope014Result {
 }
 
 export function runMigrationScope014MultiSchool(): MigrationScope014Result {
-  const version = 'MIG_SCOPE_014_MULTI_SCHOOL';
+  const version = 'MIG_SCOPE_014_MULTI_SCHOOL_FAIL_CLOSED';
   const migrationMarkerKey = 'ntss_migration_scope_014_executed';
 
   let schools: School[] = [];
   try {
     const raw = localStorage.getItem(MASTER_SCHOOLS_KEY);
     if (raw) {
-      schools = JSON.parse(raw);
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        schools = parsed;
+      }
     }
   } catch {
     schools = [];
@@ -57,24 +40,10 @@ export function runMigrationScope014MultiSchool(): MigrationScope014Result {
 
   let modified = false;
 
-  // 1. Ensure Primary School exists
-  const hasPrimary = schools.some(s => s.schoolId === DEFAULT_PRIMARY_SCHOOL.schoolId || s.schoolCode === DEFAULT_PRIMARY_SCHOOL.schoolCode);
-  if (!hasPrimary) {
-    schools.push({ ...DEFAULT_PRIMARY_SCHOOL });
-    modified = true;
-  }
-
-  // 2. Ensure Secondary School exists
-  const hasSecondary = schools.some(s => s.schoolId === SECONDARY_SEED_SCHOOL.schoolId || s.schoolCode === SECONDARY_SEED_SCHOOL.schoolCode);
-  if (!hasSecondary) {
-    schools.push({ ...SECONDARY_SEED_SCHOOL });
-    modified = true;
-  }
-
-  // 3. Deduplicate by schoolId
+  // Deduplicate existing cached schools by schoolId if any exist
   const uniqueMap = new Map<string, School>();
   for (const s of schools) {
-    if (!uniqueMap.has(s.schoolId)) {
+    if (s && s.schoolId && !uniqueMap.has(s.schoolId)) {
       uniqueMap.set(s.schoolId, s);
     }
   }
@@ -83,18 +52,26 @@ export function runMigrationScope014MultiSchool(): MigrationScope014Result {
     modified = true;
   }
 
-  // Persist if modified or marker missing
+  // Persist deduplicated cache if modified or marker missing
   const alreadyExecuted = localStorage.getItem(migrationMarkerKey) === version;
   if (modified || !alreadyExecuted) {
-    localStorage.setItem(MASTER_SCHOOLS_KEY, JSON.stringify(cleanSchools));
+    if (cleanSchools.length > 0) {
+      localStorage.setItem(MASTER_SCHOOLS_KEY, JSON.stringify(cleanSchools));
+    }
     localStorage.setItem(migrationMarkerKey, version);
   }
 
-  // 4. Default active school if not set
-  let activeSchoolId = localStorage.getItem(ACTIVE_SCHOOL_KEY);
-  if (!activeSchoolId || !cleanSchools.some(s => s.schoolId === activeSchoolId)) {
-    activeSchoolId = DEFAULT_PRIMARY_SCHOOL.schoolId;
-    localStorage.setItem(ACTIVE_SCHOOL_KEY, activeSchoolId);
+  // Fail-Closed: Zero default active school authority.
+  // If activeSchoolId is not set or not in known schools, activeSchoolId is ''
+  let activeSchoolId = (localStorage.getItem(ACTIVE_SCHOOL_KEY) || '').trim();
+  if (cleanSchools.length > 0) {
+    if (!cleanSchools.some(s => s.schoolId === activeSchoolId)) {
+      activeSchoolId = '';
+      localStorage.setItem(ACTIVE_SCHOOL_KEY, '');
+    }
+  } else {
+    activeSchoolId = '';
+    localStorage.setItem(ACTIVE_SCHOOL_KEY, '');
   }
 
   return {
@@ -102,6 +79,6 @@ export function runMigrationScope014MultiSchool(): MigrationScope014Result {
     version,
     schoolsCount: cleanSchools.length,
     activeSchoolId,
-    message: 'Master School Registry initialized idempotently without data loss',
+    message: 'Master School Registry migrated idempotently with zero fake seeds',
   };
 }

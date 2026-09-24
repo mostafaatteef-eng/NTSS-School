@@ -40,7 +40,7 @@ describe('RBAC Phase 2F-A: Auth Client Hardening', () => {
             status: 'success',
             serviceAvailable: true,
             canonicalSource: 'google-apps-script/Code.gs',
-            version: '5.1.0-RBAC-SECURE',
+            version: '5.2.0-AUTH-MULTISCHOOL',
           }),
         };
       }
