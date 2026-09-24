@@ -370,21 +370,14 @@ function doPost(e) {
       }, 410);
     }
 
-    // Bootstrap First Admin (Permitted only when no admins exist)
+    // Bootstrap First Admin (Permanently Retired - Public Route Forbidden)
     if (action === 'bootstrapFirstAdmin') {
-      var bootstrapResult = handleFirstAdminBootstrap(ss, postData, requestId);
-      if (!bootstrapResult.success) {
-        return createJsonResponse({
-          status: 'error',
-          code: bootstrapResult.code || 'BOOTSTRAP_FAILED',
-          message: bootstrapResult.message,
-          requestId: requestId
-        }, 400);
-      }
-
-      output.message = bootstrapResult.message;
-      output.user = bootstrapResult.user;
-      return createJsonResponse(output, 200);
+      return createJsonResponse({
+        status: 'error',
+        code: 'BOOTSTRAP_PUBLIC_ROUTE_RETIRED',
+        message: 'تم إيقاف مسار التهيئة العامة للمسؤول الأول أمنياً. يتم تهيئة الحسابات الإدارية عبر القنوات الخادمة الموثوقة فقط.',
+        requestId: requestId
+      }, 410);
     }
 
     // -------------------------------------------------------------
@@ -2208,79 +2201,13 @@ function handleTeacherLogin(masterSs, usernameOrCode, password, requestId, schoo
 }
 
 /**
- * Handle First Admin Bootstrap (Strict Script Properties Only - Fails Closed)
+ * Handle First Admin Bootstrap (Permanently Retired Route - Fails Closed)
  */
 function handleFirstAdminBootstrap(ss, postData, requestId) {
-  var users = getSheetData(ss, SHEETS.USERS);
-  var activeAdmins = users.filter(function(u) {
-    return String(u.role || '').trim() === 'Admin' && String(u.status || 'Active').trim() === 'Active';
-  });
-
-  var scriptProps = PropertiesService.getScriptProperties();
-  var propCompleted = scriptProps.getProperty('BOOTSTRAP_COMPLETED');
-  if (activeAdmins.length > 0 || propCompleted === 'true') {
-    return {
-      success: false,
-      code: 'BOOTSTRAP_LOCKED',
-      message: 'تم إغلاق معالج التهيئة الأولية نهائياً. يوجد بالفعل حساب مدير نظام معتمد.'
-    };
-  }
-
-  // SECURITY: Strictly accept credentials ONLY from Script Properties, NEVER from request payload
-  var username = scriptProps.getProperty('BOOTSTRAP_ADMIN_USERNAME');
-  var password = scriptProps.getProperty('BOOTSTRAP_ADMIN_PASSWORD');
-
-  if (!username || !password) {
-    return {
-      success: false,
-      code: 'BOOTSTRAP_PROPERTIES_MISSING',
-      message: 'تعذر تهيئة مدير النظام: لم يتم ضبط BOOTSTRAP_ADMIN_USERNAME و BOOTSTRAP_ADMIN_PASSWORD في Script Properties.'
-    };
-  }
-
-  username = String(username).trim().toLowerCase();
-  password = String(password).trim();
-  var fullName = 'مدير النظام الأول المعتمد';
-
-  if (password.length < 8) {
-    return { success: false, code: 'PASSWORD_TOO_WEAK', message: 'كلمة المرور في Script Properties يجب أن لا تقل عن 8 أحرف.' };
-  }
-
-  var salt = Utilities.getUuid().replace(/-/g, '');
-  var passwordHash = computeSaltedHash(password, salt, PBKDF2_ITERATIONS);
-  var now = new Date().toISOString();
-
-  var adminUserRow = [
-    'USR_ADM_' + Utilities.getUuid().substring(0, 8),
-    username,
-    passwordHash,
-    salt,
-    'PBKDF2-HMAC-SHA256',
-    PBKDF2_ITERATIONS,
-    fullName,
-    'Admin',
-    'Active',
-    'الإدارة العامة والتوجيه',
-    'admin@ntss-schools.edu.eg',
-    now,
-    '',
-    now
-  ];
-
-  var usersSheet = ss.getSheetByName(SHEETS.USERS);
-  if (usersSheet) {
-    usersSheet.appendRow(adminUserRow);
-  }
-
-  scriptProps.setProperty('BOOTSTRAP_COMPLETED', 'true');
-  scriptProps.deleteProperty('BOOTSTRAP_ADMIN_PASSWORD'); // Immediate wipe of sensitive credential
-
-  recordAuthoritativeAudit(ss, requestId, username, 'Admin', 'BOOTSTRAP_INIT', 'USERS', username, 'تمت تهيئة حساب مدير النظام الأول بنجاح ومسح كلمة المرور من الخصائص');
-
   return {
-    success: true,
-    message: 'تم إنشاء حساب مدير النظام الأول بنجاح من Script Properties وقفل المعالج نهائياً.',
-    user: { username: username, fullName: fullName, role: 'Admin' }
+    success: false,
+    code: 'BOOTSTRAP_PUBLIC_ROUTE_RETIRED',
+    message: 'تم إيقاف مسار التهيئة العامة للمسؤول الأول أمنياً. يتم تهيئة الحسابات الإدارية عبر القنوات الخادمة الموثوقة فقط.'
   };
 }
 

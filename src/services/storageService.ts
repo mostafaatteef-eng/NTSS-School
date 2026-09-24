@@ -690,43 +690,16 @@ class StorageService {
   }
 
   public async bootstrapFirstAdmin(
-    username: string,
-    password: string,
-    fullName: string,
-    schoolId?: string
-  ): Promise<{ success: boolean; message?: string; user?: any }> {
-    const settings = this.getSettings();
-    const scriptUrl = settings.googleAppsScriptUrl || DEFAULT_BACKEND_URL;
-    if (!scriptUrl || scriptUrl.length < 15) {
-      return { success: false, message: 'رابط الخادم المعتمد غير مهيأ' };
-    }
-
-    try {
-      const cleanSchoolId = (schoolId || this.getActiveSchoolId()).trim();
-      const response = await fetch(scriptUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({
-          action: 'bootstrapFirstAdmin',
-          username: username.trim().toLowerCase(),
-          password: password.trim(),
-          fullName: fullName.trim(),
-          schoolId: cleanSchoolId,
-        }),
-      });
-
-      if (!response.ok) {
-        return { success: false, message: `خطأ في الاتصال بالخادم (${response.status})` };
-      }
-
-      const result = await response.json();
-      if (result.status === 'success') {
-        return { success: true, message: result.message, user: result.user };
-      }
-      return { success: false, message: result.message || 'فشلت عملية تهيئة المدير الأول' };
-    } catch (err: any) {
-      return { success: false, message: `خطأ اتصال: ${err?.message || 'تعذر الاتصال'}` };
-    }
+    _username?: string,
+    _password?: string,
+    _fullName?: string,
+    _schoolId?: string
+  ): Promise<{ success: boolean; message?: string; user?: any; code?: string }> {
+    return {
+      success: false,
+      code: 'BOOTSTRAP_PUBLIC_ROUTE_RETIRED',
+      message: 'تم إيقاف مسار التهيئة العامة للمسؤول الأول أمنياً. يتم تهيئة الحسابات الإدارية عبر القنوات الخادمة الموثوقة فقط.',
+    };
   }
 
   // ---------------- Role Permissions ----------------
@@ -4373,245 +4346,31 @@ class StorageService {
     return this.pushPostDirect('resetUserPassword', { userId, newPassword });
   }
 
-  public async issueUserActivationToken(userId: string): Promise<{
+  public async issueUserActivationToken(_userId: string): Promise<{
     success: boolean;
     loginNumber?: number | string;
     activationToken?: string;
     expiresAt?: string;
     message?: string;
+    code?: string;
   }> {
-    const caller = this.getCurrentUser();
-    if (caller && caller.role !== 'Admin' && caller.role !== 'TeacherAffairs') {
-      return { success: false, message: 'غير مصرح بإصدار كود تفعيل. خاص بمدير النظام وشؤون المعلمين فقط.' };
-    }
-
-    const settings = this.getSettings();
-    const scriptUrl = settings.googleAppsScriptUrl || DEFAULT_BACKEND_URL;
-
-    // 1. Authoritative Backend POST
-    if (scriptUrl && scriptUrl.length > 15 && navigator.onLine) {
-      try {
-        const response = await fetch(scriptUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({
-            action: 'issueUserActivationToken',
-            sessionToken: caller?.sessionToken,
-            userId,
-            payload: { userId },
-          }),
-        });
-
-        if (response.ok) {
-          const res = await response.json();
-          if (res.status === 'success') {
-            const users = this.getUsers();
-            const uIdx = users.findIndex(u => u.id === userId);
-            if (uIdx >= 0) {
-              users[uIdx].loginNumber = res.loginNumber || users[uIdx].loginNumber;
-              users[uIdx].passwordInitialized = false;
-              users[uIdx].activationExpiresAt = res.expiresAt;
-              localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
-              this.notifyChange();
-            }
-            return {
-              success: true,
-              loginNumber: res.loginNumber,
-              activationToken: res.activationToken,
-              expiresAt: res.expiresAt,
-              message: res.message || 'تم إصدار كود التفعيل لمرة واحدة بنجاح',
-            };
-          }
-          return { success: false, message: res.message || 'فشل إصدار كود التفعيل من الخادم' };
-        }
-      } catch (err: any) {
-        console.warn('Backend activation issue request failed, generating secure token locally...', err);
-      }
-    }
-
-    // 2. Cryptographic Local Generator Fallback
-    const users = this.getUsers();
-    const uIdx = users.findIndex(u => u.id === userId);
-    if (uIdx < 0) return { success: false, message: 'المستخدم غير موجود' };
-
-    let loginNum = users[uIdx].loginNumber;
-    if (!loginNum) {
-      loginNum = this.getNextLoginNumber();
-      users[uIdx].loginNumber = loginNum;
-    }
-
-    const rawToken = generateCryptographicToken(8).toUpperCase();
-    const hashHex = await hashPlainSHA256(rawToken);
-
-    const expiryDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-    users[uIdx].activationTokenHash = hashHex;
-    users[uIdx].activationExpiresAt = expiryDate;
-    users[uIdx].activationTokenExpiresAt = expiryDate;
-    users[uIdx].passwordInitialized = false;
-
-    localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
-    this.notifyChange();
-    this.logAudit('UPDATE', 'USER', `إصدار كود تفعيل لمرة واحدة للمستخدم: ${users[uIdx].fullName}`, '', '', userId);
-
     return {
-      success: true,
-      loginNumber: loginNum,
-      activationToken: rawToken,
-      expiresAt: expiryDate,
-      message: 'تم إصدار كود التفعيل لمرة واحدة بنجاح',
+      success: false,
+      code: 'FIRST_LOGIN_DECOMMISSIONED',
+      message: 'تم إيقاف مسار تفعيل الحسابات ورموز التفعيل بشكل نهائي (MIG_SCOPE_015).',
     };
   }
 
   public async firstLoginPasswordSetup(
-    loginNumberOrUsername: string,
-    activationToken: string,
-    newPassword: string,
-    confirmPassword?: string
+    _loginNumberOrUsername?: string,
+    _activationToken?: string,
+    _newPassword?: string,
+    _confirmPassword?: string
   ): Promise<{ success: boolean; sessionToken?: string; user?: User; message?: string; code?: string }> {
-    const cleanLogin = (loginNumberOrUsername || '').trim();
-    const cleanToken = (activationToken || '').trim().toUpperCase();
-    const cleanPass = (newPassword || '').trim();
-    const cleanConfirm = (confirmPassword !== undefined ? confirmPassword : cleanPass).trim();
-
-    if (!cleanLogin || !cleanToken || !cleanPass) {
-      return { success: false, message: 'يرجى إدخال رقم الدخول وكود التفعيل وكلمة المرور الجديدة' };
-    }
-
-    if (cleanPass.length < 8) {
-      return { success: false, message: 'كلمة المرور يجب ألا تقل عن 8 أحرف' };
-    }
-
-    if (!/[A-Za-z\u0600-\u06FF]/.test(cleanPass) || !/[0-9]/.test(cleanPass)) {
-      return { success: false, message: 'كلمة المرور يجب أن تحتوي على أحرف وأرقام معاً' };
-    }
-
-    if (cleanPass !== cleanConfirm) {
-      return { success: false, message: 'كلمة المرور وتأكيدها غير متطابقين' };
-    }
-
-    const settings = this.getSettings();
-    const scriptUrl = settings.googleAppsScriptUrl || DEFAULT_BACKEND_URL;
-
-    // 1. Authoritative Backend First Login Setup
-    if (scriptUrl && scriptUrl.length > 15 && navigator.onLine) {
-      try {
-        const response = await fetch(scriptUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({
-            action: 'firstLoginPasswordSetup',
-            loginNumber: cleanLogin,
-            activationToken: cleanToken,
-            newPassword: cleanPass,
-            confirmPassword: cleanPass,
-          }),
-        });
-
-        if (response.ok) {
-          const res = await response.json();
-          if (res.status === 'success' && res.user) {
-            const resolvedToken = (
-              res.sessionToken ||
-              res.token ||
-              res.data?.sessionToken ||
-              res.data?.token ||
-              res.user?.sessionToken ||
-              res.user?.token ||
-              res.session_token ||
-              res.authToken
-            );
-            if (!resolvedToken || typeof resolvedToken !== 'string' || !resolvedToken.trim()) {
-              return {
-                success: false,
-                code: 'LOGIN_SESSION_TOKEN_MISSING',
-                message: 'فشل تفعيل الحساب: استجابة الخادم تفتقر إلى رمز جلسة موثوق (sessionToken).',
-              };
-            }
-            const userWithToken: User = {
-              ...res.user,
-              sessionToken: String(resolvedToken).trim(),
-              passwordInitialized: true,
-            };
-            if (res.expiresAt || res.sessionExpiresAt) {
-              userWithToken.sessionExpiresAt = res.expiresAt || res.sessionExpiresAt;
-            }
-            this.setCurrentUser(userWithToken);
-            return {
-              success: true,
-              sessionToken: userWithToken.sessionToken,
-              user: userWithToken,
-              message: res.message || 'تم إعداد كلمة المرور وتفعيل الحساب بنجاح',
-            };
-          } else if (res.status === 'error') {
-            return { success: false, message: res.message || 'فشلت عملية التفعيل' };
-          }
-        }
-      } catch (err: any) {
-        console.warn('Backend firstLoginPasswordSetup failed, checking local token...', err);
-      }
-    }
-
-    // 2. Local Fallback Verification
-    const users = this.getUsers();
-    const user = users.find(
-      u => String(u.loginNumber) === cleanLogin ||
-           u.username.toLowerCase() === cleanLogin.toLowerCase() ||
-           u.id === cleanLogin
-    );
-
-    if (!user) {
-      return { success: false, message: 'بيانات الدخول غير صحيحة أو الحساب غير مسجل' };
-    }
-
-    if (user.status === 'Inactive' || user.status === 'Suspended') {
-      return { success: false, message: 'الحساب غير نشط حالياً. يرجى مراجعة إدارة المدرسة.' };
-    }
-
-    if (!user.activationTokenHash) {
-      return { success: false, message: 'لم يتم إصدار كود تفعيل لهذا الحساب أو تم استخدامه بالفعل. يرجى مراجعة الإدارة.' };
-    }
-
-    const hashHex = await hashPlainSHA256(cleanToken);
-
-    if (hashHex !== user.activationTokenHash) {
-      return { success: false, message: 'كود التفعيل غير صحيح' };
-    }
-
-    const isExpired = (user.activationExpiresAt && new Date() > new Date(user.activationExpiresAt)) ||
-                      (user.activationTokenExpiresAt && new Date() > new Date(user.activationTokenExpiresAt));
-    if (isExpired) {
-      return { success: false, message: 'انتهت صلاحية كود التفعيل، وهو منتهي الصلاحية. يرجى طلب كود جديد من مدير النظام.' };
-    }
-
-    const uIdx = users.findIndex(u => u.id === user.id);
-    const salt = generateCryptographicSalt(16);
-    const passHash = await derivePBKDF2Hash(cleanPass, salt);
-    users[uIdx].password = cleanPass;
-    users[uIdx].passwordHash = passHash;
-    users[uIdx].passwordSalt = salt;
-    users[uIdx].passwordInitialized = true;
-    users[uIdx].mustChangePassword = false;
-    delete users[uIdx].activationTokenHash;
-    delete users[uIdx].activationExpiresAt;
-    delete users[uIdx].activationTokenExpiresAt;
-
-    localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
-    this.notifyChange();
-
-    const loggedUser: User = {
-      ...users[uIdx],
-      sessionToken: `LOCAL_SES_${Date.now()}`,
-    };
-    delete loggedUser.password;
-    this.setCurrentUser(loggedUser);
-
-    this.logAudit('UPDATE', 'USER', `إعداد كلمة المرور وتفعيل الحساب لأول مرة: ${user.fullName}`, '', '', user.id);
-
     return {
-      success: true,
-      user: loggedUser,
-      sessionToken: loggedUser.sessionToken,
-      message: 'تم إعداد كلمة المرور وتفعيل الحساب بنجاح',
+      success: false,
+      code: 'FIRST_LOGIN_DECOMMISSIONED',
+      message: 'تم إيقاف مسار إعداد كلمة المرور لأول مرة بشكل نهائي (MIG_SCOPE_015). يرجى استخدام بيانات الدخول المعتمدة من إدارة النظام.',
     };
   }
 

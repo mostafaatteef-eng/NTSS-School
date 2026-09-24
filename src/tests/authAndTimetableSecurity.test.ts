@@ -80,7 +80,7 @@ describe('NTSS ERP - Security, Login Numbers, First Login & Timetable Integratio
     expect(foundByNumber?.id).toBe(emp.id);
   });
 
-  it('Test 5: First-time user with passwordInitialized: false returns PASSWORD_SETUP_REQUIRED', async () => {
+  it('Test 5: issueUserActivationToken fails closed with FIRST_LOGIN_DECOMMISSIONED (MIG_SCOPE_015)', async () => {
     const user: User = {
       id: 'USR-SETUP-TEST',
       username: 'new_teacher',
@@ -93,14 +93,11 @@ describe('NTSS ERP - Security, Login Numbers, First Login & Timetable Integratio
     storageService.saveUser(user);
 
     const issueRes = await storageService.issueUserActivationToken(user.id);
-    expect(issueRes.success).toBe(true);
-
-    const storedUser = storageService.getUserById(user.id);
-    expect(storedUser?.passwordInitialized).toBe(false);
-    expect(storedUser?.activationTokenHash).toBeDefined();
+    expect(issueRes.success).toBe(false);
+    expect(issueRes.code).toBe('FIRST_LOGIN_DECOMMISSIONED');
   });
 
-  it('Test 6: Issuing one-time activation token generates token and stores secure hash', async () => {
+  it('Test 6: Issuing one-time activation token is permanently retired', async () => {
     const user: User = {
       id: 'USR-TOKEN-TEST',
       username: 'token_user',
@@ -113,17 +110,12 @@ describe('NTSS ERP - Security, Login Numbers, First Login & Timetable Integratio
     storageService.saveUser(user);
 
     const result = await storageService.issueUserActivationToken(user.id);
-    expect(result.success).toBe(true);
-    expect(result.activationToken).toBeDefined();
-    expect(result.activationToken?.length).toBeGreaterThan(6);
-
-    const updated = storageService.getUserById(user.id);
-    expect(updated?.activationTokenHash).toBeDefined();
-    // Plain token must never be stored in database
-    expect((updated as any).activationToken).toBeUndefined();
+    expect(result.success).toBe(false);
+    expect(result.code).toBe('FIRST_LOGIN_DECOMMISSIONED');
+    expect(result.activationToken).toBeUndefined();
   });
 
-  it('Test 7: FirstLoginPasswordSetup with valid token hashes password, sets passwordInitialized=true, burns token', async () => {
+  it('Test 7: FirstLoginPasswordSetup is decommissioned and returns FIRST_LOGIN_DECOMMISSIONED', async () => {
     const user: User = {
       id: 'USR-ACTIVATE-TEST',
       username: 'activate_user',
@@ -135,66 +127,23 @@ describe('NTSS ERP - Security, Login Numbers, First Login & Timetable Integratio
     };
     storageService.saveUser(user);
 
-    const tokenRes = await storageService.issueUserActivationToken(user.id);
-    const token = tokenRes.activationToken!;
-
-    const setupRes = await storageService.firstLoginPasswordSetup('107', token, 'StrongPassword123!');
-    expect(setupRes.success).toBe(true);
-
-    const updated = storageService.getUserById(user.id);
-    expect(updated?.passwordInitialized).toBe(true);
-    expect(updated?.activationTokenHash).toBeUndefined();
-    expect(updated?.passwordHash).toBeDefined();
-    expect(updated?.passwordSalt).toBeDefined();
-  });
-
-  it('Test 8: FirstLoginPasswordSetup with already burned token fails', async () => {
-    const user: User = {
-      id: 'USR-BURN-TEST',
-      username: 'burn_user',
-      loginNumber: '108',
-      fullName: 'مستخدم الكود المحروق',
-      role: 'Teacher',
-      passwordInitialized: false,
-      status: 'Active',
-    };
-    storageService.saveUser(user);
-
-    const tokenRes = await storageService.issueUserActivationToken(user.id);
-    const token = tokenRes.activationToken!;
-
-    // First use
-    const firstUse = await storageService.firstLoginPasswordSetup('108', token, 'FirstPassword123!');
-    expect(firstUse.success).toBe(true);
-
-    // Second use of the same token must fail
-    const secondUse = await storageService.firstLoginPasswordSetup('108', token, 'SecondPassword123!');
-    expect(secondUse.success).toBe(false);
-  });
-
-  it('Test 9: FirstLoginPasswordSetup with expired token fails', async () => {
-    const user: User = {
-      id: 'USR-EXPIRE-TEST',
-      username: 'expire_user',
-      loginNumber: '109',
-      fullName: 'مستخدم الكود منتهي الصلاحية',
-      role: 'Teacher',
-      passwordInitialized: false,
-      status: 'Active',
-    };
-    storageService.saveUser(user);
-
-    const tokenRes = await storageService.issueUserActivationToken(user.id);
-    const token = tokenRes.activationToken!;
-
-    // Manually expire the token in database
-    const userDoc = storageService.getUserById(user.id)!;
-    userDoc.activationTokenExpiresAt = new Date(Date.now() - 100000).toISOString();
-    storageService.saveUser(userDoc);
-
-    const setupRes = await storageService.firstLoginPasswordSetup('109', token, 'Password123!');
+    const setupRes = await storageService.firstLoginPasswordSetup('107', 'ANYTOKEN', 'StrongPassword123!');
     expect(setupRes.success).toBe(false);
-    expect(setupRes.message).toContain('منتهي الصلاحية');
+    expect(setupRes.code).toBe('FIRST_LOGIN_DECOMMISSIONED');
+  });
+
+  it('Test 8: FirstLoginPasswordSetup fails closed without generating session tokens', async () => {
+    const setupRes = await storageService.firstLoginPasswordSetup('108', 'TOKEN123', 'SecondPassword123!');
+    expect(setupRes.success).toBe(false);
+    expect(setupRes.code).toBe('FIRST_LOGIN_DECOMMISSIONED');
+    expect(setupRes.sessionToken).toBeUndefined();
+  });
+
+  it('Test 9: FirstLoginPasswordSetup returns decommissioning error message', async () => {
+    const setupRes = await storageService.firstLoginPasswordSetup('109', 'EXPIRED_TOKEN', 'Password123!');
+    expect(setupRes.success).toBe(false);
+    expect(setupRes.code).toBe('FIRST_LOGIN_DECOMMISSIONED');
+    expect(setupRes.message).toContain('تم إيقاف مسار إعداد كلمة المرور لأول مرة بشكل نهائي');
   });
 
   it('Test 10: Reset user to pending setup clears password and resets passwordInitialized to false', async () => {
