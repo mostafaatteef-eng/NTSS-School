@@ -119,6 +119,7 @@ import { buildUnifiedAttendanceRecord, calculateAttendanceMetrics } from '../uti
 import { computeAttendanceDayReview, calculateStudentLateMinutes } from '../utils/attendanceEngine';
 import { SyncQueueService } from './syncQueueService';
 import { NotificationService } from './notificationService';
+import { CANONICAL_BACKEND_SOURCE, CANONICAL_BACKEND_VERSION } from './googleSheetsAppScript';
 
 const STORAGE_KEYS = {
   SETTINGS: 'ntss_school_settings_v3',
@@ -572,6 +573,92 @@ class StorageService {
     }
   }
 
+  /**
+   * RBAC Phase 2F-C: Backend Version & Authoritative Source Compatibility Check
+   * Calls GET ?action=health and validates:
+   * 1. serviceAvailable === true
+   * 2. canonicalSource === CANONICAL_BACKEND_SOURCE ('google-apps-script/Code.gs')
+   * 3. version === CANONICAL_BACKEND_VERSION ('5.1.0-RBAC-SECURE')
+   */
+  public async checkBackendCompatibility(targetScriptUrl?: string): Promise<{
+    compatible: boolean;
+    code?: 'AUTH_SERVICE_UNAVAILABLE' | 'BACKEND_VERSION_MISMATCH' | 'BACKEND_SOURCE_MISMATCH';
+    message?: string;
+    details?: any;
+  }> {
+    const settings = this.getSettings();
+    const scriptUrl = targetScriptUrl || settings.googleAppsScriptUrl || DEFAULT_BACKEND_URL;
+
+    const isOffline = typeof navigator !== 'undefined' && navigator.onLine === false;
+    if (!scriptUrl || scriptUrl.length < 15 || isOffline) {
+      return {
+        compatible: false,
+        code: 'AUTH_SERVICE_UNAVAILABLE',
+        message: 'خدمة المصادقة والخادم الخلفي غير متاحة حالياً أو لا يوجد اتصال بالإنترنت.',
+      };
+    }
+
+    try {
+      const url = `${scriptUrl}${scriptUrl.includes('?') ? '&' : '?'}action=health`;
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+      });
+
+      if (!response.ok) {
+        return {
+          compatible: false,
+          code: 'AUTH_SERVICE_UNAVAILABLE',
+          message: `تعذر الاتصال بخدمة المصادقة (${response.status}). الخادم غير متاح.`,
+        };
+      }
+
+      const data = await response.json().catch(() => ({}));
+      if (data.serviceAvailable !== true && data.status !== 'success') {
+        return {
+          compatible: false,
+          code: 'AUTH_SERVICE_UNAVAILABLE',
+          message: 'خدمة المصادقة في الخادم الخلفي معطلة أو غير متاحة.',
+          details: data,
+        };
+      }
+
+      // Check canonicalSource
+      const source = data.canonicalSource;
+      if (source !== CANONICAL_BACKEND_SOURCE) {
+        return {
+          compatible: false,
+          code: 'BACKEND_SOURCE_MISMATCH',
+          message: `مصدر الخادم الخلفي غير متطابق أمنياً. المتوقع: ${CANONICAL_BACKEND_SOURCE}، المستلم: ${source || 'غير محدد'}.`,
+          details: { expected: CANONICAL_BACKEND_SOURCE, actual: source },
+        };
+      }
+
+      // Check version
+      const ver = data.version;
+      if (ver !== CANONICAL_BACKEND_VERSION) {
+        return {
+          compatible: false,
+          code: 'BACKEND_VERSION_MISMATCH',
+          message: `إصدار الخادم الخلفي غير متوافق. المطلوب: ${CANONICAL_BACKEND_VERSION}، الحالي في الخادم: ${ver || 'غير محدد'}. يرجى تحديث نشر Google Apps Script.`,
+          details: { expected: CANONICAL_BACKEND_VERSION, actual: ver },
+        };
+      }
+
+      return {
+        compatible: true,
+        details: data,
+      };
+    } catch (err: any) {
+      return {
+        compatible: false,
+        code: 'AUTH_SERVICE_UNAVAILABLE',
+        message: 'فشل الاتصال بالخادم الخلفي للتحقق من التوافقية.',
+        details: err?.message,
+      };
+    }
+  }
+
   public async login(
     username: string,
     password: string,
@@ -604,14 +691,27 @@ class StorageService {
     if (!scriptUrl || scriptUrl.length < 15) {
       return {
         success: false,
+        code: 'AUTH_SERVICE_UNAVAILABLE',
         message: 'النظام يعمل بوضع الأمان الصارم (Fail-Closed). لم يتم ضبط رابط خادم Google Apps Script المعتمد. يرجى تهيئة رابط الخادم لتسجيل الدخول.'
       };
     }
 
-    if (!navigator.onLine) {
+    const isOffline = typeof navigator !== 'undefined' && navigator.onLine === false;
+    if (isOffline) {
       return {
         success: false,
+        code: 'AUTH_SERVICE_UNAVAILABLE',
         message: 'لا يوجد اتصال بالإنترنت. النظام لا يسمح بتسجيل الدخول المحلي بدون التحقق من الخادم الخلفي المعتمد.'
+      };
+    }
+
+    // Backend Compatibility Pre-Check: Do not send credentials if backend version or source mismatches
+    const compat = await this.checkBackendCompatibility(scriptUrl);
+    if (!compat.compatible) {
+      return {
+        success: false,
+        code: compat.code || 'AUTH_SERVICE_UNAVAILABLE',
+        message: compat.message || 'فشل التحقق من توافقية وأمان الخادم الخلفي المعتمد.',
       };
     }
 

@@ -31,20 +31,34 @@ describe('RBAC Phase 2F-A: Auth Client Hardening', () => {
 
   it('2. Login fails closed with LOGIN_SESSION_TOKEN_MISSING if backend response has no sessionToken', async () => {
     // Mock backend returning success without sessionToken
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({
-        status: 'success',
-        user: {
-          id: 'USR-TEST-1',
-          username: 'admin1',
-          role: 'SchoolAdmin',
-          fullName: 'مدير المدرسة',
-        },
-        // Intentionally missing sessionToken
-      }),
-    } as any);
+    global.fetch = vi.fn().mockImplementation(async (url: string) => {
+      if (typeof url === 'string' && url.includes('action=health')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            status: 'success',
+            serviceAvailable: true,
+            canonicalSource: 'google-apps-script/Code.gs',
+            version: '5.1.0-RBAC-SECURE',
+          }),
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          status: 'success',
+          user: {
+            id: 'USR-TEST-1',
+            username: 'admin1',
+            role: 'SchoolAdmin',
+            fullName: 'مدير المدرسة',
+          },
+          // Intentionally missing sessionToken
+        }),
+      };
+    }) as any;
 
     const loginRes = await storageService.login('admin1', 'correctPassword123');
     expect(loginRes.success).toBe(false);

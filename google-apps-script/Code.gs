@@ -114,14 +114,12 @@ function doGet(e) {
   if (action === 'health' || action === 'ping' || !action) {
     return createJsonResponse({
       status: 'success',
-      code: 'HEALTH_OK',
-      service: 'NTSS School ERP & Timetable System API Gateway',
+      serviceAvailable: true,
+      canonicalSource: CANONICAL_BACKEND_SOURCE,
       version: CANONICAL_BACKEND_VERSION,
+      systemMode: 'PRODUCTION_RBAC',
       timestamp: new Date().toISOString(),
-      cairoTime: getCairoISOString(),
-      scope: 'Staff ERP + Timetable System + Teacher Portal + Student Access',
-      retiredModules: ['Parent_Portal', 'Payroll', 'SAMAT', 'Class_Period_Attendance'],
-      storageAuthority: 'Google Sheets Authoritative Backend'
+      serverTime: getCairoISOString()
     }, 200);
   }
 
@@ -182,8 +180,13 @@ function doPost(e) {
     // -------------------------------------------------------------
     // 1. PUBLIC ACTIONS (No authentication required)
     // -------------------------------------------------------------
-    if (action === 'ping') {
+    if (action === 'ping' || action === 'health') {
+      output.status = 'success';
       output.serviceAvailable = true;
+      output.canonicalSource = CANONICAL_BACKEND_SOURCE;
+      output.version = CANONICAL_BACKEND_VERSION;
+      output.systemMode = 'PRODUCTION_RBAC';
+      output.timestamp = new Date().toISOString();
       output.message = 'Backend is active, authoritative, and secure';
       return createJsonResponse(output, 200);
     }

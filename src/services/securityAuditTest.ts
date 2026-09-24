@@ -6,6 +6,8 @@
  * ==============================================================================
  */
 
+import { CANONICAL_BACKEND_SOURCE, CANONICAL_BACKEND_VERSION } from './googleSheetsAppScript';
+
 export interface SecurityTestResult {
   id: string;
   name: string;
@@ -447,17 +449,17 @@ export class SecurityAuditTestSuite {
       password: 'StrongAdminPassword123!',
       fullName: 'Attacker Impersonator',
     });
-    const passed = res.data?.code === 'BOOTSTRAP_LOCKED' || res.status === 400 || res.status === 403;
+    const passed = res.data?.code === 'BOOTSTRAP_PUBLIC_ROUTE_RETIRED' || res.status === 410;
     return {
       id: 'TEST_P',
-      name: 'إغلاق معالج التهيئة الأولية عند وجود حساب مدير نظام (Bootstrap Locked)',
+      name: 'إيقاف مسار تهيئة المدير الأول العام نهائياً (Bootstrap Public Route Retired)',
       category: 'AUTHENTICATION',
       passed,
-      expectedStatus: 'BOOTSTRAP_LOCKED',
+      expectedStatus: 'BOOTSTRAP_PUBLIC_ROUTE_RETIRED',
       actualStatus: String(res.data?.code || res.status),
       details: passed
-        ? 'نجح الاختبار: تم رفض محاولة التهيئة غير المصرح بها وإغلاق المعالج نهائياً.'
-        : 'فشل: معالج التهيئة سمح بإنشاء حساب مدير رغم وجود حسابات سابقة.',
+        ? 'نجح الاختبار: تم رفض محاولة التهيئة غير المصرح بها وإغلاق المسار نهائياً (410 Gone).'
+        : 'فشل: معالج التهيئة لم يرفض محاولة التهيئة بالرمز المعتمد.',
       durationMs: Math.round(performance.now() - t0),
     };
   }
@@ -474,12 +476,19 @@ export class SecurityAuditTestSuite {
       } catch {}
     }
 
-    // Local Verification Interceptor matching Google Apps Script Code.gs specification
+    // Local Verification Interceptor matching Google Apps Script Code.gs specification (5.1.0-RBAC-SECURE)
     const action = params.action;
     if (action === 'ping' || action === 'health') {
       return {
         status: 200,
-        data: { status: 'success', serviceAvailable: true, version: '4.0.0-PROD-STAFF-ONLY' },
+        data: {
+          status: 'success',
+          serviceAvailable: true,
+          canonicalSource: CANONICAL_BACKEND_SOURCE,
+          version: CANONICAL_BACKEND_VERSION, // 5.1.0-RBAC-SECURE
+          systemMode: 'PRODUCTION_RBAC',
+          timestamp: new Date().toISOString(),
+        },
       };
     }
     return {
@@ -521,7 +530,7 @@ export class SecurityAuditTestSuite {
 
     // Bootstrap check
     if (action === 'bootstrapFirstAdmin') {
-      return { status: 400, data: { status: 'error', code: 'BOOTSTRAP_LOCKED' } };
+      return { status: 410, data: { status: 'error', code: 'BOOTSTRAP_PUBLIC_ROUTE_RETIRED' } };
     }
 
     // Protected actions without token
