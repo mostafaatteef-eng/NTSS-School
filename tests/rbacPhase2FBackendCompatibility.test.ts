@@ -81,6 +81,40 @@ describe('RBAC Phase 2F-C — Backend Version Compatibility', () => {
     expect(result.code).toBe('AUTH_SERVICE_UNAVAILABLE');
   });
 
+  it('4a. Strict health check: status="success" but serviceAvailable=false returns AUTH_SERVICE_UNAVAILABLE', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        status: 'success',
+        serviceAvailable: false,
+        canonicalSource: CANONICAL_BACKEND_SOURCE,
+        version: CANONICAL_BACKEND_VERSION,
+      }),
+    } as any);
+
+    const result = await storageService.checkBackendCompatibility('https://script.google.com/test');
+    expect(result.compatible).toBe(false);
+    expect(result.code).toBe('AUTH_SERVICE_UNAVAILABLE');
+  });
+
+  it('4b. Strict health check: status="error" but serviceAvailable=true returns AUTH_SERVICE_UNAVAILABLE', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        status: 'error',
+        serviceAvailable: true,
+        canonicalSource: CANONICAL_BACKEND_SOURCE,
+        version: CANONICAL_BACKEND_VERSION,
+      }),
+    } as any);
+
+    const result = await storageService.checkBackendCompatibility('https://script.google.com/test');
+    expect(result.compatible).toBe(false);
+    expect(result.code).toBe('AUTH_SERVICE_UNAVAILABLE');
+  });
+
   it('5. Login does not proceed if compatibility pre-check fails (Fail-Closed)', async () => {
     // Health check returns version mismatch
     const fetchSpy = vi.fn().mockImplementation(async (url: string) => {

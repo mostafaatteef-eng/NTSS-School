@@ -614,7 +614,7 @@ class StorageService {
       }
 
       const data = await response.json().catch(() => ({}));
-      if (data.serviceAvailable !== true && data.status !== 'success') {
+      if (data.status !== 'success' || data.serviceAvailable !== true) {
         return {
           compatible: false,
           code: 'AUTH_SERVICE_UNAVAILABLE',
