@@ -199,35 +199,59 @@ function doPost(e) {
       return createJsonResponse(output, 200);
     }
 
-    // Staff Login (School + Username + Password)
+    // Staff Login (Email + Password) - Authoritative Server-Derived Context
     if (action === 'login') {
-      var schoolId = String(postData.schoolId || (payload && payload.schoolId) || '').trim();
-      var username = String(postData.username || (payload && payload.username) || '').trim().toLowerCase();
-      var password = String(postData.password || (payload && payload.password) || '').trim();
+      var rawEmail = (postData && (postData.email !== undefined ? postData.email : (payload && payload.email))) || '';
+      var password = String((postData && postData.password) || (payload && payload.password) || '').trim();
 
-      if (!schoolId) {
+      // Prohibit username-only login (strictly no username fallback)
+      var normalizedEmail = normalizeEmail(rawEmail);
+      if (!normalizedEmail || !isValidEmailFormat(normalizedEmail)) {
+        recordAuthoritativeAudit(ss, requestId, normalizedEmail || 'UNKNOWN', '', 'LOGIN_FAILED', 'AUTH', '', 'فشل تسجيل الدخول: بريد إلكتروني غير صالح');
         return createJsonResponse({
           status: 'error',
-          code: 'SCHOOL_CONTEXT_REQUIRED',
-          message: 'يرجى تحديد كود المدرسة لتسجيل الدخول',
+          code: 'INVALID_EMAIL',
+          message: 'يرجى إدخال بريد إلكتروني صالح لتسجيل الدخول',
           requestId: requestId
         }, 400);
       }
 
-      var authResult = handleStaffLogin(ss, username, password, requestId, schoolId);
+      if (!password) {
+        recordAuthoritativeAudit(ss, requestId, normalizedEmail, '', 'LOGIN_FAILED', 'AUTH', '', 'فشل تسجيل الدخول: كلمة المرور مطلوبة');
+        return createJsonResponse({
+          status: 'error',
+          code: 'CREDENTIALS_REQUIRED',
+          message: 'يرجى إدخال كلمة المرور',
+          requestId: requestId
+        }, 400);
+      }
+
+      // Ignore client schoolId: Server derives school context authoritatively from Master USERS
+      var authResult = handleStaffLogin(ss, normalizedEmail, password, requestId);
       if (!authResult.success) {
+        var statusCode = 401;
+        if (
+          authResult.code === 'DUPLICATE_ACCOUNT_EMAIL' ||
+          authResult.code === 'SCHOOL_CONTEXT_REQUIRED' ||
+          authResult.code === 'SELF_IDENTITY_REQUIRED' ||
+          authResult.code === 'NEEDS_ADMIN_REVIEW' ||
+          authResult.code === 'ACCOUNT_EMAIL_SETUP_REQUIRED' ||
+          authResult.code === 'ACCOUNT_ROLE_NOT_ALLOWED'
+        ) {
+          statusCode = 403;
+        }
         return createJsonResponse({
           status: 'error',
           code: authResult.code || 'AUTH_FAILED',
           message: authResult.message,
           requestId: requestId
-        }, 401);
+        }, statusCode);
       }
 
+      output.status = 'success';
       output.message = 'تم تسجيل الدخول وإنشاء جلسة عمل معتمدة بنجاح';
       output.sessionToken = authResult.sessionToken;
       output.expiresAt = authResult.expiresAt;
-      output.schoolId = authResult.schoolId;
       output.user = authResult.user;
       return createJsonResponse(output, 200);
     }
@@ -1855,80 +1879,115 @@ function doPost(e) {
 // -------------------------------------------------------------
 
 /**
- * Handle staff login with salted PBKDF2/HMAC verification and school isolation
+ * Normalizes email address: String(value || '').trim().toLowerCase()
  */
-function handleStaffLogin(masterSs, inputUsername, inputPassword, requestId, schoolId) {
-  if (!inputUsername || !inputPassword) {
-    return { success: false, code: 'CREDENTIALS_REQUIRED', message: 'يرجى إدخال اسم المستخدم وكلمة المرور' };
+function normalizeEmail(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+/**
+ * Validates email format according to standard pattern
+ */
+function isValidEmailFormat(email) {
+  if (!email || typeof email !== 'string') return false;
+  var emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(email);
+}
+
+/**
+ * Helper to safely parse allowedSchoolIds array from account field
+ */
+function parseAllowedSchoolIdsGas(rawAllowed) {
+  var list = [];
+  if (Array.isArray(rawAllowed)) {
+    list = rawAllowed;
+  } else if (typeof rawAllowed === 'string' && rawAllowed.trim()) {
+    try {
+      var parsed = JSON.parse(rawAllowed);
+      if (Array.isArray(parsed)) list = parsed;
+      else list = [String(parsed)];
+    } catch (e) {
+      list = rawAllowed.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+    }
+  }
+  return list.map(function(s) { return String(s).trim().toUpperCase(); }).filter(Boolean);
+}
+
+/**
+ * Handle staff login with email-only identifier, salted PBKDF2/HMAC verification,
+ * and authoritative server-derived school context & access scope.
+ */
+function handleStaffLogin(masterSs, normalizedEmail, inputPassword, requestId) {
+  if (!normalizedEmail || !inputPassword) {
+    return { success: false, code: 'CREDENTIALS_REQUIRED', message: 'يرجى إدخال البريد الإلكتروني وكلمة المرور' };
   }
 
-  var targetSchoolId = schoolId ? String(schoolId).trim().toUpperCase() : '';
-  if (!targetSchoolId) {
-    // Attempt lookup in master USERS to determine bound school or SystemAdmin
-    var masterUsers = getSheetData(masterSs, SHEETS.USERS);
-    var foundMasterUser = null;
-    for (var mU = 0; mU < masterUsers.length; mU++) {
-      var muName = String(masterUsers[mU].username || '').trim().toLowerCase();
-      var muId = String(masterUsers[mU].id || '').trim().toLowerCase();
-      var muLogin = String(masterUsers[mU].loginNumber || '').trim();
-      if (muName === inputUsername || muId === inputUsername || (muLogin && muLogin === inputUsername)) {
-        foundMasterUser = masterUsers[mU];
-        break;
-      }
-    }
-    if (foundMasterUser && foundMasterUser.schoolId) {
-      targetSchoolId = String(foundMasterUser.schoolId).trim().toUpperCase();
-    } else if (foundMasterUser && foundMasterUser.role === 'SystemAdmin') {
-      // System admin may use master spreadsheet directly
-      targetSchoolId = '';
-    } else {
-      return { success: false, code: 'SCHOOL_ID_REQUIRED', message: 'يرجى تحديد المدرسة لتسجيل الدخول.' };
-    }
+  ensureProductionStaffSheetsExist(masterSs);
+  var masterUsersSheet = masterSs.getSheetByName(SHEETS.USERS);
+  if (masterUsersSheet) {
+    ensureHeaderColumn(masterUsersSheet, 'email');
+    ensureHeaderColumn(masterUsersSheet, 'schoolId');
+    ensureHeaderColumn(masterUsersSheet, 'allowedSchoolIds');
+    ensureHeaderColumn(masterUsersSheet, 'employeeId');
   }
 
-  var targetSs = masterSs;
-  if (targetSchoolId) {
-    var schoolCtx = resolveSchoolContext(targetSchoolId, masterSs);
-    if (!schoolCtx) {
-      return { success: false, code: 'SCHOOL_NOT_FOUND', message: 'المدرسة المحددة غير مسجلة في النظام.' };
-    }
-    if (String(schoolCtx.status || 'Active').trim() !== 'Active') {
-      return { success: false, code: 'SCHOOL_INACTIVE', message: 'المدرسة المحددة غير مفعلة حالياً.' };
-    }
-    targetSs = getSchoolSpreadsheet(targetSchoolId, masterSs);
-  }
-  var users = getSheetData(targetSs, SHEETS.USERS);
-  if (!users || users.length === 0) {
+  var masterUsers = getSheetData(masterSs, SHEETS.USERS);
+  if (!masterUsers || masterUsers.length === 0) {
+    recordAuthoritativeAudit(masterSs, requestId, normalizedEmail, '', 'LOGIN_FAILED', 'AUTH', '', 'قاعدة بيانات المستخدمين فارغة');
     return {
       success: false,
       code: 'DATABASE_EMPTY',
-      message: 'قاعدة بيانات المستخدمين فارغة لهذه المدرسة. يرجى تهيئة حساب مدير النظام.'
+      message: 'قاعدة بيانات المستخدمين فارغة. يرجى تهيئة حساب مدير النظام.'
     };
   }
 
-  var matchedUser = null;
-  var userRowIndex = -1;
-
-  for (var i = 0; i < users.length; i++) {
-    var u = users[i];
-    var uName = String(u.username || '').trim().toLowerCase();
-    var uId = String(u.id || '').trim().toLowerCase();
-    var uLogin = String(u.loginNumber || '').trim();
-    if (uName === inputUsername || uId === inputUsername || (uLogin && uLogin === inputUsername)) {
-      matchedUser = u;
-      userRowIndex = i + 2; // +2 for header offset
-      break;
+  // 1. Central Master USERS Lookup by Normalized Email
+  var matchedAccounts = [];
+  for (var i = 0; i < masterUsers.length; i++) {
+    var u = masterUsers[i];
+    var uEmail = normalizeEmail(u.email);
+    if (uEmail && uEmail === normalizedEmail) {
+      matchedAccounts.push({ user: u, rowIndex: i + 2 });
     }
   }
 
-  if (!matchedUser) {
-    return { success: false, code: 'INVALID_CREDENTIALS', message: 'اسم المستخدم أو كلمة المرور غير صحيحة.' };
+  // Outcome 0: No account matched (Fail-Closed)
+  if (matchedAccounts.length === 0) {
+    recordAuthoritativeAudit(masterSs, requestId, normalizedEmail, '', 'LOGIN_FAILED', 'AUTH', '', 'محاولة تسجيل دخول لبريد غير مسجل');
+    return {
+      success: false,
+      code: 'INVALID_CREDENTIALS',
+      message: 'البريد الإلكتروني أو كلمة المرور غير صحيحة.'
+    };
   }
 
-  // 1. Permanent Staff-Only Role Enforcement: Block Teacher, Parent, Student from staff login
+  // Outcome > 1: Duplicate accounts with same email (Fail-Closed)
+  if (matchedAccounts.length > 1) {
+    recordAuthoritativeAudit(masterSs, requestId, normalizedEmail, '', 'LOGIN_FAILED', 'AUTH', '', 'تكرار البريد الإلكتروني في عدة حسابات (Fail-Closed)');
+    return {
+      success: false,
+      code: 'DUPLICATE_ACCOUNT_EMAIL',
+      message: 'تم العثور على أكثر من حساب مرتبط بهذا البريد الإلكتروني. يرجى مراجعة إدارة النظام لفك التكرار.'
+    };
+  }
+
+  var matchedUser = matchedAccounts[0].user;
+  var userRowIndex = matchedAccounts[0].rowIndex;
+
+  // 2. Missing Email check (Never invent email for legacy accounts)
+  if (!matchedUser.email || !normalizeEmail(matchedUser.email)) {
+    recordAuthoritativeAudit(masterSs, requestId, normalizedEmail, matchedUser.role || '', 'LOGIN_FAILED', 'AUTH', matchedUser.id || '', 'الحساب يفتقر لبريد إلكتروني');
+    return {
+      success: false,
+      code: 'ACCOUNT_EMAIL_SETUP_REQUIRED',
+      message: 'الحساب بحاجة لربط وتوثيق بريد إلكتروني معتمد قبل تسجيل الدخول.'
+    };
+  }
+
+  // 3. Staff-Only Role Enforcement: Block Teacher, Parent, Student from staff ERP login
   var role = String(matchedUser.role || '').trim();
   if (role === 'Teacher' || role === 'Parent' || role === 'Student') {
-    recordAuthoritativeAudit(targetSs, requestId, inputUsername, role, 'LOGIN_BLOCKED', 'AUTH', matchedUser.id || '', 'محاولة دخول بحساب دور ملغى (' + role + ')');
+    recordAuthoritativeAudit(masterSs, requestId, normalizedEmail, role, 'LOGIN_BLOCKED', 'AUTH', matchedUser.id || '', 'محاولة دخول بحساب دور ملغى من بوابة الموظفين (' + role + ')');
     return {
       success: false,
       code: 'ACCOUNT_ROLE_NOT_ALLOWED',
@@ -1936,14 +1995,16 @@ function handleStaffLogin(masterSs, inputUsername, inputPassword, requestId, sch
     };
   }
 
-  // 2. Account Status Check
+  // 4. Account Status Check
   var status = String(matchedUser.status || 'Active').trim().toLowerCase();
   var isActive = (matchedUser.isActive === true || matchedUser.isActive === 'true' || matchedUser.isActive === undefined);
   if (status === 'inactive' || status === 'disabled' || !isActive) {
+    recordAuthoritativeAudit(masterSs, requestId, normalizedEmail, role, 'LOGIN_FAILED', 'AUTH', matchedUser.id || '', 'حساب غير مفعل');
     return { success: false, code: 'ACCOUNT_INACTIVE', message: 'هذا الحساب غير مفعل حالياً. يرجى مراجعة مدير النظام.' };
   }
 
   if (status === 'needs setup' || (!matchedUser.passwordHash && !matchedUser.password)) {
+    recordAuthoritativeAudit(masterSs, requestId, normalizedEmail, role, 'LOGIN_FAILED', 'AUTH', matchedUser.id || '', 'حساب بحاجة لتهيئة كلمة المرور');
     return {
       success: false,
       code: 'ACCOUNT_NEEDS_SETUP',
@@ -1951,7 +2012,7 @@ function handleStaffLogin(masterSs, inputUsername, inputPassword, requestId, sch
     };
   }
 
-  // 3. Salted Password Verification
+  // 5. Salted Password Verification (PBKDF2-HMAC-SHA256 / SHA-256 upgrade)
   var storedHash = String(matchedUser.passwordHash || matchedUser.password || '').trim();
   var storedSalt = String(matchedUser.passwordSalt || '').trim();
   var storedIter = parseInt(matchedUser.passwordIterations || '10000', 10);
@@ -1967,17 +2028,109 @@ function handleStaffLogin(masterSs, inputUsername, inputPassword, requestId, sch
       try {
         var newSalt = Utilities.getUuid().replace(/-/g, '');
         var newHash = computeSaltedHash(inputPassword, newSalt, PBKDF2_ITERATIONS);
-        updateUserPasswordColumns(targetSs, userRowIndex, newHash, newSalt, 'PBKDF2-HMAC-SHA256', PBKDF2_ITERATIONS);
+        updateUserPasswordColumns(masterSs, userRowIndex, newHash, newSalt, 'PBKDF2-HMAC-SHA256', PBKDF2_ITERATIONS);
       } catch (upgradeErr) {}
     }
   }
 
   if (!passwordValid) {
-    recordAuthoritativeAudit(targetSs, requestId, inputUsername, role, 'LOGIN_FAILED', 'AUTH', matchedUser.id || '', 'محاولة تسجيل دخول بكلمة مرور خاطئة');
-    return { success: false, code: 'INVALID_CREDENTIALS', message: 'اسم المستخدم أو كلمة المرور غير صحيحة.' };
+    recordAuthoritativeAudit(masterSs, requestId, normalizedEmail, role, 'LOGIN_FAILED', 'AUTH', matchedUser.id || '', 'محاولة تسجيل دخول بكلمة مرور خاطئة');
+    return { success: false, code: 'INVALID_CREDENTIALS', message: 'البريد الإلكتروني أو كلمة المرور غير صحيحة.' };
   }
 
-  // 4. Issue Authoritative Server-Side Session Token
+  // 6. Server-Derived Role, AccessScope, and School Context
+  var accessScope = 'SCHOOL';
+  var boundSchoolId = '';
+  var allowedSchoolIds = [];
+  var activeSchoolId = '';
+  var employeeId = matchedUser.employeeId ? String(matchedUser.employeeId).trim() : '';
+
+  if (role === 'SystemAdmin') {
+    accessScope = 'GLOBAL';
+    // allowedSchoolIds strictly from user account - never automatically all Master_Schools
+    allowedSchoolIds = parseAllowedSchoolIdsGas(matchedUser.allowedSchoolIds);
+    if (allowedSchoolIds.length === 1) {
+      activeSchoolId = allowedSchoolIds[0];
+    } else {
+      activeSchoolId = ''; // Undefined/empty until Phase 3C School Switcher
+    }
+    boundSchoolId = activeSchoolId;
+  } else if (role === 'Admin') {
+    // Legacy Admin: strictly SCHOOL scope
+    accessScope = 'SCHOOL';
+    var adminSchool = matchedUser.schoolId ? String(matchedUser.schoolId).trim().toUpperCase() : '';
+    if (!adminSchool) {
+      recordAuthoritativeAudit(masterSs, requestId, normalizedEmail, role, 'LOGIN_FAILED', 'AUTH', matchedUser.id || '', 'حساب مدير قديم بدون تحديد مدرسة (NEEDS_ADMIN_REVIEW)');
+      return {
+        success: false,
+        code: 'NEEDS_ADMIN_REVIEW',
+        message: 'حساب المدير القديم بحاجة لمراجعة وتحديد المدرسة التابع لها بواسطة مدير النظام.'
+      };
+    }
+    boundSchoolId = adminSchool;
+    allowedSchoolIds = [adminSchool];
+    activeSchoolId = adminSchool;
+  } else if (role === 'AdministrativeEmployee') {
+    accessScope = 'SELF';
+    var empSchool = matchedUser.schoolId ? String(matchedUser.schoolId).trim().toUpperCase() : '';
+    if (!empSchool) {
+      recordAuthoritativeAudit(masterSs, requestId, normalizedEmail, role, 'LOGIN_FAILED', 'AUTH', matchedUser.id || '', 'حساب موظف إداري بدون تحديد مدرسة (SCHOOL_CONTEXT_REQUIRED)');
+      return {
+        success: false,
+        code: 'SCHOOL_CONTEXT_REQUIRED',
+        message: 'الحساب غير مرتبط بمدرسة معتمدة.'
+      };
+    }
+    if (!employeeId) {
+      recordAuthoritativeAudit(masterSs, requestId, normalizedEmail, role, 'LOGIN_FAILED', 'AUTH', matchedUser.id || '', 'حساب موظف إداري بدون معرف موظف (SELF_IDENTITY_REQUIRED)');
+      return {
+        success: false,
+        code: 'SELF_IDENTITY_REQUIRED',
+        message: 'حساب الموظف الإداري غير مرتبط بملف موظف (employeeId).'
+      };
+    }
+    boundSchoolId = empSchool;
+    allowedSchoolIds = [empSchool];
+    activeSchoolId = empSchool;
+  } else {
+    // SchoolAdmin, SchoolDirector, StudentAffairs, TeacherAffairs, QualityOfficer, TrainingOfficer, SocialSpecialist
+    accessScope = 'SCHOOL';
+    var schId = matchedUser.schoolId ? String(matchedUser.schoolId).trim().toUpperCase() : '';
+    if (!schId) {
+      recordAuthoritativeAudit(masterSs, requestId, normalizedEmail, role, 'LOGIN_FAILED', 'AUTH', matchedUser.id || '', 'حساب مدرسي بدون تحديد مدرسة (SCHOOL_CONTEXT_REQUIRED)');
+      return {
+        success: false,
+        code: 'SCHOOL_CONTEXT_REQUIRED',
+        message: 'الحساب غير مرتبط بمدرسة معتمدة.'
+      };
+    }
+    boundSchoolId = schId;
+    allowedSchoolIds = [schId];
+    activeSchoolId = schId;
+  }
+
+  // 7. Validate School Existence & Active Status if bound to a school
+  if (boundSchoolId) {
+    var schoolCtx = resolveSchoolContext(boundSchoolId, masterSs);
+    if (!schoolCtx) {
+      recordAuthoritativeAudit(masterSs, requestId, normalizedEmail, role, 'LOGIN_FAILED', 'AUTH', matchedUser.id || '', 'مدرسة المستخدم غير مسجلة: ' + boundSchoolId);
+      return {
+        success: false,
+        code: 'SCHOOL_NOT_FOUND',
+        message: 'المدرسة المحددة للمستخدم غير مسجلة في النظام.'
+      };
+    }
+    if (String(schoolCtx.status || 'Active').trim() !== 'Active') {
+      recordAuthoritativeAudit(masterSs, requestId, normalizedEmail, role, 'LOGIN_FAILED', 'AUTH', matchedUser.id || '', 'مدرسة المستخدم غير مفعلة: ' + boundSchoolId);
+      return {
+        success: false,
+        code: 'SCHOOL_INACTIVE',
+        message: 'المدرسة التابع لها المستخدم غير مفعلة حالياً.'
+      };
+    }
+  }
+
+  // 8. Issue Authoritative Server-Side Session Token
   var sessionToken = generateSecureRandomToken(48);
   var tokenHash = hashStringSHA256(sessionToken);
   var now = new Date();
@@ -1989,31 +2142,47 @@ function handleStaffLogin(masterSs, inputUsername, inputPassword, requestId, sch
     'SESS_' + Utilities.getUuid().substring(0, 10),
     tokenHash,
     matchedUser.id,
-    matchedUser.username,
+    matchedUser.username || '',
     matchedUser.fullName,
-    matchedUser.role,
-    targetSchoolId,
+    role,
+    boundSchoolId || '',
     nowStr,
     expiresStr,
     'ACTIVE'
   ];
 
-  var sessionsSheet = targetSs.getSheetByName(SHEETS.SESSIONS);
+  var sessionsSheet = masterSs.getSheetByName(SHEETS.SESSIONS);
   if (sessionsSheet) {
     ensureHeaderColumn(sessionsSheet, 'schoolId');
+    ensureHeaderColumn(sessionsSheet, 'email');
+    ensureHeaderColumn(sessionsSheet, 'accessScope');
+    ensureHeaderColumn(sessionsSheet, 'allowedSchoolIds');
+    ensureHeaderColumn(sessionsSheet, 'activeSchoolId');
+    ensureHeaderColumn(sessionsSheet, 'employeeId');
     sessionsSheet.appendRow(sessionRow);
   }
-  if (masterSs.getId() !== targetSs.getId()) {
-    var masterSessions = masterSs.getSheetByName(SHEETS.SESSIONS);
-    if (masterSessions) {
-      ensureHeaderColumn(masterSessions, 'schoolId');
-      masterSessions.appendRow(sessionRow);
-    }
+
+  if (boundSchoolId) {
+    try {
+      var targetSchoolSs = getSchoolSpreadsheet(boundSchoolId, masterSs);
+      if (targetSchoolSs && targetSchoolSs.getId() !== masterSs.getId()) {
+        var schoolSessions = targetSchoolSs.getSheetByName(SHEETS.SESSIONS);
+        if (schoolSessions) {
+          ensureHeaderColumn(schoolSessions, 'schoolId');
+          ensureHeaderColumn(schoolSessions, 'email');
+          ensureHeaderColumn(schoolSessions, 'accessScope');
+          ensureHeaderColumn(schoolSessions, 'allowedSchoolIds');
+          ensureHeaderColumn(schoolSessions, 'activeSchoolId');
+          ensureHeaderColumn(schoolSessions, 'employeeId');
+          schoolSessions.appendRow(sessionRow);
+        }
+      }
+    } catch (sErr) {}
   }
 
-  // Update lastLogin in Users sheet
+  // 9. Update lastLogin in Master Users sheet
   try {
-    var usersSheet = targetSs.getSheetByName(SHEETS.USERS);
+    var usersSheet = masterSs.getSheetByName(SHEETS.USERS);
     var headers = usersSheet.getRange(1, 1, 1, usersSheet.getLastColumn()).getValues()[0];
     var lastLoginCol = headers.indexOf('lastLogin') + 1;
     if (lastLoginCol > 0 && userRowIndex > 0) {
@@ -2021,14 +2190,29 @@ function handleStaffLogin(masterSs, inputUsername, inputPassword, requestId, sch
     }
   } catch (uErr) {}
 
-  recordAuthoritativeAudit(targetSs, requestId, matchedUser.username, matchedUser.role, 'LOGIN_SUCCESS', 'AUTH', matchedUser.id, 'تسجيل دخول ناجح وإنشاء جلسة عمل');
+  // 10. Security Audit: Safe event without password, hash, salt, or sessionToken
+  recordAuthoritativeAudit(
+    masterSs,
+    requestId,
+    normalizedEmail,
+    role,
+    'LOGIN_SUCCESS',
+    'AUTH',
+    matchedUser.id,
+    'تسجيل دخول ناجح وإنشاء جلسة عمل معتمدة. نطاق: ' + accessScope + '، مدرسة: ' + (boundSchoolId || 'GLOBAL')
+  );
 
+  // 11. Safe User DTO (No secrets or spreadsheetId)
   var sanitizedUser = {
     id: matchedUser.id,
-    username: matchedUser.username,
+    email: normalizedEmail,
     fullName: matchedUser.fullName,
-    role: matchedUser.role,
-    schoolId: targetSchoolId,
+    role: role,
+    accessScope: accessScope,
+    schoolId: boundSchoolId || '',
+    activeSchoolId: activeSchoolId || '',
+    allowedSchoolIds: allowedSchoolIds,
+    employeeId: employeeId || '',
     department: String(matchedUser.department || ''),
     lastLogin: nowStr
   };
@@ -2037,7 +2221,6 @@ function handleStaffLogin(masterSs, inputUsername, inputPassword, requestId, sch
     success: true,
     sessionToken: sessionToken,
     expiresAt: expiresStr,
-    schoolId: targetSchoolId,
     user: sanitizedUser
   };
 }
@@ -4528,8 +4711,8 @@ function executeServerSideArchive(ss, authenticatedUsername, requestId) {
 function ensureProductionStaffSheetsExist(ss) {
   var sheetDefinitions = {
     Master_Schools: ['schoolId', 'schoolCode', 'schoolName', 'spreadsheetId', 'status', 'createdAt', 'updatedAt'],
-    Users: ['id', 'username', 'passwordHash', 'passwordSalt', 'passwordAlgorithm', 'passwordIterations', 'fullName', 'role', 'status', 'department', 'email', 'createdAt', 'lastLogin', 'passwordChangedAt'],
-    Sessions: ['sessionId', 'tokenHash', 'userId', 'username', 'fullName', 'role', 'schoolId', 'createdAt', 'expiresAt', 'status'],
+    Users: ['id', 'username', 'passwordHash', 'passwordSalt', 'passwordAlgorithm', 'passwordIterations', 'fullName', 'role', 'status', 'department', 'email', 'schoolId', 'allowedSchoolIds', 'employeeId', 'createdAt', 'lastLogin', 'passwordChangedAt'],
+    Sessions: ['sessionId', 'tokenHash', 'userId', 'username', 'fullName', 'role', 'schoolId', 'email', 'accessScope', 'allowedSchoolIds', 'activeSchoolId', 'employeeId', 'createdAt', 'expiresAt', 'status'],
     Employees: ['id', 'employeeNumber', 'name', 'nationalId', 'department', 'jobTitle', 'teacherCode', 'hireDate', 'workingHours', 'workStartTime', 'workEndTime', 'daysOff', 'status', 'phone', 'email'],
     Attendance: ['id', 'employeeId', 'employeeName', 'department', 'date', 'dayName', 'checkIn', 'checkOut', 'workingHours', 'lateMinutes', 'earlyLeaveMinutes', 'overtimeHours', 'status', 'notes', 'checkInTimestamp', 'checkOutTimestamp', 'updatedAt'],
     Leaves: ['id', 'employeeId', 'employeeName', 'department', 'leaveType', 'startDate', 'endDate', 'daysCount', 'status', 'reason', 'createdAt', 'approvedBy'],

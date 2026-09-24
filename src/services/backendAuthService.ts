@@ -1268,31 +1268,33 @@ export function executeSchoolScopedAction(
 
 export interface BackendUserRecord {
   id: string;
+  email?: string;
   username: string;
   fullName: string;
   role: string;
   schoolId?: string;
   allowedSchoolIds?: string[];
+  employeeId?: string;
   status: string;
 }
 
 let masterUsersStore: BackendUserRecord[] = [
-  { id: 'usr-sysadmin-1', username: 'sysadmin', fullName: 'مدير النظام العام', role: 'SystemAdmin', allowedSchoolIds: ['SCH-BADR', 'SCH-ALNOOR'], status: 'Active' },
-  { id: 'usr-admin-badr', username: 'admin_badr', fullName: 'مدير مدرسة بدر', role: 'SchoolAdmin', schoolId: 'SCH-BADR', status: 'Active' },
-  { id: 'usr-admin-noor', username: 'admin_noor', fullName: 'مدير مدرسة النور', role: 'SchoolAdmin', schoolId: 'SCH-ALNOOR', status: 'Active' },
-  { id: 'usr-director-badr', username: 'director_badr', fullName: 'ناظر مدرسة بدر', role: 'SchoolDirector', schoolId: 'SCH-BADR', status: 'Active' },
-  { id: 'usr-teacher-badr', username: 'teacher_badr', fullName: 'معلم بدر', role: 'Teacher', schoolId: 'SCH-BADR', status: 'Active' },
-  { id: 'usr-teacher-noor', username: 'teacher_noor', fullName: 'معلم النور', role: 'Teacher', schoolId: 'SCH-ALNOOR', status: 'Active' },
+  { id: 'usr-sysadmin-1', email: 'sysadmin@ntss.edu.eg', username: 'sysadmin', fullName: 'مدير النظام العام', role: 'SystemAdmin', allowedSchoolIds: ['SCH-BADR', 'SCH-ALNOOR'], status: 'Active' },
+  { id: 'usr-admin-badr', email: 'admin_badr@ntss.edu.eg', username: 'admin_badr', fullName: 'مدير مدرسة بدر', role: 'SchoolAdmin', schoolId: 'SCH-BADR', status: 'Active' },
+  { id: 'usr-admin-noor', email: 'admin_noor@ntss.edu.eg', username: 'admin_noor', fullName: 'مدير مدرسة النور', role: 'SchoolAdmin', schoolId: 'SCH-ALNOOR', status: 'Active' },
+  { id: 'usr-director-badr', email: 'director_badr@ntss.edu.eg', username: 'director_badr', fullName: 'ناظر مدرسة بدر', role: 'SchoolDirector', schoolId: 'SCH-BADR', status: 'Active' },
+  { id: 'usr-teacher-badr', email: 'teacher_badr@ntss.edu.eg', username: 'teacher_badr', fullName: 'معلم بدر', role: 'Teacher', schoolId: 'SCH-BADR', status: 'Active' },
+  { id: 'usr-teacher-noor', email: 'teacher_noor@ntss.edu.eg', username: 'teacher_noor', fullName: 'معلم النور', role: 'Teacher', schoolId: 'SCH-ALNOOR', status: 'Active' },
 ];
 
 export function resetMasterUsersStore() {
   masterUsersStore = [
-    { id: 'usr-sysadmin-1', username: 'sysadmin', fullName: 'مدير النظام العام', role: 'SystemAdmin', allowedSchoolIds: ['SCH-BADR', 'SCH-ALNOOR'], status: 'Active' },
-    { id: 'usr-admin-badr', username: 'admin_badr', fullName: 'مدير مدرسة بدر', role: 'SchoolAdmin', schoolId: 'SCH-BADR', status: 'Active' },
-    { id: 'usr-admin-noor', username: 'admin_noor', fullName: 'مدير مدرسة النور', role: 'SchoolAdmin', schoolId: 'SCH-ALNOOR', status: 'Active' },
-    { id: 'usr-director-badr', username: 'director_badr', fullName: 'ناظر مدرسة بدر', role: 'SchoolDirector', schoolId: 'SCH-BADR', status: 'Active' },
-    { id: 'usr-teacher-badr', username: 'teacher_badr', fullName: 'معلم بدر', role: 'Teacher', schoolId: 'SCH-BADR', status: 'Active' },
-    { id: 'usr-teacher-noor', username: 'teacher_noor', fullName: 'معلم النور', role: 'Teacher', schoolId: 'SCH-ALNOOR', status: 'Active' },
+    { id: 'usr-sysadmin-1', email: 'sysadmin@ntss.edu.eg', username: 'sysadmin', fullName: 'مدير النظام العام', role: 'SystemAdmin', allowedSchoolIds: ['SCH-BADR', 'SCH-ALNOOR'], status: 'Active' },
+    { id: 'usr-admin-badr', email: 'admin_badr@ntss.edu.eg', username: 'admin_badr', fullName: 'مدير مدرسة بدر', role: 'SchoolAdmin', schoolId: 'SCH-BADR', status: 'Active' },
+    { id: 'usr-admin-noor', email: 'admin_noor@ntss.edu.eg', username: 'admin_noor', fullName: 'مدير مدرسة النور', role: 'SchoolAdmin', schoolId: 'SCH-ALNOOR', status: 'Active' },
+    { id: 'usr-director-badr', email: 'director_badr@ntss.edu.eg', username: 'director_badr', fullName: 'ناظر مدرسة بدر', role: 'SchoolDirector', schoolId: 'SCH-BADR', status: 'Active' },
+    { id: 'usr-teacher-badr', email: 'teacher_badr@ntss.edu.eg', username: 'teacher_badr', fullName: 'معلم بدر', role: 'Teacher', schoolId: 'SCH-BADR', status: 'Active' },
+    { id: 'usr-teacher-noor', email: 'teacher_noor@ntss.edu.eg', username: 'teacher_noor', fullName: 'معلم النور', role: 'Teacher', schoolId: 'SCH-ALNOOR', status: 'Active' },
   ];
 }
 
