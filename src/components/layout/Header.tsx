@@ -9,9 +9,10 @@ import {
   GraduationCap,
   Building,
   Search,
+  ChevronDown,
 } from 'lucide-react';
 import { storageService } from '../../services/storageService';
-import { SyncStatus, SystemSettings, User as UserType } from '../../types';
+import { School, SyncStatus, SystemSettings, User as UserType } from '../../types';
 import { getCairoCurrentTimeString, getEgyptianDayName, formatEgyptianDate, getCairoCurrentDate } from '../../utils/egyptianTime';
 import { getEgyptianRoleLabel } from '../../utils/localization';
 import { NotificationBell } from '../notifications/NotificationBell';
@@ -43,6 +44,9 @@ export const Header: React.FC<HeaderProps> = ({
   const [cairoTime, setCairoTime] = useState<string>(getCairoCurrentTimeString());
   const [settings, setSettings] = useState<SystemSettings>(() => propSettings || storageService.getSettings());
   const [activeSchool, setActiveSchool] = useState(() => storageService.getActiveSchool());
+  const [availableSchools, setAvailableSchools] = useState<School[]>(() => storageService.getSchools());
+  const [isSwitchingSchool, setIsSwitchingSchool] = useState(false);
+  const [switchError, setSwitchError] = useState<string | null>(null);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
 
@@ -51,7 +55,15 @@ export const Header: React.FC<HeaderProps> = ({
       setSyncStatus(storageService.getSyncStatus());
       setSettings(storageService.getSettings());
       setActiveSchool(storageService.getActiveSchool());
+      setAvailableSchools(storageService.getSchools());
     });
+    if (storageService.getSchools().length === 0) {
+      storageService.fetchPublicSchoolsFromBackend().then(schools => {
+        if (schools && schools.length > 0) {
+          setAvailableSchools(schools);
+        }
+      });
+    }
     const timer = setInterval(() => {
       setCairoTime(getCairoCurrentTimeString());
     }, 1000);
@@ -89,6 +101,32 @@ export const Header: React.FC<HeaderProps> = ({
 
   const userInitial = currentUser?.fullName ? currentUser.fullName.charAt(0) : 'م';
 
+  const isSystemAdminGlobal =
+    currentUser?.role === 'SystemAdmin' &&
+    currentUser?.accessScope === 'GLOBAL' &&
+    Array.isArray(currentUser?.allowedSchoolIds) &&
+    currentUser.allowedSchoolIds.length > 1;
+
+  // Intersect available schools with currentUser.allowedSchoolIds
+  const allowedSet = new Set((currentUser?.allowedSchoolIds || []).map(id => id.trim().toUpperCase()));
+  const switchableSchools = availableSchools.filter(s => allowedSet.has((s.schoolId || '').trim().toUpperCase()));
+
+  const handleSchoolSwitch = async (newSchoolId: string) => {
+    if (!newSchoolId || newSchoolId === activeSchool?.schoolId || isSwitchingSchool) return;
+    setIsSwitchingSchool(true);
+    setSwitchError(null);
+    try {
+      const res = await storageService.switchActiveSchool(newSchoolId);
+      if (!res.success) {
+        setSwitchError(res.message || 'فشل تبديل المدرسة');
+      }
+    } catch (err: any) {
+      setSwitchError(err?.message || 'خطأ في الاتصال');
+    } finally {
+      setIsSwitchingSchool(false);
+    }
+  };
+
   return (
     <>
       <header className="h-16 bg-white/95 backdrop-blur-md border-b border-slate-200/80 flex items-center justify-between px-4 sm:px-6 lg:px-8 shrink-0 sticky top-0 z-30 shadow-xs">
@@ -110,19 +148,56 @@ export const Header: React.FC<HeaderProps> = ({
             <div className="w-9 h-9 rounded-2xl bg-[#008e8b] flex items-center justify-center text-white shadow-xs">
               <GraduationCap className="w-5 h-5" />
             </div>
-            <div>
-              <div className="text-xs sm:text-sm font-bold text-slate-900 leading-tight flex items-center gap-2">
-                <span>{activeSchool?.schoolName || settings.schoolName || 'نظام الإدارة المدرسية والموارد البشرية'}</span>
-                {activeSchool?.schoolCode && (
-                  <span className="text-[10px] font-mono font-bold bg-teal-50 text-teal-800 border border-teal-200 px-1.5 py-0.5 rounded-md hidden sm:inline-block">
-                    {activeSchool.schoolCode}
-                  </span>
+            {isSystemAdminGlobal ? (
+              <div className="flex flex-col">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] font-bold text-teal-800">المدرسة الحالية:</span>
+                  {isSwitchingSchool && <RefreshCw className="w-3 h-3 text-[#008e8b] animate-spin" />}
+                </div>
+                <div className="relative inline-flex items-center mt-0.5">
+                  <select
+                    id="header-school-switcher"
+                    aria-label="تبديل المدرسة الحالية"
+                    value={activeSchool?.schoolId || currentUser?.activeSchoolId || ''}
+                    onChange={(e) => handleSchoolSwitch(e.target.value)}
+                    disabled={isSwitchingSchool}
+                    className="text-xs sm:text-sm font-bold text-slate-900 bg-teal-50/70 hover:bg-teal-100/70 border border-teal-200/80 rounded-lg py-1 px-2.5 pl-7 pr-2.5 cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#008e8b]/30 disabled:opacity-50 appearance-none shadow-xs"
+                  >
+                    {switchableSchools.length > 0 ? (
+                      switchableSchools.map((s) => (
+                        <option key={s.schoolId} value={s.schoolId}>
+                          {s.schoolName}
+                        </option>
+                      ))
+                    ) : (
+                      <option value={activeSchool?.schoolId || ''}>
+                        {activeSchool?.schoolName || 'اختر المدرسة...'}
+                      </option>
+                    )}
+                  </select>
+                  <ChevronDown className="w-3.5 h-3.5 text-teal-800 absolute left-2 pointer-events-none" />
+                </div>
+                {switchError && (
+                  <div className="text-[10px] text-rose-600 font-semibold mt-0.5">
+                    {switchError}
+                  </div>
                 )}
               </div>
-              <div className="text-[10px] text-teal-700 font-semibold hidden sm:block">
-                جمهورية مصر العربية • {settings.currentAcademicYear || '2026/2027'}
+            ) : (
+              <div>
+                <div className="text-xs sm:text-sm font-bold text-slate-900 leading-tight flex items-center gap-2">
+                  <span>{activeSchool?.schoolName || settings.schoolName || 'نظام الإدارة المدرسية والموارد البشرية'}</span>
+                  {activeSchool?.schoolCode && (
+                    <span className="text-[10px] font-mono font-bold bg-teal-50 text-teal-800 border border-teal-200 px-1.5 py-0.5 rounded-md hidden sm:inline-block">
+                      {activeSchool.schoolCode}
+                    </span>
+                  )}
+                </div>
+                <div className="text-[10px] text-teal-700 font-semibold hidden sm:block">
+                  جمهورية مصر العربية • {settings.currentAcademicYear || '2026/2027'}
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
 

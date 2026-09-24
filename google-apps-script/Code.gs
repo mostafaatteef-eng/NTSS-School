@@ -538,6 +538,145 @@ function doPost(e) {
       return createJsonResponse(output, 200);
     }
 
+    if (action === 'switchActiveSchool') {
+      // 1. Permission Check: SystemAdmin with GLOBAL scope ONLY
+      if (authenticatedRole !== 'SystemAdmin' || activeSession.accessScope !== 'GLOBAL') {
+        recordAuthoritativeAudit(ss, requestId, activeSession.email || activeSession.username || authenticatedUserId, authenticatedRole, 'ACCESS_DENIED', 'AUTH', authenticatedUserId, 'محاولة تبديل مدرسة غير مصرح بها للدور: ' + authenticatedRole);
+        return createJsonResponse({
+          status: 'error',
+          code: 'SCHOOL_SWITCH_NOT_ALLOWED',
+          message: 'تبديل المدرسة مخصص حصرياً لمدير النظام الشامل (SystemAdmin).',
+          requestId: requestId
+        }, 403);
+      }
+
+      // 2. Extract targetSchoolId
+      var targetSchoolId = (payload && (payload.targetSchoolId || (payload.data && payload.data.targetSchoolId))) ||
+                           (postData.data && postData.data.targetSchoolId) ||
+                           postData.targetSchoolId ||
+                           (payload && payload.schoolId);
+      targetSchoolId = String(targetSchoolId || '').trim().toUpperCase();
+
+      if (!targetSchoolId) {
+        return createJsonResponse({
+          status: 'error',
+          code: 'INVALID_SCHOOL_ID',
+          message: 'يرجى تحديد معرف المدرسة المراد التبديل إليها.',
+          requestId: requestId
+        }, 400);
+      }
+
+      // 3. Verify against allowedSchoolIds
+      var allowedList = (activeSession.allowedSchoolIds || []).map(function(id) {
+        return String(id).trim().toUpperCase();
+      });
+      if (allowedList.indexOf(targetSchoolId) === -1) {
+        recordAuthoritativeAudit(ss, requestId, activeSession.email || activeSession.username || authenticatedUserId, authenticatedRole, 'ACCESS_DENIED', 'AUTH', authenticatedUserId, 'المدرسة خارج نطاق الصلاحيات: ' + targetSchoolId);
+        return createJsonResponse({
+          status: 'error',
+          code: 'ACCESS_DENIED_SCHOOL_SCOPE',
+          message: 'المدرسة المطلوبة خارج نطاق المدارس المصرح لك بالوصول إليها',
+          requestId: requestId
+        }, 403);
+      }
+
+      // 4. Verify school exists in Master_Schools registry
+      var masterSchools = getSheetData(ss, SHEETS.MASTER_SCHOOLS);
+      var targetSchoolObj = null;
+      for (var sIdx = 0; sIdx < masterSchools.length; sIdx++) {
+        if (String(masterSchools[sIdx].schoolId || '').trim().toUpperCase() === targetSchoolId) {
+          targetSchoolObj = masterSchools[sIdx];
+          break;
+        }
+      }
+
+      if (!targetSchoolObj) {
+        recordAuthoritativeAudit(ss, requestId, activeSession.email || activeSession.username || authenticatedUserId, authenticatedRole, 'SCHOOL_NOT_FOUND', 'AUTH', authenticatedUserId, 'مدرسة غير موجودة في السجل: ' + targetSchoolId);
+        return createJsonResponse({
+          status: 'error',
+          code: 'SCHOOL_NOT_FOUND',
+          message: 'المدرسة المطلوبة غير موجودة في سجل المدارس المعتمد',
+          requestId: requestId
+        }, 404);
+      }
+
+      // 5. Verify school status is Active
+      if (String(targetSchoolObj.status || '').trim().toLowerCase() !== 'active') {
+        recordAuthoritativeAudit(ss, requestId, activeSession.email || activeSession.username || authenticatedUserId, authenticatedRole, 'SCHOOL_INACTIVE', 'AUTH', authenticatedUserId, 'محاولة تبديل لمدرسة غير مفعلة: ' + targetSchoolId);
+        return createJsonResponse({
+          status: 'error',
+          code: 'SCHOOL_INACTIVE',
+          message: 'المدرسة المطلوبة غير مفعلة حالياً في النظام',
+          requestId: requestId
+        }, 400);
+      }
+
+      // 6. Update current server session row in Sessions sheet
+      var previousSchoolId = activeSession.activeSchoolId || '';
+      var tokenHash = hashStringSHA256(incomingStaffToken);
+      var sessionsSheet = ss.getSheetByName(SHEETS.SESSIONS);
+      if (sessionsSheet) {
+        var sData = sessionsSheet.getDataRange().getValues();
+        if (sData.length > 1) {
+          var sHeaders = sData[0];
+          var tokenHashCol = sHeaders.indexOf('tokenHash');
+          var activeSchoolCol = sHeaders.indexOf('activeSchoolId');
+          if (tokenHashCol >= 0 && activeSchoolCol >= 0) {
+            for (var r = 1; r < sData.length; r++) {
+              if (sData[r][tokenHashCol] === tokenHash) {
+                sessionsSheet.getRange(r + 1, activeSchoolCol + 1).setValue(targetSchoolId);
+                break;
+              }
+            }
+          }
+        }
+      }
+
+      // Update in-memory active session
+      activeSession.activeSchoolId = targetSchoolId;
+
+      // 7. Authoritative Audit Log
+      recordAuthoritativeAudit(
+        ss,
+        requestId,
+        activeSession.email || activeSession.username || authenticatedUserId,
+        authenticatedRole,
+        'SCHOOL_CONTEXT_SWITCH',
+        'SESSION',
+        authenticatedUserId,
+        JSON.stringify({
+          requestId: requestId,
+          actorUserId: authenticatedUserId,
+          actorEmail: activeSession.email || '',
+          actorRole: authenticatedRole,
+          previousSchoolId: previousSchoolId,
+          targetSchoolId: targetSchoolId,
+          timestamp: getCairoISOString()
+        })
+      );
+
+      // 8. Safe Response (no spreadsheetId, no passwords, no tokens)
+      output.status = 'success';
+      output.user = {
+        id: authenticatedUserId,
+        email: activeSession.email || '',
+        fullName: activeSession.fullName || '',
+        role: authenticatedRole,
+        accessScope: activeSession.accessScope,
+        schoolId: '',
+        activeSchoolId: targetSchoolId,
+        allowedSchoolIds: activeSession.allowedSchoolIds || []
+      };
+      output.school = {
+        schoolId: targetSchoolObj.schoolId,
+        schoolCode: targetSchoolObj.schoolCode,
+        schoolName: targetSchoolObj.schoolName,
+        status: targetSchoolObj.status || 'Active'
+      };
+
+      return createJsonResponse(output, 200);
+    }
+
     // School Management for SystemAdmin (Master Spreadsheet only)
     if (action === 'adminGetSchools' || action === 'adminCreateSchool' || action === 'adminUpdateSchool') {
       var schoolAdminAuth = authorize(activeSession, action, null, ss, requestId);
@@ -2591,7 +2730,13 @@ function validateSessionToken(ss, token) {
     // Fail-Closed: only explicitly granted schools
     allowedSchoolIds = userAllowedSchools.map(function(s) { return String(s).trim(); }).filter(Boolean);
 
-    if (allowedSchoolIds.length === 1) {
+    var upperAllowed = allowedSchoolIds.map(function(s) { return String(s).trim().toUpperCase(); });
+    var sessionActiveSchool = String(matched.activeSchoolId || '').trim().toUpperCase();
+
+    if (sessionActiveSchool && upperAllowed.indexOf(sessionActiveSchool) !== -1) {
+      activeSchoolId = sessionActiveSchool;
+      boundSchoolId = sessionActiveSchool;
+    } else if (allowedSchoolIds.length === 1) {
       activeSchoolId = allowedSchoolIds[0];
       boundSchoolId = allowedSchoolIds[0];
     } else {
@@ -3422,31 +3567,40 @@ function authorize(session, action, resourceContext, masterSs, requestId) {
   }
 
   // 5. verify AccessScope & Target School
-  var targetSchoolId = (resourceContext && resourceContext.schoolId) || session.schoolId;
+  var targetSchoolId;
 
   if (scope === 'GLOBAL') {
-    // SystemAdmin: targetSchoolId must be inside session.allowedSchoolIds
+    // For SystemAdmin with GLOBAL scope, the authoritative school context MUST be session.activeSchoolId
+    targetSchoolId = String(session.activeSchoolId || '').trim().toUpperCase();
+    if (!targetSchoolId) {
+      recordAuthoritativeAudit(ss, reqId, session.username || session.userId, role, 'ACCESS_DENIED', 'AUTH', session.userId, 'المدرسة النشطة غير محددة لجلسة مدير النظام');
+      return { allowed: false, code: 'SCHOOL_CONTEXT_REQUIRED', message: 'يرجى تحديد المدرسة النشطة لتنفيذ هذا الإجراء' };
+    }
+    // targetSchoolId must be inside session.allowedSchoolIds
     var allowedList = (session.allowedSchoolIds || []).map(function(id) { return String(id).trim().toUpperCase(); });
-    if (allowedList.indexOf(String(targetSchoolId).trim().toUpperCase()) === -1) {
+    if (allowedList.indexOf(targetSchoolId) === -1) {
       recordAuthoritativeAudit(ss, reqId, session.username || session.userId, role, 'ACCESS_DENIED', 'AUTH', session.userId, 'المدرسة خارج نطاق الصلاحيات: ' + targetSchoolId);
       return { allowed: false, code: 'ACCESS_DENIED_SCHOOL_SCOPE', message: 'المدرسة المطلوبة خارج نطاق المدارس المصرح لك بالوصول إليها' };
     }
   } else if (scope === 'SCHOOL') {
     // School-bound roles: session.schoolId is authoritative.
-    if (resourceContext && resourceContext.schoolId && String(resourceContext.schoolId).trim().toUpperCase() !== String(session.schoolId).trim().toUpperCase()) {
+    targetSchoolId = String(session.schoolId || '').trim();
+    if (resourceContext && resourceContext.schoolId && String(resourceContext.schoolId).trim().toUpperCase() !== targetSchoolId.toUpperCase()) {
       recordAuthoritativeAudit(ss, reqId, session.username || session.userId, role, 'SCHOOL_CONTEXT_MISMATCH', 'AUTH', session.userId, 'محاولة تجاوز نطاق مدرسة الجلسة: ' + resourceContext.schoolId);
       return { allowed: false, code: 'SCHOOL_CONTEXT_MISMATCH', message: 'تم رفض الطلب: لا يمكن تجاوز نطاق المدرسة المربوطة بالجلسة بمدرسة أخرى في الطلب' };
     }
   } else if (scope === 'SELF') {
-    if (resourceContext && resourceContext.schoolId && String(resourceContext.schoolId).trim().toUpperCase() !== String(session.schoolId).trim().toUpperCase()) {
+    targetSchoolId = String(session.schoolId || '').trim();
+    if (resourceContext && resourceContext.schoolId && String(resourceContext.schoolId).trim().toUpperCase() !== targetSchoolId.toUpperCase()) {
       recordAuthoritativeAudit(ss, reqId, session.username || session.userId, role, 'CROSS_SCHOOL_ACCESS_DENIED', 'AUTH', session.userId, 'محاولة وصول لمدرسة أخرى بنطاق SELF');
       return { allowed: false, code: 'CROSS_SCHOOL_ACCESS_DENIED', message: 'تم رفض الطلب: غير مصرح بالوصول إلى بيانات مدرسة أخرى' };
     }
   }
 
   // 6. Cross-School Object Access Check (Section 13)
-  var effectiveSchoolId = (scope === 'GLOBAL') ? targetSchoolId : session.schoolId;
-  if (resourceContext && resourceContext.schoolId && String(resourceContext.schoolId).trim().toUpperCase() !== String(effectiveSchoolId).trim().toUpperCase()) {
+  // For GLOBAL, effectiveSchoolId is strictly session.activeSchoolId. Payload schoolId cannot override it.
+  var effectiveSchoolId = targetSchoolId;
+  if (scope !== 'GLOBAL' && resourceContext && resourceContext.schoolId && String(resourceContext.schoolId).trim().toUpperCase() !== String(effectiveSchoolId).trim().toUpperCase()) {
     recordAuthoritativeAudit(ss, reqId, session.username || session.userId, role, 'CROSS_SCHOOL_ACCESS_DENIED', 'AUTH', session.userId, 'تم رفض الوصول لكائن مدرسة أخرى: ' + resourceContext.schoolId);
     return { allowed: false, code: 'CROSS_SCHOOL_ACCESS_DENIED', message: 'تم حجب المورد: كائن البيانات المطلوب يتبع لمدرسة أخرى' };
   }

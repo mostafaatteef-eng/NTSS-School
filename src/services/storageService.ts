@@ -397,6 +397,158 @@ class StorageService {
     return this.getSchools();
   }
 
+  /**
+   * Invalidates / clears all school-scoped data caches in client storage.
+   * Called upon authoritative school switching to prevent stale school data bleeding.
+   */
+  public clearSchoolScopedCaches(): void {
+    const keysToRemove = [
+      STORAGE_KEYS.STUDENTS,
+      STORAGE_KEYS.STUDENT_ATTENDANCE,
+      STORAGE_KEYS.CLASS_ATTENDANCE,
+      STORAGE_KEYS.EMPLOYEES,
+      STORAGE_KEYS.ATTENDANCE,
+      STORAGE_KEYS.ATTENDANCE_DAYS,
+      STORAGE_KEYS.ATTENDANCE_EXCEPTIONS,
+      STORAGE_KEYS.LEAVES,
+      STORAGE_KEYS.PERMISSIONS,
+      STORAGE_KEYS.BEHAVIOR_VIOLATIONS,
+      STORAGE_KEYS.BEHAVIOR_LEDGER,
+      STORAGE_KEYS.BEHAVIOR_CASES,
+      STORAGE_KEYS.SCHEDULE,
+      STORAGE_KEYS.SCHEDULE_SUBSTITUTIONS,
+      STORAGE_KEYS.LESSON_INSTANCES,
+      STORAGE_KEYS.LESSON_CONTENT,
+      STORAGE_KEYS.STUDENT_ENROLLMENTS,
+      STORAGE_KEYS.STUDENT_TRANSFERS,
+      STORAGE_KEYS.PARENT_COMMUNICATIONS,
+      STORAGE_KEYS.HOMEWORKS,
+      STORAGE_KEYS.CURRICULUM_PLANS,
+      STORAGE_KEYS.CURRICULUM_DISTRIBUTIONS,
+      STORAGE_KEYS.QUALITY_STANDARDS,
+      STORAGE_KEYS.DAILY_QUALITY_REPORTS,
+      STORAGE_KEYS.TEACHER_VISIT_REPORTS,
+      STORAGE_KEYS.COMPREHENSIVE_EVALUATIONS,
+      STORAGE_KEYS.CORRECTIVE_ACTIONS,
+    ];
+    for (const key of keysToRemove) {
+      localStorage.removeItem(key);
+    }
+  }
+
+  /**
+   * Phase 3C-A12: Authoritative System Admin School Switching.
+   * Enforces server authority:
+   * 1. Validates caller is SystemAdmin with GLOBAL scope.
+   * 2. Calls backend 'switchActiveSchool' action with sessionToken and targetSchoolId.
+   * 3. On backend success:
+   *    - Clears school-scoped caches (prevents data bleeding).
+   *    - Updates currentUser with server-authoritative activeSchoolId.
+   *    - Updates client UX active school key.
+   *    - Clears session validation cache to force re-verification.
+   *    - Notifies observers.
+   * 4. On failure: fails closed, keeps previous school context intact.
+   */
+  public async switchActiveSchool(targetSchoolId: string): Promise<{
+    success: boolean;
+    code?: string;
+    message?: string;
+    user?: User;
+    school?: Partial<School>;
+  }> {
+    const cleanTarget = String(targetSchoolId || '').trim().toUpperCase();
+    if (!cleanTarget) {
+      return { success: false, code: 'INVALID_SCHOOL_ID', message: 'يرجى تحديد مدرسة صالحة للتبديل إليها.' };
+    }
+
+    const currentUser = this.getCurrentUser();
+    if (!currentUser || !this.isAuthenticated(currentUser)) {
+      return { success: false, code: 'AUTH_REQUIRED', message: 'يجب تسجيل الدخول بجلسة صالحة لتبديل سياق المدرسة.' };
+    }
+
+    if (currentUser.role !== 'SystemAdmin' || currentUser.accessScope !== 'GLOBAL') {
+      return { success: false, code: 'SCHOOL_SWITCH_NOT_ALLOWED', message: 'تبديل المدرسة مخصص حصرياً لمدير النظام الشامل (SystemAdmin).' };
+    }
+
+    const allowed = (currentUser.allowedSchoolIds || []).map(id => id.trim().toUpperCase());
+    if (!allowed.includes(cleanTarget)) {
+      return { success: false, code: 'ACCESS_DENIED_SCHOOL_SCOPE', message: 'المدرسة المطلوبة خارج نطاق المدارس المصرح لك بالوصول إليها.' };
+    }
+
+    const scriptUrl = this.getBackendUrl();
+    const isOnline = typeof navigator === 'undefined' || navigator.onLine !== false;
+    if (!scriptUrl || scriptUrl.length < 15 || !isOnline) {
+      return { success: false, code: 'AUTH_SERVICE_UNAVAILABLE', message: 'تعذر الاتصال بالخادم الخلفي المعتمد لتبديل سياق المدرسة.' };
+    }
+
+    try {
+      const response = await fetch(scriptUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'switchActiveSchool',
+          sessionToken: currentUser.sessionToken,
+          data: {
+            targetSchoolId: cleanTarget,
+          },
+        }),
+      });
+
+      if (!response.ok) {
+        return {
+          success: false,
+          code: 'SWITCH_FAILED',
+          message: `خطأ في استجابة الخادم (${response.status}) أثناء تبديل المدرسة.`
+        };
+      }
+
+      const result = await response.json();
+      if (result.status === 'success' && result.user) {
+        // Invalidate school-scoped data caches BEFORE updating UI / user
+        this.clearSchoolScopedCaches();
+
+        const updatedUser: User = {
+          ...currentUser,
+          ...result.user,
+          activeSchoolId: cleanTarget,
+          sessionToken: currentUser.sessionToken,
+        };
+
+        // Persist updated user with authoritative activeSchoolId
+        this.setCurrentUser(updatedUser);
+
+        // Update UX preference
+        this.setActiveSchoolId(cleanTarget);
+
+        // Invalidate session cache for this token
+        if (currentUser.sessionToken) {
+          delete this.sessionValidationCache[currentUser.sessionToken];
+        }
+
+        this.notifyChange();
+
+        return {
+          success: true,
+          user: updatedUser,
+          school: result.school,
+          message: 'تم تبديل سياق المدرسة بنجاح.',
+        };
+      }
+
+      return {
+        success: false,
+        code: result.code || 'SWITCH_FAILED',
+        message: result.message || 'فشل تبديل سياق المدرسة من قبل الخادم.',
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        code: 'NETWORK_ERROR',
+        message: err?.message || 'حدث خطأ في الاتصال أثناء تبديل المدرسة.',
+      };
+    }
+  }
+
   // ---------------- Authentication & Enterprise Auth Guard ----------------
 
   /**

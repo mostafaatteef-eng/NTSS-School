@@ -1541,3 +1541,150 @@ export function revokeUserSessionsSecure(
 
   return { success: true, message: 'تم إلغاء جميع جلسات العمل النشطة للمستخدم بنجاح' };
 }
+
+/**
+ * Phase 3C-A12: Authoritative System Admin School Switching (Backend Engine Emulation)
+ */
+export function switchActiveSchoolBackend(
+  session: ServerSession,
+  targetSchoolId: string,
+  requestId?: string
+): {
+  success: boolean;
+  code?: string;
+  message?: string;
+  user?: Partial<User>;
+  school?: School;
+  updatedSession?: ServerSession;
+} {
+  const reqId = requestId || `REQ_SWITCH_${Date.now()}`;
+
+  // 1. Session verification
+  if (!session || !session.sessionToken) {
+    return { success: false, code: 'SESSION_MISSING', message: 'رمز جلسة العمل مفقود أو غير صالح' };
+  }
+  if (session.expiresAt && Date.now() > new Date(session.expiresAt).getTime()) {
+    return { success: false, code: 'SESSION_EXPIRED', message: 'انتهت صلاحية جلسة العمل' };
+  }
+
+  // 2. Role and Scope verification: SystemAdmin + GLOBAL only
+  if (session.role !== 'SystemAdmin' || session.accessScope !== 'GLOBAL') {
+    recordSecurityAuditEvent({
+      requestId: reqId,
+      actorUserId: session.userId,
+      actorRole: String(session.role),
+      actorSchoolId: session.schoolId || 'UNKNOWN',
+      targetSchoolId: targetSchoolId || 'UNKNOWN',
+      action: 'switchActiveSchool',
+      code: 'SCHOOL_SWITCH_NOT_ALLOWED',
+      reason: 'تبديل المدرسة مخصص حصرياً لمدير النظام الشامل (SystemAdmin)',
+    });
+    return {
+      success: false,
+      code: 'SCHOOL_SWITCH_NOT_ALLOWED',
+      message: 'تبديل المدرسة مخصص حصرياً لمدير النظام الشامل (SystemAdmin)',
+    };
+  }
+
+  const cleanTarget = String(targetSchoolId || '').trim().toUpperCase();
+  if (!cleanTarget) {
+    return {
+      success: false,
+      code: 'INVALID_SCHOOL_ID',
+      message: 'يرجى تحديد معرف المدرسة المراد التبديل إليها',
+    };
+  }
+
+  // 3. Allowed school scope check
+  const allowedList = (session.allowedSchoolIds || []).map(id => id.trim().toUpperCase());
+  if (!allowedList.includes(cleanTarget)) {
+    recordSecurityAuditEvent({
+      requestId: reqId,
+      actorUserId: session.userId,
+      actorRole: 'SystemAdmin',
+      actorSchoolId: session.schoolId || 'UNKNOWN',
+      targetSchoolId: cleanTarget,
+      action: 'switchActiveSchool',
+      code: 'ACCESS_DENIED_SCHOOL_SCOPE',
+      reason: `المدرسة المطلوبة (${cleanTarget}) خارج نطاق المدارس المصرح لك بالوصول إليها`,
+    });
+    return {
+      success: false,
+      code: 'ACCESS_DENIED_SCHOOL_SCOPE',
+      message: 'المدرسة المطلوبة خارج نطاق المدارس المصرح لك بالوصول إليها',
+    };
+  }
+
+  // 4. Verify school exists in Master School Registry
+  const targetSchoolRecord = masterSchoolRegistry.find(
+    s => s.schoolId.toUpperCase() === cleanTarget || s.schoolCode.toUpperCase() === cleanTarget
+  );
+  if (!targetSchoolRecord) {
+    recordSecurityAuditEvent({
+      requestId: reqId,
+      actorUserId: session.userId,
+      actorRole: 'SystemAdmin',
+      actorSchoolId: session.schoolId || 'UNKNOWN',
+      targetSchoolId: cleanTarget,
+      action: 'switchActiveSchool',
+      code: 'SCHOOL_NOT_FOUND',
+      reason: `المدرسة المطلوبة (${cleanTarget}) غير مسجلة في النظام`,
+    });
+    return {
+      success: false,
+      code: 'SCHOOL_NOT_FOUND',
+      message: 'المدرسة المطلوبة غير مسجلة في النظام',
+    };
+  }
+
+  // 5. Verify school is Active
+  if (targetSchoolRecord.status !== 'Active') {
+    recordSecurityAuditEvent({
+      requestId: reqId,
+      actorUserId: session.userId,
+      actorRole: 'SystemAdmin',
+      actorSchoolId: session.schoolId || 'UNKNOWN',
+      targetSchoolId: cleanTarget,
+      action: 'switchActiveSchool',
+      code: 'SCHOOL_INACTIVE',
+      reason: `المدرسة المطلوبة (${cleanTarget}) غير مفعلة حالياً`,
+    });
+    return {
+      success: false,
+      code: 'SCHOOL_INACTIVE',
+      message: 'المدرسة المطلوبة غير مفعلة حالياً',
+    };
+  }
+
+  // 6. Update session context
+  const previousSchoolId = session.activeSchoolId || '';
+  session.activeSchoolId = cleanTarget;
+
+  // 7. Record authoritative audit event
+  recordSecurityAuditEvent({
+    requestId: reqId,
+    actorUserId: session.userId,
+    actorRole: 'SystemAdmin',
+    actorSchoolId: previousSchoolId,
+    targetSchoolId: cleanTarget,
+    action: 'SCHOOL_CONTEXT_SWITCH',
+    code: 'SUCCESS',
+    reason: `تبديل سياق المدرسة بنجاح من ${previousSchoolId || 'NONE'} إلى ${cleanTarget}`,
+  });
+
+  return {
+    success: true,
+    user: {
+      id: session.userId,
+      email: session.email || '',
+      fullName: session.fullName || '',
+      role: 'SystemAdmin',
+      accessScope: 'GLOBAL',
+      schoolId: '',
+      activeSchoolId: cleanTarget,
+      allowedSchoolIds: session.allowedSchoolIds || [],
+    },
+    school: sanitizeSchoolDTO(targetSchoolRecord),
+    updatedSession: session,
+  };
+}
