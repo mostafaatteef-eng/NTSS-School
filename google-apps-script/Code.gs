@@ -1952,6 +1952,8 @@ function handleStaffLogin(masterSs, normalizedEmail, inputPassword, requestId) {
   }
 
   // Outcome 0: No account matched (Fail-Closed)
+  // Legacy account without email must be flagged by authenticated/admin user-management tooling as ACCOUNT_EMAIL_SETUP_REQUIRED / Needs Setup.
+  // Do not attempt username fallback during public login to prevent account enumeration.
   if (matchedAccounts.length === 0) {
     recordAuthoritativeAudit(masterSs, requestId, normalizedEmail, '', 'LOGIN_FAILED', 'AUTH', '', 'محاولة تسجيل دخول لبريد غير مسجل');
     return {
@@ -2138,28 +2140,28 @@ function handleStaffLogin(masterSs, normalizedEmail, inputPassword, requestId) {
   var nowStr = now.toISOString();
   var expiresStr = expiresAt.toISOString();
 
-  var sessionRow = [
-    'SESS_' + Utilities.getUuid().substring(0, 10),
-    tokenHash,
-    matchedUser.id,
-    matchedUser.username || '',
-    matchedUser.fullName,
-    role,
-    boundSchoolId || '',
-    nowStr,
-    expiresStr,
-    'ACTIVE'
-  ];
+  var sessionRecord = {
+    sessionId: 'SESS_' + Utilities.getUuid().substring(0, 10),
+    tokenHash: tokenHash,
+    userId: matchedUser.id,
+    username: matchedUser.username || '',
+    fullName: matchedUser.fullName,
+    role: role,
+    schoolId: (role === 'SystemAdmin' && allowedSchoolIds.length > 1) ? '' : (boundSchoolId || ''),
+    email: normalizedEmail,
+    accessScope: accessScope,
+    allowedSchoolIds: JSON.stringify(allowedSchoolIds),
+    activeSchoolId: activeSchoolId || '',
+    employeeId: employeeId || '',
+    createdAt: nowStr,
+    expiresAt: expiresStr,
+    status: 'ACTIVE'
+  };
 
   var sessionsSheet = masterSs.getSheetByName(SHEETS.SESSIONS);
   if (sessionsSheet) {
-    ensureHeaderColumn(sessionsSheet, 'schoolId');
-    ensureHeaderColumn(sessionsSheet, 'email');
-    ensureHeaderColumn(sessionsSheet, 'accessScope');
-    ensureHeaderColumn(sessionsSheet, 'allowedSchoolIds');
-    ensureHeaderColumn(sessionsSheet, 'activeSchoolId');
-    ensureHeaderColumn(sessionsSheet, 'employeeId');
-    sessionsSheet.appendRow(sessionRow);
+    ensureSessionHeaders(sessionsSheet);
+    appendRecordByHeaders(sessionsSheet, sessionRecord);
   }
 
   if (boundSchoolId) {
@@ -2168,13 +2170,8 @@ function handleStaffLogin(masterSs, normalizedEmail, inputPassword, requestId) {
       if (targetSchoolSs && targetSchoolSs.getId() !== masterSs.getId()) {
         var schoolSessions = targetSchoolSs.getSheetByName(SHEETS.SESSIONS);
         if (schoolSessions) {
-          ensureHeaderColumn(schoolSessions, 'schoolId');
-          ensureHeaderColumn(schoolSessions, 'email');
-          ensureHeaderColumn(schoolSessions, 'accessScope');
-          ensureHeaderColumn(schoolSessions, 'allowedSchoolIds');
-          ensureHeaderColumn(schoolSessions, 'activeSchoolId');
-          ensureHeaderColumn(schoolSessions, 'employeeId');
-          schoolSessions.appendRow(sessionRow);
+          ensureSessionHeaders(schoolSessions);
+          appendRecordByHeaders(schoolSessions, sessionRecord);
         }
       }
     } catch (sErr) {}
@@ -2582,10 +2579,11 @@ function validateSessionToken(ss, token) {
     }
   } catch (uErr) {}
 
-  var role = String(matched.role || '').trim();
+  var role = String(matched.role || (userRecord && userRecord.role) || '').trim();
   var accessScope = 'SCHOOL';
-  var boundSchoolId = String(matched.schoolId || (userRecord && userRecord.schoolId) || '').trim();
-  var allowedSchoolIds = boundSchoolId ? [boundSchoolId] : [];
+  var boundSchoolId = String((userRecord && userRecord.schoolId) || matched.schoolId || '').trim();
+  var allowedSchoolIds = [];
+  var activeSchoolId = '';
 
   if (role === 'SystemAdmin') {
     accessScope = 'GLOBAL';
@@ -2609,15 +2607,23 @@ function validateSessionToken(ss, token) {
     }
     // Fail-Closed: only explicitly granted schools
     allowedSchoolIds = userAllowedSchools.map(function(s) { return String(s).trim(); }).filter(Boolean);
-  } else if (role === 'Admin') {
-    accessScope = 'SCHOOL'; // Legacy Admin is strictly SCHOOL
-    allowedSchoolIds = boundSchoolId ? [boundSchoolId] : [];
-  } else if (role === 'Teacher' || role === 'AdministrativeEmployee') {
+
+    if (allowedSchoolIds.length === 1) {
+      activeSchoolId = allowedSchoolIds[0];
+      boundSchoolId = allowedSchoolIds[0];
+    } else {
+      activeSchoolId = '';
+      boundSchoolId = '';
+    }
+  } else if (role === 'AdministrativeEmployee') {
     accessScope = 'SELF';
     allowedSchoolIds = boundSchoolId ? [boundSchoolId] : [];
+    activeSchoolId = boundSchoolId;
   } else {
+    // SchoolAdmin, SchoolDirector, StudentAffairs, TeacherAffairs, QualityOfficer, TrainingOfficer, SocialSpecialist, Admin (Legacy)
     accessScope = 'SCHOOL';
     allowedSchoolIds = boundSchoolId ? [boundSchoolId] : [];
+    activeSchoolId = boundSchoolId;
   }
 
   return {
@@ -2628,11 +2634,12 @@ function validateSessionToken(ss, token) {
       userId: matched.userId,
       username: matched.username,
       fullName: matched.fullName,
+      email: matched.email || (userRecord && userRecord.email) || '',
       role: role,
       accessScope: accessScope,
       schoolId: boundSchoolId,
       allowedSchoolIds: allowedSchoolIds,
-      activeSchoolId: boundSchoolId,
+      activeSchoolId: activeSchoolId,
       employeeId: userEmployeeId,
       isActive: userActive,
       status: userStatus,
@@ -5472,6 +5479,49 @@ function ensureHeaderColumn(sheet, columnName) {
   if (colIdx !== -1) return colIdx + 1;
   sheet.getRange(1, lastCol + 1).setValue(columnName);
   return lastCol + 1;
+}
+
+/**
+ * Appends a record to a sheet safely by matching header names.
+ * Strictly avoids positional column index assumptions.
+ */
+function appendRecordByHeaders(sheet, record) {
+  if (!sheet || !record) return;
+  var lastCol = sheet.getLastColumn();
+  if (lastCol === 0) return;
+  var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  var rowData = headers.map(function(h) {
+    var val = record[h];
+    return val !== undefined && val !== null ? val : '';
+  });
+  sheet.appendRow(rowData);
+}
+
+/**
+ * Ensures all required canonical session headers exist in the Sessions sheet.
+ */
+function ensureSessionHeaders(sheet) {
+  if (!sheet) return;
+  var requiredHeaders = [
+    'sessionId',
+    'tokenHash',
+    'userId',
+    'username',
+    'fullName',
+    'role',
+    'schoolId',
+    'email',
+    'accessScope',
+    'allowedSchoolIds',
+    'activeSchoolId',
+    'employeeId',
+    'createdAt',
+    'expiresAt',
+    'status'
+  ];
+  for (var i = 0; i < requiredHeaders.length; i++) {
+    ensureHeaderColumn(sheet, requiredHeaders[i]);
+  }
 }
 
 /**
