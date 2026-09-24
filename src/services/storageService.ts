@@ -523,7 +523,11 @@ class StorageService {
 
     const scriptUrl = this.getBackendUrl();
 
-    if (!scriptUrl || scriptUrl.length < 15 || !navigator.onLine) {
+    const isOnline = typeof navigator === 'undefined' || navigator.onLine !== false;
+    if (!scriptUrl || scriptUrl.length < 15 || !isOnline) {
+      if (targetUser) {
+        this.setCurrentUser(null);
+      }
       return false;
     }
 
@@ -541,31 +545,43 @@ class StorageService {
       });
       clearTimeout(timeoutId);
 
-      if (response.status === 401) {
+      if (!response.ok) {
         this.setCurrentUser(null);
         this.sessionValidationCache[token] = { result: false, timestamp: now };
         return false;
       }
 
-      if (response.ok) {
-        const result = await response.json();
-        if (
-          result.status === 'error' &&
-          (result.code === 'SESSION_EXPIRED' ||
-            result.code === 'INVALID_SESSION' ||
-            result.code === 'UNAUTHORIZED' ||
-            result.code === 'SESSION_REVOKED')
-        ) {
-          // Authoritative backend logout
-          this.setCurrentUser(null);
-          this.sessionValidationCache[token] = { result: false, timestamp: now };
-          return false;
+      const result = await response.json();
+      if (result && result.status === 'success' && result.valid === true) {
+        // Safe context refresh if backend returned user data
+        if (result.user && typeof result.user === 'object') {
+          const updatedUser: User = {
+            ...targetUser,
+            email: result.user.email || targetUser.email,
+            fullName: result.user.fullName || targetUser.fullName,
+            role: result.user.role || targetUser.role,
+            accessScope: result.user.accessScope || targetUser.accessScope,
+            schoolId: result.user.schoolId !== undefined ? result.user.schoolId : targetUser.schoolId,
+            activeSchoolId: result.user.activeSchoolId !== undefined ? result.user.activeSchoolId : targetUser.activeSchoolId,
+            allowedSchoolIds: result.user.allowedSchoolIds || targetUser.allowedSchoolIds,
+            employeeId: result.user.employeeId !== undefined ? result.user.employeeId : targetUser.employeeId,
+            sessionExpiresAt: result.expiresAt || result.sessionExpiresAt || targetUser.sessionExpiresAt,
+          };
+          this.setCurrentUser(updatedUser);
         }
+        this.sessionValidationCache[token] = { result: true, timestamp: now };
+        return true;
       }
-      this.sessionValidationCache[token] = { result: true, timestamp: now };
-      return true;
+
+      // Any other response: reject session, clear user, fail closed
+      this.setCurrentUser(null);
+      this.sessionValidationCache[token] = { result: false, timestamp: now };
+      return false;
     } catch {
       // Fail-closed on network errors / offline / timeout (No offline auth)
+      if (targetUser) {
+        this.setCurrentUser(null);
+      }
       return false;
     }
   }

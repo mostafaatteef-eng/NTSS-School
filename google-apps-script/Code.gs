@@ -536,6 +536,32 @@ function doPost(e) {
     var authenticatedUsername = activeSession.username;
     var sessionSchoolId = activeSession.schoolId || '';
 
+    // -------------------------------------------------------------
+    // 4A. SESSION LIFECYCLE (Before School Authorization)
+    // -------------------------------------------------------------
+    if (action === 'logout') {
+      revokeSessionToken(ss, incomingStaffToken);
+      output.message = 'تم إنهاء جلسة العمل وإلغاؤها بنجاح';
+      return createJsonResponse(output, 200);
+    }
+
+    if (action === 'validateSession') {
+      output.valid = true;
+      output.user = {
+        id: authenticatedUserId,
+        email: activeSession.email || '',
+        fullName: activeSession.fullName || '',
+        role: authenticatedRole,
+        accessScope: activeSession.accessScope,
+        schoolId: activeSession.schoolId || '',
+        activeSchoolId: activeSession.activeSchoolId || '',
+        allowedSchoolIds: activeSession.allowedSchoolIds || [],
+        employeeId: activeSession.employeeId || ''
+      };
+      output.expiresAt = activeSession.expiresAt;
+      return createJsonResponse(output, 200);
+    }
+
     // School Management for SystemAdmin (Master Spreadsheet only)
     if (action === 'adminGetSchools' || action === 'adminCreateSchool' || action === 'adminUpdateSchool') {
       var schoolAdminAuth = authorize(activeSession, action, null, ss, requestId);
@@ -687,25 +713,6 @@ function doPost(e) {
     // -------------------------------------------------------------
     // 6. PROTECTED STAFF ACTIONS DISPATCH
     // -------------------------------------------------------------
-
-    // A. Session Lifecycle
-    if (action === 'logout') {
-      revokeSessionToken(ss, incomingStaffToken);
-      output.message = 'تم إنهاء جلسة العمل وإلغاؤها بنجاح';
-      return createJsonResponse(output, 200);
-    }
-
-    if (action === 'validateSession') {
-      output.valid = true;
-      output.user = {
-        id: authenticatedUserId,
-        username: authenticatedUsername,
-        role: authenticatedRole,
-        fullName: activeSession.fullName
-      };
-      output.expiresAt = activeSession.expiresAt;
-      return createJsonResponse(output, 200);
-    }
 
     // B. Students Master Data (School-Scoped strictly to schoolSs)
     if (action === 'getStudents') {
