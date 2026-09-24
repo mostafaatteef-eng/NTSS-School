@@ -109,7 +109,6 @@ import {
 } from '../data/initialData';
 import { getCairoCurrentDate, getCairoCurrentTime, getCairoNowISO, getEgyptianDayName } from '../utils/egyptianTime';
 import {
-  generateClientSessionToken,
   hashPasswordSHA256,
   hashPlainSHA256,
   derivePBKDF2Hash,
@@ -524,7 +523,7 @@ class StorageService {
     const scriptUrl = this.getBackendUrl();
 
     if (!scriptUrl || scriptUrl.length < 15 || !navigator.onLine) {
-      return this.isAuthenticated(targetUser);
+      return false;
     }
 
     try {
@@ -568,8 +567,8 @@ class StorageService {
       this.sessionValidationCache[token] = { result: true, timestamp: now };
       return true;
     } catch {
-      // Retain active valid cryptographic token on transient network failure
-      return this.isAuthenticated(targetUser);
+      // Fail-closed on network errors / offline / timeout (No offline auth)
+      return false;
     }
   }
 
@@ -643,9 +642,15 @@ class StorageService {
           result.user?.sessionToken ||
           result.user?.token ||
           result.session_token ||
-          result.authToken ||
-          `GAS_SES_${Date.now()}_${result.user.id || 'auth'}`
+          result.authToken
         );
+        if (!resolvedToken || typeof resolvedToken !== 'string' || !resolvedToken.trim()) {
+          return {
+            success: false,
+            code: 'LOGIN_SESSION_TOKEN_MISSING',
+            message: 'فشل تسجيل الدخول: استجابة الخادم تفتقر إلى رمز جلسة موثوق (sessionToken).',
+          };
+        }
         const resolvedSchoolId = (
           result.schoolId ||
           cleanSchoolId ||
@@ -728,7 +733,6 @@ class StorageService {
   public hasPermission(action: keyof PermissionMatrix): boolean {
     const user = this.getCurrentUser();
     if (!user) return false;
-    if (user.role === 'Admin') return true;
 
     const settings = this.getSettings();
     const rolePermissions = settings.rolePermissions || DEFAULT_PERMISSION_MATRIX;
@@ -4463,7 +4467,7 @@ class StorageService {
     activationToken: string,
     newPassword: string,
     confirmPassword?: string
-  ): Promise<{ success: boolean; sessionToken?: string; user?: User; message?: string }> {
+  ): Promise<{ success: boolean; sessionToken?: string; user?: User; message?: string; code?: string }> {
     const cleanLogin = (loginNumberOrUsername || '').trim();
     const cleanToken = (activationToken || '').trim().toUpperCase();
     const cleanPass = (newPassword || '').trim();
@@ -4514,9 +4518,15 @@ class StorageService {
               res.user?.sessionToken ||
               res.user?.token ||
               res.session_token ||
-              res.authToken ||
-              `GAS_SES_${Date.now()}_${res.user.id || 'setup'}`
+              res.authToken
             );
+            if (!resolvedToken || typeof resolvedToken !== 'string' || !resolvedToken.trim()) {
+              return {
+                success: false,
+                code: 'LOGIN_SESSION_TOKEN_MISSING',
+                message: 'فشل تفعيل الحساب: استجابة الخادم تفتقر إلى رمز جلسة موثوق (sessionToken).',
+              };
+            }
             const userWithToken: User = {
               ...res.user,
               sessionToken: String(resolvedToken).trim(),
