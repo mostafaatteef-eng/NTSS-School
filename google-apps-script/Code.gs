@@ -2334,29 +2334,29 @@ function handleTeacherLogin(masterSs, usernameOrCode, password, requestId, schoo
     var nowStr = now.toISOString();
     var expiresStr = expiresAt.toISOString();
 
-    var sessionRow = [
-      'TSESS_' + Utilities.getUuid().substring(0, 10),
-      tokenHash,
-      targetEmpId,
-      targetEmpId,
-      teacherCode,
-      teacherName,
-      targetSchoolId,
-      nowStr,
-      expiresStr,
-      'ACTIVE'
-    ];
+    var teacherSessionRecord = {
+      sessionId: 'TSESS_' + Utilities.getUuid().substring(0, 10),
+      tokenHash: tokenHash,
+      teacherId: targetEmpId,
+      employeeId: targetEmpId,
+      teacherCode: teacherCode,
+      teacherName: teacherName,
+      schoolId: targetSchoolId,
+      createdAt: nowStr,
+      expiresAt: expiresStr,
+      status: 'ACTIVE'
+    };
 
     var tSheet = targetSs.getSheetByName(SHEETS.TEACHER_SESSIONS);
     if (tSheet) {
-      ensureHeaderColumn(tSheet, 'schoolId');
-      tSheet.appendRow(sessionRow);
+      ensureTeacherSessionHeaders(tSheet);
+      appendRecordByHeaders(tSheet, teacherSessionRecord);
     }
     if (masterSs.getId() !== targetSs.getId()) {
       var masterTSessions = masterSs.getSheetByName(SHEETS.TEACHER_SESSIONS);
       if (masterTSessions) {
-        ensureHeaderColumn(masterTSessions, 'schoolId');
-        masterTSessions.appendRow(sessionRow);
+        ensureTeacherSessionHeaders(masterTSessions);
+        appendRecordByHeaders(masterTSessions, teacherSessionRecord);
       }
     }
 
@@ -5314,6 +5314,16 @@ function changeTeacherPassword(ss, teacherSessionToken, newPassword, requestId) 
     return { success: false, code: 'INVALID_SESSION', message: 'جلسة المعلم منتهية أو غير صالحة، يرجى تسجيل الدخول مجدداً' };
   }
 
+  var teacherSchoolId = String(session.schoolId || '').trim();
+  if (!teacherSchoolId) {
+    recordAuthoritativeAudit(ss, requestId, session.teacherCode || '', 'Teacher', 'PASSWORD_CHANGE_FAILED', 'TEACHER_AUTH', session.teacherId || session.employeeId || '', 'فشل تغيير كلمة المرور: سياق المدرسة مفقود في الجلسة (SCHOOL_CONTEXT_REQUIRED)');
+    return {
+      success: false,
+      code: 'SCHOOL_CONTEXT_REQUIRED',
+      message: 'سياق المدرسة غير محدد في جلسة العمل الحالية.'
+    };
+  }
+
   var teacherId = session.teacherId || session.employeeId;
   var credentials = getSheetData(ss, SHEETS.TEACHER_CREDENTIALS);
   var cred = null;
@@ -5366,21 +5376,23 @@ function changeTeacherPassword(ss, teacherSessionToken, newPassword, requestId) 
   var nowStr = now.toISOString();
   var expiresStr = expiresAt.toISOString();
 
-  var sessionRow = [
-    'TSESS_' + Utilities.getUuid().substring(0, 10),
-    newTokenHash,
-    teacherId,
-    teacherId,
-    session.teacherCode || '',
-    session.teacherName || '',
-    nowStr,
-    expiresStr,
-    'ACTIVE'
-  ];
+  var teacherSessionRecord = {
+    sessionId: 'TSESS_' + Utilities.getUuid().substring(0, 10),
+    tokenHash: newTokenHash,
+    teacherId: teacherId,
+    employeeId: session.employeeId || teacherId,
+    teacherCode: session.teacherCode || '',
+    teacherName: session.teacherName || '',
+    schoolId: teacherSchoolId,
+    createdAt: nowStr,
+    expiresAt: expiresStr,
+    status: 'ACTIVE'
+  };
 
   var tSheet = ss.getSheetByName(SHEETS.TEACHER_SESSIONS);
   if (tSheet) {
-    tSheet.appendRow(sessionRow);
+    ensureTeacherSessionHeaders(tSheet);
+    appendRecordByHeaders(tSheet, teacherSessionRecord);
   }
 
   recordAuthoritativeAudit(ss, requestId, cred.username || session.teacherCode, 'Teacher', 'PASSWORD_CHANGE', 'TEACHER_CREDENTIALS', teacherId, 'تغيير كلمة مرور حساب المعلم بنجاح');
@@ -5515,6 +5527,28 @@ function ensureSessionHeaders(sheet) {
     'allowedSchoolIds',
     'activeSchoolId',
     'employeeId',
+    'createdAt',
+    'expiresAt',
+    'status'
+  ];
+  for (var i = 0; i < requiredHeaders.length; i++) {
+    ensureHeaderColumn(sheet, requiredHeaders[i]);
+  }
+}
+
+/**
+ * Ensures all required canonical teacher session headers exist in Teacher_Sessions sheet.
+ */
+function ensureTeacherSessionHeaders(sheet) {
+  if (!sheet) return;
+  var requiredHeaders = [
+    'sessionId',
+    'tokenHash',
+    'teacherId',
+    'employeeId',
+    'teacherCode',
+    'teacherName',
+    'schoolId',
     'createdAt',
     'expiresAt',
     'status'
