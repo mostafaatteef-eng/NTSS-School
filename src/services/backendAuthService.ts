@@ -98,6 +98,15 @@ let masterSchoolRegistry: MasterSchoolRegistryRecord[] = [
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',
   },
+  {
+    schoolId: 'SCH-DAMIETTA',
+    schoolCode: 'DAMIETTA',
+    schoolName: 'مدرسة إبدأ الوطنية للعلوم التقنية - دمياط',
+    spreadsheetId: 'SHEET_ID_DAMIETTA_OFFICIAL_SECURE_993',
+    status: 'Active',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+  },
 ];
 
 export function setMasterSchoolRegistry(schools: MasterSchoolRegistryRecord[]): void {
