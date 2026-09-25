@@ -7,6 +7,7 @@ import {
   clearSecurityAuditLogs,
   resolveSchoolContext,
   sanitizeSchoolDTO,
+  setMasterSchoolRegistry,
 } from '../src/services/backendAuthService';
 import { hasEffectivePermission } from '../src/utils/permissions';
 import { MasterSchoolRegistryRecord, ServerSession } from '../src/types';
@@ -14,6 +15,26 @@ import { MasterSchoolRegistryRecord, ServerSession } from '../src/types';
 describe('RBAC Phase 2: Backend Authorization Engine & Multi-School Isolation', () => {
   beforeEach(() => {
     clearSecurityAuditLogs();
+    setMasterSchoolRegistry([
+      {
+        schoolId: 'SCH-BADR',
+        schoolCode: 'BADR',
+        schoolName: 'مدرسة بدر الإعدادية بنين',
+        spreadsheetId: 'SHEET_ID_BADR_TEST',
+        status: 'Active',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      },
+      {
+        schoolId: 'SCH-ALNOOR',
+        schoolCode: 'ALNOOR',
+        schoolName: 'مدرسة النور الثانوية بنات',
+        spreadsheetId: 'SHEET_ID_ALNOOR_TEST',
+        status: 'Active',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      },
+    ]);
   });
 
   // Test 1: SystemAdmin can access allowed school A

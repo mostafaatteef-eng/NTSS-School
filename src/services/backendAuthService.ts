@@ -79,35 +79,7 @@ export function clearSecurityAuditLogs(): void {
 }
 
 // Backend Master School Registry (Backend-authoritative only)
-let masterSchoolRegistry: MasterSchoolRegistryRecord[] = [
-  {
-    schoolId: 'SCH-BADR',
-    schoolCode: 'BADR',
-    schoolName: 'مدرسة بدر الإعدادية بنين',
-    spreadsheetId: 'SHEET_ID_BADR_OFFICIAL_SECURE_991',
-    status: 'Active',
-    createdAt: '2026-01-01T00:00:00.000Z',
-    updatedAt: '2026-01-01T00:00:00.000Z',
-  },
-  {
-    schoolId: 'SCH-ALNOOR',
-    schoolCode: 'ALNOOR',
-    schoolName: 'مدرسة النور الثانوية بنات',
-    spreadsheetId: 'SHEET_ID_ALNOOR_OFFICIAL_SECURE_992',
-    status: 'Active',
-    createdAt: '2026-01-01T00:00:00.000Z',
-    updatedAt: '2026-01-01T00:00:00.000Z',
-  },
-  {
-    schoolId: 'SCH-DAMIETTA',
-    schoolCode: 'DAMIETTA',
-    schoolName: 'مدرسة إبدأ الوطنية للعلوم التقنية - دمياط',
-    spreadsheetId: 'SHEET_ID_DAMIETTA_OFFICIAL_SECURE_993',
-    status: 'Active',
-    createdAt: '2026-01-01T00:00:00.000Z',
-    updatedAt: '2026-01-01T00:00:00.000Z',
-  },
-];
+let masterSchoolRegistry: MasterSchoolRegistryRecord[] = [];
 
 export function setMasterSchoolRegistry(schools: MasterSchoolRegistryRecord[]): void {
   masterSchoolRegistry = [...schools];
@@ -124,10 +96,10 @@ export function getMasterSchoolRegistry(): MasterSchoolRegistryRecord[] {
 export function sanitizeSchoolDTO(school: MasterSchoolRegistryRecord | School | any): School {
   if (!school) {
     return {
-      schoolId: 'SCH-BADR',
-      schoolCode: 'BADR',
-      schoolName: 'مدرسة بدر الإعدادية بنين',
-      status: 'Active',
+      schoolId: '',
+      schoolCode: '',
+      schoolName: '',
+      status: 'Inactive',
     };
   }
 

@@ -9,6 +9,7 @@ import {
   getSecurityAuditLogs,
   clearSecurityAuditLogs,
   resolveSchoolContext,
+  setMasterSchoolRegistry,
 } from '../src/services/backendAuthService';
 import { ServerSession, User } from '../src/types';
 
@@ -280,6 +281,12 @@ describe('PHASE 3C-A12 — AUTHORITATIVE SYSTEM ADMIN SCHOOL SWITCHING', () => {
       'SCH-BADR', JSON.stringify(['SCH-BADR']), 'EMP-BADR-2',
       '2026-09-01T00:00:00Z', '2026-09-24T00:00:00Z', '2026-09-01T00:00:00Z',
     ],
+    [
+      'usr-teacher-badr', 'teacher_badr', 'dummyhash', 'dummysalt', 'PBKDF2', 10000,
+      'معلم مدرسة بدر', 'Teacher', 'Active', 'Teaching', 'teacher.badr@ntss.edu.eg',
+      'SCH-BADR', JSON.stringify(['SCH-BADR']), 'EMP-BADR-3',
+      '2026-09-01T00:00:00Z', '2026-09-24T00:00:00Z', '2026-09-01T00:00:00Z',
+    ],
   ];
 
   const initialSessions = [
@@ -298,12 +305,46 @@ describe('PHASE 3C-A12 — AUTHORITATIVE SYSTEM ADMIN SCHOOL SWITCHING', () => {
       'AdministrativeEmployee', 'SCH-BADR', 'badr.emp@ntss.edu.eg', 'SELF', JSON.stringify(['SCH-BADR']),
       'SCH-BADR', 'EMP-BADR-2', '2026-09-24T00:00:00Z', '2026-09-26T00:00:00Z', 'Active',
     ],
+    [
+      'sess-teacher-1', TEACHER_TOKEN_HASH, 'usr-teacher-badr', 'teacher_badr', 'معلم مدرسة بدر',
+      'Teacher', 'SCH-BADR', 'teacher.badr@ntss.edu.eg', 'SELF', JSON.stringify(['SCH-BADR']),
+      'SCH-BADR', 'EMP-BADR-3', '2026-09-24T00:00:00Z', '2026-09-26T00:00:00Z', 'Active',
+    ],
   ];
 
   beforeEach(() => {
     localStorage.clear();
     storageService.setCurrentUser(null);
     clearSecurityAuditLogs();
+    setMasterSchoolRegistry([
+      {
+        schoolId: 'SCH-BADR',
+        schoolCode: 'BADR',
+        schoolName: 'مدرسة إبدأ الوطنية للعلوم التقنية - بدر',
+        spreadsheetId: 'SHEET_ID_BADR_TEST',
+        status: 'Active',
+        createdAt: '2026-09-01T00:00:00Z',
+        updatedAt: '2026-09-01T00:00:00Z',
+      },
+      {
+        schoolId: 'SCH-DAMIETTA',
+        schoolCode: 'DAMIETTA',
+        schoolName: 'مدرسة إبدأ الوطنية للعلوم التقنية - دمياط',
+        spreadsheetId: 'SHEET_ID_DAMIETTA_TEST',
+        status: 'Active',
+        createdAt: '2026-09-01T00:00:00Z',
+        updatedAt: '2026-09-01T00:00:00Z',
+      },
+      {
+        schoolId: 'SCH-INACTIVE',
+        schoolCode: 'INACTIVE',
+        schoolName: 'مدرسة غير مفعلة',
+        spreadsheetId: 'SHEET_ID_INACTIVE_TEST',
+        status: 'Inactive',
+        createdAt: '2026-09-01T00:00:00Z',
+        updatedAt: '2026-09-01T00:00:00Z',
+      },
+    ]);
   });
 
   // -------------------------------------------------------------
@@ -469,7 +510,7 @@ describe('PHASE 3C-A12 — AUTHORITATIVE SYSTEM ADMIN SCHOOL SWITCHING', () => {
 
       const body = JSON.parse(res.getContent());
       expect(body.status).toBe('error');
-      expect(['SESSION_NOT_FOUND', 'AUTH_REQUIRED', 'SCHOOL_SWITCH_NOT_ALLOWED']).toContain(body.code);
+      expect(body.code).toBe('SCHOOL_SWITCH_NOT_ALLOWED');
     });
 
     it('8. AdministrativeEmployee attempting switchActiveSchool is DENIED', () => {
