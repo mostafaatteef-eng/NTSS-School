@@ -33,7 +33,13 @@ import {
 } from 'lucide-react';
 import { PermissionKey, User } from '../../types';
 import { hasPermission } from '../../utils/permissions';
-import { canAccessTab, normalizeTab } from '../../utils/navigation';
+import {
+  canAccessTab,
+  normalizeTab,
+  isSystemAdmin,
+  isSchoolAdmin,
+  isLegacyAdmin,
+} from '../../utils/navigation';
 import { NTSSLogo } from '../common/NTSSLogo';
 
 export type ActiveTab =
@@ -160,7 +166,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
     // On desktop: NEVER close the sidebar automatically on navigation
   };
 
-  const userRole = currentUser?.role || 'Admin';
+  // Canonical Admin Gate: Identifies administrative authority (SystemAdmin, SchoolAdmin, Legacy Admin)
+  const isAdminUser = Boolean(
+    isSystemAdmin(currentUser) || isSchoolAdmin(currentUser) || isLegacyAdmin(currentUser)
+  );
 
   const navSections: NavSection[] = [
     {
@@ -249,51 +258,60 @@ export const Sidebar: React.FC<SidebarProps> = ({
           label: 'استيراد ومطابقة الجدول',
           icon: Upload,
           adminOnly: true,
+          permission: 'timetable.import',
           badge: 'استيراد',
         },
         {
           id: 'timetable_coverage',
           label: 'مطابقة الخطة الدراسية (39 حصة)',
           icon: BookOpen,
+          permission: 'schedule.view',
           badge: 'خطة',
         },
         {
           id: 'timetable_load',
           label: 'أنصبة وتوزيع المعلمين',
           icon: UserCheck,
+          permission: 'schedule.view',
         },
         {
           id: 'timetable_reserve',
           label: 'حصص الاحتياطي والبدلاء',
           icon: Clock,
+          permission: 'schedule.view',
           badge: 'بدلاء',
         },
         {
           id: 'timetable_supervision',
           label: 'جدول الإشراف اليومي',
           icon: Shield,
+          permission: 'schedule.view',
         },
         {
           id: 'timetable_supervision_locations',
           label: 'أماكن ومواقع الإشراف',
           icon: Building,
           adminOnly: true,
+          permission: 'timetable.manage',
         },
         {
           id: 'timetable_exams',
           label: 'جدول الامتحانات والاختبارات',
           icon: Award,
+          permission: 'schedule.view',
         },
         {
           id: 'timetable_reports',
           label: 'تقارير الجدول والأنصبة',
           icon: FileText,
+          permission: 'schedule.view',
         },
         {
           id: 'timetable_settings',
           label: 'إعدادات وفترات الجدول',
           icon: SettingsIcon,
           adminOnly: true,
+          permission: 'timetable.manage',
         },
         {
           id: 'teacher_portal',
@@ -344,24 +362,28 @@ export const Sidebar: React.FC<SidebarProps> = ({
           label: 'صحة النظام وفحص الأداء',
           icon: Activity,
           adminOnly: true,
+          permission: 'audit.view',
         },
         {
           id: 'master_data',
           label: 'إدارة القوائم والتعريفات الوزارية',
           icon: Database,
           adminOnly: true,
+          permission: 'schools.manage',
         },
         {
           id: 'backup',
           label: 'النسخ الاحتياطي والأرشفة',
           icon: ShieldCheck,
           adminOnly: true,
+          permission: 'settings.manage',
         },
         {
           id: 'operations',
           label: 'مركز التشغيل والجاهزية الفنية',
           icon: Server,
           adminOnly: true,
+          permission: 'settings.manage',
         },
         {
           id: 'users',
@@ -443,12 +465,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
         >
           {navSections.map(section => {
             const visibleItems = section.items.filter(item => {
-              // 1. Strict route guard (enforces role boundaries)
+              // 1. Strict canonical route guard (enforces role boundaries, school context, decommissioned tabs, permissions)
               if (!canAccessTab(currentUser, item.id)) return false;
-              // 2. Admin-only check
-              if (item.adminOnly && userRole !== 'Admin') return false;
-              // 3. Permission check
+
+              // 2. Canonical Admin gate: supports SystemAdmin, SchoolAdmin, and Legacy Admin (replaces legacy userRole === 'Admin')
+              if (item.adminOnly && !isAdminUser) return false;
+
+              // 3. Permission check if item has explicit permission requirement
               if (item.permission && !hasPermission(currentUser, item.permission)) return false;
+
               return true;
             });
 

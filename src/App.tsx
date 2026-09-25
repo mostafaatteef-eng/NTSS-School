@@ -115,17 +115,49 @@ export default function App() {
       const hash = window.location.hash;
       if (!hash) return;
       const parsed = normalizeTab(hash);
-      if (parsed && currentUserRef.current && canAccessTab(currentUserRef.current, parsed)) {
+      if (!parsed) return;
+
+      const user = currentUserRef.current;
+      if (!user) return;
+
+      if (canAccessTab(user, parsed)) {
         if (parsed !== activeTabRef.current) {
           setActiveTab(parsed);
           try {
             sessionStorage.setItem('ntss_active_tab', parsed);
           } catch {}
         }
+      } else {
+        // Direct unauthorized hash access: fail closed and redirect to safe default route
+        const fallback = resolveDefaultRouteForCurrentUser(user);
+        setActiveTab(fallback);
+        try {
+          sessionStorage.setItem('ntss_active_tab', fallback);
+          if (typeof window !== 'undefined' && window.history?.replaceState) {
+            window.history.replaceState(null, '', `#/${fallback}`);
+          }
+        } catch {}
       }
     };
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
+
+  // Enforce clean URL state on boot if initial direct hash was unauthorized
+  useEffect(() => {
+    const user = currentUserRef.current;
+    if (!user) return;
+    if (typeof window !== 'undefined' && window.location.hash) {
+      const hashTab = normalizeTab(window.location.hash);
+      if (hashTab && !canAccessTab(user, hashTab)) {
+        const fallback = resolveDefaultRouteForCurrentUser(user);
+        try {
+          if (window.history?.replaceState) {
+            window.history.replaceState(null, '', `#/${fallback}`);
+          }
+        } catch {}
+      }
+    }
   }, []);
 
   // Subscribe to storage changes without unmount/remount churn
@@ -150,7 +182,9 @@ export default function App() {
           !currentUserRef.current ||
           currentUserRef.current.id !== updatedUser.id ||
           currentUserRef.current.role !== updatedUser.role ||
-          currentUserRef.current.sessionToken !== updatedUser.sessionToken
+          currentUserRef.current.sessionToken !== updatedUser.sessionToken ||
+          currentUserRef.current.activeSchoolId !== updatedUser.activeSchoolId ||
+          currentUserRef.current.schoolId !== updatedUser.schoolId
         ) {
           setCurrentUser(updatedUser);
         }
@@ -303,7 +337,11 @@ export default function App() {
     if (!canAccessTab(currentUser, activeTab)) {
       const fallbackTab = resolveDefaultRouteForCurrentUser(currentUser);
       return (
-        <div className="bg-rose-50 border border-rose-200 rounded-3xl p-8 text-center text-rose-800 max-w-lg mx-auto my-12 shadow-sm">
+        <div
+          id="forbidden-route-banner"
+          data-testid="route-forbidden-guard"
+          className="bg-rose-50 border border-rose-200 rounded-3xl p-8 text-center text-rose-800 max-w-lg mx-auto my-12 shadow-sm"
+        >
           <h2 className="text-base font-bold">غير مصرح بالدخول (403 Forbidden)</h2>
           <p className="text-xs mt-2 text-rose-700 leading-relaxed">
             عذراً، هذا القسم غير مصرح به لصلاحيات حسابك الحالي ({currentUser.role}). تم توجيهك تلقائياً للواجهة المخصصة لاختصاصك.
