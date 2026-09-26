@@ -3638,6 +3638,108 @@ class StorageService {
   }
 
   public async syncWithGoogleSheets(isBackground = false): Promise<boolean> {
+    if (isPostgresBackendEnabled()) {
+      const currentUser = this.getCurrentUser();
+      if (!currentUser?.sessionToken || !this.isAuthenticated(currentUser)) {
+        this.setSyncStatus({ ...this.getSyncStatus(), status: 'error', connectedToGoogleSheets: false, errorMessage: 'مطلوب تسجيل الدخول بجلسة معتمدة للمزامنة.' });
+        return false;
+      }
+      const schoolId = this.getActiveSchoolId();
+      if (!schoolId) {
+        this.setSyncStatus({ ...this.getSyncStatus(), status: 'error', connectedToGoogleSheets: false, errorMessage: 'يرجى اختيار مدرسة قبل مزامنة البيانات التشغيلية.' });
+        return false;
+      }
+      if (!isBackground) this.setSyncStatus({ ...this.getSyncStatus(), status: 'syncing' });
+      try {
+        const fetchAll = async (path: string): Promise<any[]> => {
+          const all: any[] = [];
+          for (let page = 1; page <= 1000; page++) {
+            const sep = path.includes('?') ? '&' : '?';
+            const pg = await postgresApiRequest<any>(`${path}${sep}schoolId=${encodeURIComponent(schoolId)}&page=${page}&pageSize=100`, currentUser.sessionToken || '');
+            if (!pg.ok || pg.body?.status !== 'success' || !Array.isArray(pg.body?.data)) {
+              throw new Error(pg.body?.message || pg.body?.code || `HTTP_${pg.status}`);
+            }
+            all.push(...pg.body.data);
+            const pages = Math.max(1, Number(pg.body?.pagination?.pages || 1));
+            if (page >= pages) break;
+          }
+          return all;
+        };
+        const today = new Date();
+        const to = today.toISOString().slice(0, 10);
+        const from = new Date(today.getTime() - 90 * 86400000).toISOString().slice(0, 10);
+        const [studentRows, employeeRows, studentAttendanceRows, employeeAttendanceRows] = await Promise.all([
+          fetchAll('/students'),
+          fetchAll('/employees'),
+          fetchAll(`/student-attendance?from=${from}&to=${to}`),
+          fetchAll(`/employee-attendance?from=${from}&to=${to}`),
+        ]);
+        const students = studentRows.map((row: any) => ({
+          ...(row.payload && typeof row.payload === 'object' ? row.payload : {}),
+          id: row.id,
+          schoolId: row.school_id || schoolId,
+          studentCode: row.student_code || row.studentCode || '',
+          name: row.full_name || row.name || '',
+          fullName: row.full_name || row.fullName || row.name || '',
+          grade: row.grade || '',
+          classroom: row.classroom || '',
+          section: row.section || '',
+          status: row.status || 'نشط',
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+        }));
+        const employees = employeeRows.map((row: any) => ({
+          ...(row.payload && typeof row.payload === 'object' ? row.payload : {}),
+          id: row.id,
+          employeeId: row.id,
+          schoolId: row.school_id || schoolId,
+          employeeCode: row.employee_code || row.employeeCode || '',
+          name: row.full_name || row.name || '',
+          fullName: row.full_name || row.fullName || row.name || '',
+          department: row.department || '',
+          jobTitle: row.job_title || row.jobTitle || '',
+          status: row.status || 'Active',
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+        }));
+        const studentAttendance = studentAttendanceRows.map((row: any) => ({
+          ...(row.payload && typeof row.payload === 'object' ? row.payload : {}),
+          id: String(row.id),
+          schoolId: row.school_id || schoolId,
+          studentId: row.student_id,
+          studentName: row.person_name || '',
+          date: String(row.attendance_date || '').slice(0, 10),
+          status: row.status,
+        }));
+        const employeeAttendance = employeeAttendanceRows.map((row: any) => ({
+          ...(row.payload && typeof row.payload === 'object' ? row.payload : {}),
+          id: String(row.id),
+          schoolId: row.school_id || schoolId,
+          employeeId: row.employee_id,
+          employeeName: row.person_name || '',
+          date: String(row.attendance_date || '').slice(0, 10),
+          status: row.status,
+          checkIn: row.check_in || '',
+          checkOut: row.check_out || '',
+        }));
+        localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify(students));
+        localStorage.setItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify(employees));
+        localStorage.setItem(STORAGE_KEYS.STUDENT_ATTENDANCE, JSON.stringify(studentAttendance));
+        localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify(employeeAttendance));
+        this.setSyncStatus({
+          lastSyncTime: getCairoNowISO(),
+          status: 'success',
+          connectedToGoogleSheets: false,
+          syncedRecordsCount: students.length + employees.length + studentAttendance.length + employeeAttendance.length,
+        });
+        this.notifyChange();
+        return true;
+      } catch (err: any) {
+        this.setSyncStatus({ ...this.getSyncStatus(), status: 'error', connectedToGoogleSheets: false, errorMessage: err?.message || 'تعذر الاتصال بخادم PostgreSQL' });
+        return false;
+      }
+    }
+
     const scriptUrl = this.getBackendUrl();
 
     if (!scriptUrl || scriptUrl.length < 15) {
@@ -4720,6 +4822,7 @@ class StorageService {
 
   public async processSyncQueue(): Promise<{ processed: number; succeeded: number; failed: number }> {
     return SyncQueueService.processQueue(async (action, payload) => {
+      if (isPostgresBackendEnabled()) return { success: false, message: 'LEGACY_GAS_MUTATION_BLOCKED_IN_POSTGRES_RUNTIME' };
       const settings = this.getSettings();
       const scriptUrl = settings.googleAppsScriptUrl || DEFAULT_BACKEND_URL;
       if (!scriptUrl || scriptUrl.length < 15) {
@@ -4765,6 +4868,9 @@ class StorageService {
   }
 
   public async pushPostDirect(action: string, payload: any, timeoutMs = 2000): Promise<{ success: boolean; message?: string; [key: string]: any }> {
+    if (isPostgresBackendEnabled()) {
+      return { success: false, code: 'LEGACY_GAS_MUTATION_BLOCKED', message: 'هذه العملية لم تُنقل بعد إلى PostgreSQL وتم إيقاف إرسال جلسة Neon إلى Google Apps Script.' };
+    }
     const settings = this.getSettings();
     const scriptUrl = settings.googleAppsScriptUrl || DEFAULT_BACKEND_URL;
     if (!scriptUrl || scriptUrl.length < 15) {
