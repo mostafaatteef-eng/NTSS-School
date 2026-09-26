@@ -1,10 +1,36 @@
 import express from 'express';
 import crypto from 'node:crypto';
 import pg from 'pg';
+import cors from 'cors';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 
 const { Pool } = pg;
 const app = express();
+app.disable('x-powered-by');
+app.use(helmet());
+const allowedOrigins = String(process.env.CORS_ORIGINS || '')
+  .split(',').map(x => x.trim()).filter(Boolean);
+app.use(cors({
+  origin(origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+    return callback(new Error('Origin not allowed by CORS'));
+  },
+  credentials: false,
+}));
 app.use(express.json({ limit: '2mb' }));
+app.use('/api', rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: Number(process.env.RATE_LIMIT_MAX || 300),
+  standardHeaders: true,
+  legacyHeaders: false,
+}));
+app.use('/api/login', rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: Number(process.env.LOGIN_RATE_LIMIT_MAX || 20),
+  standardHeaders: true,
+  legacyHeaders: false,
+}));
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -73,8 +99,7 @@ app.post('/api/logout', auth, async (req,res) => {
 app.get('/api/dashboard', auth, async (req,res) => {
   const schoolId=String(req.query.schoolId||req.auth.active_school_id||req.auth.school_id||'');
   if(!schoolId) return res.status(400).json({status:'error',code:'SCHOOL_CONTEXT_REQUIRED'});
-  const allowed=req.auth.access_scope==='GLOBAL' ? true : schoolId===req.auth.school_id;
-  if(!allowed) return res.status(403).json({status:'error',code:'FORBIDDEN'});
+  if(!(await canAccessSchool(req,schoolId))) return res.status(403).json({status:'error',code:'FORBIDDEN'});
   const [students,employees,attendance]=await Promise.all([
     pool.query('SELECT count(*)::int AS count FROM students WHERE school_id=$1',[schoolId]),
     pool.query('SELECT count(*)::int AS count FROM employees WHERE school_id=$1',[schoolId]),
@@ -87,14 +112,20 @@ app.get('/api/dashboard', auth, async (req,res) => {
 function resolveSchoolId(req) {
   return String(req.query?.schoolId || req.body?.schoolId || req.auth?.active_school_id || req.auth?.school_id || '').trim();
 }
-function canAccessSchool(req, schoolId) {
-  return Boolean(schoolId) && (req.auth.access_scope === 'GLOBAL' || schoolId === req.auth.school_id);
+async function canAccessSchool(req, schoolId) {
+  if (!schoolId) return false;
+  if (req.auth.access_scope === 'GLOBAL' || schoolId === req.auth.school_id) return true;
+  const { rowCount } = await pool.query(
+    'SELECT 1 FROM user_school_access WHERE user_id=$1 AND school_id=$2 LIMIT 1',
+    [req.auth.user_id, schoolId]
+  );
+  return rowCount > 0;
 }
 
 app.get('/api/students', auth, async (req,res) => {
   const schoolId=resolveSchoolId(req);
   if(!schoolId) return res.status(400).json({status:'error',code:'SCHOOL_CONTEXT_REQUIRED'});
-  if(!canAccessSchool(req,schoolId)) return res.status(403).json({status:'error',code:'FORBIDDEN'});
+  if(!(await canAccessSchool(req,schoolId))) return res.status(403).json({status:'error',code:'FORBIDDEN'});
   const page=Math.max(1,Number(req.query.page||1));
   const pageSize=Math.min(100,Math.max(10,Number(req.query.pageSize||50)));
   const offset=(page-1)*pageSize;
@@ -113,7 +144,7 @@ app.get('/api/students', auth, async (req,res) => {
 app.get('/api/employees', auth, async (req,res) => {
   const schoolId=resolveSchoolId(req);
   if(!schoolId) return res.status(400).json({status:'error',code:'SCHOOL_CONTEXT_REQUIRED'});
-  if(!canAccessSchool(req,schoolId)) return res.status(403).json({status:'error',code:'FORBIDDEN'});
+  if(!(await canAccessSchool(req,schoolId))) return res.status(403).json({status:'error',code:'FORBIDDEN'});
   const page=Math.max(1,Number(req.query.page||1));
   const pageSize=Math.min(100,Math.max(10,Number(req.query.pageSize||50)));
   const offset=(page-1)*pageSize;
@@ -127,7 +158,7 @@ app.get('/api/employees', auth, async (req,res) => {
 app.get('/api/student-attendance', auth, async (req,res) => {
   const schoolId=resolveSchoolId(req);
   if(!schoolId) return res.status(400).json({status:'error',code:'SCHOOL_CONTEXT_REQUIRED'});
-  if(!canAccessSchool(req,schoolId)) return res.status(403).json({status:'error',code:'FORBIDDEN'});
+  if(!(await canAccessSchool(req,schoolId))) return res.status(403).json({status:'error',code:'FORBIDDEN'});
   const from=String(req.query.from||new Date().toISOString().slice(0,10));
   const to=String(req.query.to||from);
   const {rows}=await pool.query(
