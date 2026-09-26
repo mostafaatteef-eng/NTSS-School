@@ -995,4 +995,185 @@ describe('NTSS ERP - Security, Login Numbers, First Login & Timetable Integratio
     expect(storageService.getCurrentUser()).toBeNull();
   });
 
+
+  it('Test 33: Leave management read uses authoritative staff session', async () => {
+    storageService.setCurrentUser({
+      id: 'USR-LEAVE-MGR-1',
+      username: 'leave.manager1',
+      fullName: 'مدير الإجازات',
+      role: 'TeacherAffairs',
+      accessScope: 'SCHOOL',
+      schoolId: 'SCH-BADR',
+      activeSchoolId: 'SCH-BADR',
+      allowedSchoolIds: ['SCH-BADR'],
+      employeeId: 'EMP-MGR-1',
+      sessionToken: 'LEAVE_MGMT_SESSION_123',
+    });
+
+    vi.spyOn(storageService, 'getBackendUrl').mockReturnValue('https://example.com/admin');
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        status: 'success',
+        data: {
+          leaves: [{ id: 'LEV-1', employeeId: 'EMP-1', status: 'معلقة' }],
+          permissions: [{ id: 'PERM-1', employeeId: 'EMP-1', status: 'معلقة' }],
+        },
+      }),
+    } as Response);
+
+    const result = await storageService.getLeaveManagementDataAuthoritative();
+
+    expect(result.success).toBe(true);
+    expect(result.leaves?.length).toBe(1);
+    expect(result.permissions?.length).toBe(1);
+
+    const request = JSON.parse(String((fetchSpy.mock.calls[0][1] as RequestInit).body));
+    expect(request.action).toBe('getLeaveManagementData');
+    expect(request.sessionToken).toBe('LEAVE_MGMT_SESSION_123');
+    expect(request.schoolId).toBeUndefined();
+  });
+
+  it('Test 34: Managed leave create sends employee selection and content only, never approval authority', async () => {
+    storageService.setCurrentUser({
+      id: 'USR-LEAVE-MGR-2',
+      username: 'leave.manager2',
+      fullName: 'مدير الإجازات',
+      role: 'TeacherAffairs',
+      accessScope: 'SCHOOL',
+      schoolId: 'SCH-BADR',
+      activeSchoolId: 'SCH-BADR',
+      allowedSchoolIds: ['SCH-BADR'],
+      sessionToken: 'LEAVE_CREATE_SESSION_123',
+    });
+
+    vi.spyOn(storageService, 'getBackendUrl').mockReturnValue('https://example.com/admin');
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        status: 'success',
+        leave: {
+          id: 'LEV-SERVER-2',
+          employeeId: 'EMP-2',
+          employeeName: 'موظف',
+          leaveType: 'سنوية',
+          startDate: '2026-09-27',
+          endDate: '2026-09-28',
+          daysCount: 2,
+          status: 'معلقة',
+          reason: 'سبب',
+        },
+      }),
+    } as Response);
+
+    const result = await storageService.createManagedLeaveAuthoritative({
+      employeeId: 'EMP-2',
+      leaveType: 'سنوية',
+      startDate: '2026-09-27',
+      endDate: '2026-09-28',
+      reason: 'سبب',
+    });
+
+    expect(result.success).toBe(true);
+
+    const request = JSON.parse(String((fetchSpy.mock.calls[0][1] as RequestInit).body));
+    expect(request.action).toBe('createManagedLeave');
+    expect(request.data.employeeId).toBe('EMP-2');
+    expect(request.data.status).toBeUndefined();
+    expect(request.data.approvedBy).toBeUndefined();
+    expect(request.data.id).toBeUndefined();
+    expect(request.data.daysCount).toBeUndefined();
+    expect(request.data.employeeName).toBeUndefined();
+    expect(request.data.department).toBeUndefined();
+    expect(request.data.schoolId).toBeUndefined();
+  });
+
+  it('Test 35: Managed permission create leaves duration, status and approver to backend', async () => {
+    storageService.setCurrentUser({
+      id: 'USR-LEAVE-MGR-3',
+      username: 'leave.manager3',
+      fullName: 'مدير الإجازات',
+      role: 'TeacherAffairs',
+      accessScope: 'SCHOOL',
+      schoolId: 'SCH-BADR',
+      activeSchoolId: 'SCH-BADR',
+      allowedSchoolIds: ['SCH-BADR'],
+      sessionToken: 'PERM_CREATE_SESSION_123',
+    });
+
+    vi.spyOn(storageService, 'getBackendUrl').mockReturnValue('https://example.com/admin');
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        status: 'success',
+        permission: {
+          id: 'PERM-SERVER-2',
+          employeeId: 'EMP-3',
+          date: '2026-09-27',
+          startTime: '10:00',
+          endTime: '12:00',
+          durationHours: 2,
+          status: 'معلقة',
+        },
+      }),
+    } as Response);
+
+    const result = await storageService.createManagedPermissionAuthoritative({
+      employeeId: 'EMP-3',
+      date: '2026-09-27',
+      permissionType: 'إذن خروج مؤقت',
+      startTime: '10:00',
+      endTime: '12:00',
+      reason: 'سبب',
+    });
+
+    expect(result.success).toBe(true);
+
+    const request = JSON.parse(String((fetchSpy.mock.calls[0][1] as RequestInit).body));
+    expect(request.action).toBe('createManagedPermission');
+    expect(request.data.employeeId).toBe('EMP-3');
+    expect(request.data.durationHours).toBeUndefined();
+    expect(request.data.status).toBeUndefined();
+    expect(request.data.approvedBy).toBeUndefined();
+    expect(request.data.id).toBeUndefined();
+    expect(request.data.schoolId).toBeUndefined();
+  });
+
+  it('Test 36: Approval and rejection use distinct authoritative actions, not generic save', async () => {
+    storageService.setCurrentUser({
+      id: 'USR-LEAVE-MGR-4',
+      username: 'leave.manager4',
+      fullName: 'مدير الإجازات',
+      role: 'TeacherAffairs',
+      accessScope: 'SCHOOL',
+      schoolId: 'SCH-BADR',
+      activeSchoolId: 'SCH-BADR',
+      allowedSchoolIds: ['SCH-BADR'],
+      sessionToken: 'STATUS_SESSION_123',
+    });
+
+    vi.spyOn(storageService, 'getBackendUrl').mockReturnValue('https://example.com/admin');
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ status: 'success' }),
+    } as Response);
+
+    await storageService.setManagedLeaveStatusAuthoritative('LEV-9', 'مقبولة');
+    await storageService.setManagedPermissionStatusAuthoritative('PERM-9', 'مرفوضة', 'سبب رفض');
+
+    const first = JSON.parse(String((fetchSpy.mock.calls[0][1] as RequestInit).body));
+    const second = JSON.parse(String((fetchSpy.mock.calls[1][1] as RequestInit).body));
+
+    expect(first.action).toBe('approveManagedLeave');
+    expect(first.data).toEqual({ id: 'LEV-9', reason: '' });
+    expect(second.action).toBe('rejectManagedPermission');
+    expect(second.data).toEqual({ id: 'PERM-9', reason: 'سبب رفض' });
+    expect(first.data.status).toBeUndefined();
+    expect(second.data.status).toBeUndefined();
+  });
+
 });
