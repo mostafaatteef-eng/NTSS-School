@@ -3596,41 +3596,21 @@ function handleStudentPublicPortalAccess(ss, rawToken, requestId) {
 /**
  * Validate Staff Session Token
  */
-function findRecordByColumnValue(ss, sheetName, columnName, value) {
-  var sheet = ss.getSheetByName(sheetName);
-  if (!sheet || value === undefined || value === null || value === '') return null;
-
-  var lastRow = sheet.getLastRow();
-  var lastCol = sheet.getLastColumn();
-  if (lastRow <= 1 || lastCol === 0) return null;
-
-  var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
-  var colIndex = headers.indexOf(columnName);
-  if (colIndex === -1) return null;
-
-  var finder = sheet.getRange(2, colIndex + 1, lastRow - 1, 1)
-    .createTextFinder(String(value))
-    .matchEntireCell(true)
-    .matchCase(false);
-  var cell = finder.findNext();
-  if (!cell) return null;
-
-  var rowIndex = cell.getRow();
-  var row = sheet.getRange(rowIndex, 1, 1, lastCol).getValues()[0];
-  var record = {};
-  for (var i = 0; i < headers.length; i++) {
-    if (headers[i]) record[headers[i]] = row[i];
-  }
-  return { record: record, rowIndex: rowIndex };
-}
-
 function validateSessionToken(ss, token) {
   if (!token) return { valid: false, code: 'TOKEN_MISSING', message: 'رمز الجلسة غير متوفر' };
 
   var tokenHash = hashStringSHA256(token);
-  var sessionLookup = findRecordByColumnValue(ss, SHEETS.SESSIONS, 'tokenHash', tokenHash);
-  var matched = sessionLookup ? sessionLookup.record : null;
-  var rowIndex = sessionLookup ? sessionLookup.rowIndex : -1;
+  var sessions = getSheetData(ss, SHEETS.SESSIONS);
+  var matched = null;
+  var rowIndex = -1;
+
+  for (var i = 0; i < sessions.length; i++) {
+    if (sessions[i].tokenHash === tokenHash) {
+      matched = sessions[i];
+      rowIndex = i + 2;
+      break;
+    }
+  }
 
   if (!matched) {
     return { valid: false, code: 'SESSION_NOT_FOUND', message: 'جلسة العمل غير موجودة أو تم إلغاؤها' };
@@ -3660,21 +3640,18 @@ function validateSessionToken(ss, token) {
   var userEmployeeId = matched.employeeId || '';
   var userRecord = null;
   try {
-    var userLookup = null;
-    if (matched.userId) {
-      userLookup = findRecordByColumnValue(ss, SHEETS.USERS, 'id', matched.userId);
-    }
-    if (!userLookup && matched.username) {
-      userLookup = findRecordByColumnValue(ss, SHEETS.USERS, 'username', matched.username);
-    }
-    if (userLookup) {
-      userRecord = userLookup.record;
-      userStatus = String(userRecord.status || 'Active');
-      var isAct = userRecord.isActive;
-      if (userStatus.toLowerCase() === 'inactive' || userStatus.toLowerCase() === 'suspended' || isAct === false || isAct === 'false') {
-        userActive = false;
+    var users = getSheetData(ss, SHEETS.USERS);
+    for (var uIdx = 0; uIdx < users.length; uIdx++) {
+      if (String(users[uIdx].id || '') === String(matched.userId || '') || String(users[uIdx].username || '').toLowerCase() === String(matched.username || '').toLowerCase()) {
+        userRecord = users[uIdx];
+        userStatus = String(userRecord.status || 'Active');
+        var isAct = userRecord.isActive;
+        if (userStatus.toLowerCase() === 'inactive' || userStatus.toLowerCase() === 'suspended' || isAct === false || isAct === 'false') {
+          userActive = false;
+        }
+        if (userRecord.employeeId) userEmployeeId = String(userRecord.employeeId).trim();
+        break;
       }
-      if (userRecord.employeeId) userEmployeeId = String(userRecord.employeeId).trim();
     }
   } catch (uErr) {}
 
