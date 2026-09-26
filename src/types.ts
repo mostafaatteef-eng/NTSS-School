@@ -1091,7 +1091,27 @@ export interface PublicClassScheduleLesson {
   roomName: string;
 }
 
+export interface PublicSchoolOption {
+  schoolId: string;
+  schoolCode: string;
+  schoolName: string;
+}
+
+export interface PublicScheduleGradeOption {
+  id: string;
+  name: string;
+}
+
+export interface PublicScheduleClassroomOption {
+  id: string;
+  name: string;
+  gradeId: string;
+  gradeName: string;
+}
+
 export interface PublicClassScheduleDTO {
+  schoolId?: string;
+  schoolName?: string;
   gradeName: string;
   classroomName: string;
   schedule: PublicClassScheduleLesson[];
