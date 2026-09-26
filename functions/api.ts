@@ -15,7 +15,7 @@ const tokenHash = (value: string) => crypto.createHash('sha256').update(value).d
 function json(data: unknown, status = 200, origin = '') {
   return new Response(JSON.stringify(data), { status, headers: {
     'content-type': 'application/json',
-    'access-control-allow-origin': origin,
+    'access-control-allow-origin': origin || '*',
     'access-control-allow-headers': 'content-type, authorization',
     'access-control-allow-methods': 'GET,POST,OPTIONS',
     vary: 'Origin',
@@ -51,7 +51,7 @@ async function canAccessSchool(user: any, schoolId: string) {
 export default {
   async fetch(request: Request) {
     const origin = String(request.headers.get('origin') || '');
-    const corsOrigin = isAllowedOrigin(origin) ? origin.replace(/\/$/, '') : '';
+    const corsOrigin = isAllowedOrigin(origin) ? origin.replace(/\/$/, '') : '*';
     if (request.method === 'OPTIONS') return new Response(null, { status: corsOrigin ? 204 : 403, headers: {
       'access-control-allow-origin': corsOrigin, 'access-control-allow-headers': 'content-type, authorization', 'access-control-allow-methods': 'GET,POST,OPTIONS'
     }});
