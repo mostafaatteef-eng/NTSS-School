@@ -425,4 +425,186 @@ describe('NTSS ERP - Security, Login Numbers, First Login & Timetable Integratio
     expect(storageService.getTeacherSession()?.mustChangePassword).toBe(false);
   });
 
+
+  it('Test 20: Teacher homework write is backend-authoritative and sends no teacher/status/school authority', async () => {
+    storageService.setTeacherSession({
+      teacherSessionToken: 'WRITE_HOMEWORK_TOKEN_123',
+      employeeId: 'EMP-WRITE-1',
+      teacherCode: 'T-WRITE-1',
+      teacherName: 'معلم الواجب',
+      username: 'teacher.write1',
+      schoolId: 'SCH-BADR',
+      expiresAt: new Date(Date.now() + 3600000).toISOString(),
+      createdAt: new Date().toISOString(),
+    });
+
+    vi.spyOn(storageService, 'getBackendUrl').mockReturnValue('https://example.com/teacher');
+    const localSave = vi.spyOn(storageService, 'saveHomework');
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        status: 'success',
+        message: 'saved',
+        homework: {
+          id: 'HW-SERVER-1',
+          teacherId: 'EMP-WRITE-1',
+          teacherName: 'معلم الواجب',
+          subject: 'الذكاء الاصطناعي',
+          grade: 'الصف الأول الثانوي',
+          classroom: '1/1',
+          title: 'واجب تجريبي',
+          description: 'تفاصيل',
+          assignedDate: '2026-09-26',
+          dueDate: '2026-09-27',
+          status: 'Draft',
+          createdAt: new Date().toISOString(),
+        },
+      }),
+    } as Response);
+
+    const result = await storageService.saveTeacherHomeworkDraftAuthoritative({
+      title: 'واجب تجريبي',
+      description: 'تفاصيل',
+      subject: 'الذكاء الاصطناعي',
+      grade: 'الصف الأول الثانوي',
+      classroom: '1/1',
+      assignedDate: '2026-09-26',
+      dueDate: '2026-09-27',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.homework?.status).toBe('Draft');
+    expect(localSave).not.toHaveBeenCalled();
+
+    const request = JSON.parse(String((fetchSpy.mock.calls[0][1] as RequestInit).body));
+    expect(request.action).toBe('saveTeacherHomeworkDraft');
+    expect(request.teacherSessionToken).toBe('WRITE_HOMEWORK_TOKEN_123');
+    expect(request.schoolId).toBeUndefined();
+    expect(request.data.teacherId).toBeUndefined();
+    expect(request.data.teacherName).toBeUndefined();
+    expect(request.data.status).toBeUndefined();
+    expect(request.data.classroom).toBe('1/1');
+  });
+
+  it('Test 21: Teacher resource write is backend-authoritative and cannot self-publish', async () => {
+    storageService.setTeacherSession({
+      teacherSessionToken: 'WRITE_RESOURCE_TOKEN_123',
+      employeeId: 'EMP-WRITE-2',
+      teacherCode: 'T-WRITE-2',
+      teacherName: 'معلم المورد',
+      username: 'teacher.write2',
+      schoolId: 'SCH-BADR',
+      expiresAt: new Date(Date.now() + 3600000).toISOString(),
+      createdAt: new Date().toISOString(),
+    });
+
+    vi.spyOn(storageService, 'getBackendUrl').mockReturnValue('https://example.com/teacher');
+    const localSave = vi.spyOn(timetableService, 'saveTeacherLessonResource');
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        status: 'success',
+        message: 'saved',
+        resource: {
+          id: 'RES-SERVER-1',
+          teacherId: 'EMP-WRITE-2',
+          subjectId: 'AI',
+          classroomId: '1/1',
+          visibility: 'Draft',
+        },
+      }),
+    } as Response);
+
+    const result = await storageService.saveTeacherResourceDraftAuthoritative({
+      title: 'مقدمة في الذكاء الاصطناعي',
+      topic: 'مقدمة في الذكاء الاصطناعي',
+      subject: 'الذكاء الاصطناعي',
+      classroom: '1/1',
+      studentResourceUrl: 'https://example.com/student-resource',
+      presentationUrl: 'https://example.com/slides',
+      preparationNotesUrl: 'https://example.com/teacher-notes',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.resource?.visibility).toBe('Draft');
+    expect(localSave).not.toHaveBeenCalled();
+
+    const request = JSON.parse(String((fetchSpy.mock.calls[0][1] as RequestInit).body));
+    expect(request.action).toBe('saveTeacherResourceDraft');
+    expect(request.teacherSessionToken).toBe('WRITE_RESOURCE_TOKEN_123');
+    expect(request.schoolId).toBeUndefined();
+    expect(request.data.teacherId).toBeUndefined();
+    expect(request.data.teacherName).toBeUndefined();
+    expect(request.data.visibility).toBeUndefined();
+    expect(request.data.classroom).toBe('1/1');
+  });
+
+  it('Test 22: Classroom assignment denial fails safely without revoking a valid teacher session', async () => {
+    storageService.setTeacherSession({
+      teacherSessionToken: 'ASSIGNMENT_DENIED_TOKEN_123',
+      employeeId: 'EMP-WRITE-3',
+      teacherCode: 'T-WRITE-3',
+      teacherName: 'معلم',
+      username: 'teacher.write3',
+      schoolId: 'SCH-BADR',
+      expiresAt: new Date(Date.now() + 3600000).toISOString(),
+      createdAt: new Date().toISOString(),
+    });
+
+    vi.spyOn(storageService, 'getBackendUrl').mockReturnValue('https://example.com/teacher');
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: false,
+      status: 403,
+      json: async () => ({
+        status: 'error',
+        code: 'TEACHER_NOT_ASSIGNED_TO_CLASSROOM',
+        message: 'غير مسند إلى الفصل',
+      }),
+    } as Response);
+
+    const result = await storageService.saveTeacherHomeworkDraftAuthoritative({
+      title: 'واجب غير مسموح',
+      classroom: '3/9',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.code).toBe('TEACHER_NOT_ASSIGNED_TO_CLASSROOM');
+    expect(storageService.getTeacherSession()?.teacherSessionToken).toBe('ASSIGNMENT_DENIED_TOKEN_123');
+  });
+
+  it('Test 23: Invalid teacher session during content write clears only teacher portal session', async () => {
+    storageService.setTeacherSession({
+      teacherSessionToken: 'EXPIRED_WRITE_TOKEN_123',
+      employeeId: 'EMP-WRITE-4',
+      teacherCode: 'T-WRITE-4',
+      teacherName: 'معلم',
+      username: 'teacher.write4',
+      schoolId: 'SCH-BADR',
+      expiresAt: new Date(Date.now() + 3600000).toISOString(),
+      createdAt: new Date().toISOString(),
+    });
+
+    vi.spyOn(storageService, 'getBackendUrl').mockReturnValue('https://example.com/teacher');
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: false,
+      status: 401,
+      json: async () => ({
+        status: 'error',
+        code: 'TEACHER_SESSION_INVALID',
+        message: 'جلسة غير صالحة',
+      }),
+    } as Response);
+
+    const result = await storageService.saveTeacherResourceDraftAuthoritative({
+      title: 'مورد',
+      classroom: '1/1',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.code).toBe('TEACHER_SESSION_INVALID');
+    expect(storageService.getTeacherSession()).toBeNull();
+  });
+
 });
