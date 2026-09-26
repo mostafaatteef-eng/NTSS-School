@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { runMigrationScope013RetireTeacherPin, MIGRATION_013_FLAG_KEY } from '../src/services/migrationScope013RetireTeacherPin';
 import { storageService } from '../src/services/storageService';
 import { timetableService } from '../src/services/timetableService';
@@ -7,6 +7,8 @@ import { TeacherAccount, TeacherSession } from '../src/types';
 describe('MIG_SCOPE_013_RETIRE_TEACHER_PIN - Teacher Authentication System Tests', () => {
   beforeEach(() => {
     localStorage.clear();
+    sessionStorage.clear();
+    vi.restoreAllMocks();
   });
 
   it('1. Idempotently migrates legacy PIN-only accounts and strips pinHash', () => {
@@ -118,16 +120,7 @@ describe('MIG_SCOPE_013_RETIRE_TEACHER_PIN - Teacher Authentication System Tests
     expect(verifyRes.code).toBe('LEGACY_PIN_RETIRED');
   });
 
-  it('3. Teacher Login rejects PINs and accounts with PasswordResetRequired or Needs Setup', async () => {
-    // Setup employee and account requiring password reset
-    const emp = {
-      id: 'EMP-RESET-TEST',
-      name: 'معلم قيد التهيئة',
-      teacherCode: 'T-999',
-      jobTitle: 'معلم',
-    };
-    storageService.saveEmployee(emp as any);
-
+  it('3. Migrated local teacher account state never authorizes login without the authoritative backend', async () => {
     const accounts: TeacherAccount[] = [
       {
         id: 'TAC-RESET',
@@ -147,19 +140,12 @@ describe('MIG_SCOPE_013_RETIRE_TEACHER_PIN - Teacher Authentication System Tests
     ];
     localStorage.setItem('ntss_teacher_accounts_v3', JSON.stringify(accounts));
 
-    // Attempt login while in PasswordResetRequired
-    const loginAttempt1 = await storageService.teacherLogin('teacher_pending', 'anyPassword123');
-    expect(loginAttempt1.success).toBe(false);
-    expect(loginAttempt1.code).toBe('PASSWORD_RESET_REQUIRED');
+    vi.spyOn(storageService, 'getBackendUrl').mockReturnValue('');
+    const loginAttempt = await storageService.teacherLogin('teacher_pending', 'TemporaryPass#2026', 'SCH-BADR');
 
-    // Admin resets password with a temporary password
-    const resetRes = await storageService.resetTeacherPassword('EMP-RESET-TEST', 'TemporaryPass#2026');
-    expect(resetRes.success).toBe(true);
-
-    // Now teacher logs in with Username + Password
-    const loginAttempt2 = await storageService.teacherLogin('teacher_pending', 'TemporaryPass#2026');
-    expect(loginAttempt2.success).toBe(true);
-    expect(loginAttempt2.teacherSessionToken).toBeTruthy();
-    expect(loginAttempt2.mustChangePassword).toBe(true);
+    expect(loginAttempt.success).toBe(false);
+    expect(loginAttempt.code).toBe('SERVICE_UNAVAILABLE');
+    expect(loginAttempt.teacherSessionToken).toBeUndefined();
+    expect(storageService.getTeacherSession()).toBeNull();
   });
 });
