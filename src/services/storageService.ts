@@ -167,6 +167,9 @@ const STORAGE_KEYS = {
   CORRECTIVE_ACTIONS: 'ntss_corrective_actions_v1',
 };
 
+const POSTGRES_API_URL =
+  ((typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_POSTGRES_API_URL) as string) || '';
+
 const DEFAULT_BACKEND_URL =
   ((typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_GOOGLE_APPS_SCRIPT_URL) as string) ||
   'https://script.google.com/macros/s/AKfycbzw0kggQMGHdusMyKZOuqMC8eLiBzGccm7e7tdZbnMjvyBDqXPgI5f0tiJPKMFYAoln/exec';
@@ -713,6 +716,22 @@ class StorageService {
       return cached.result;
     }
 
+    const postgresUrl = this.getPostgresApiUrl();
+    if (postgresUrl) {
+      try {
+        const response = await this.postgresRequest('/api/validate-session', { method: 'POST', body: '{}' });
+        const result = await response.json().catch(() => ({}));
+        if (response.ok && result.status === 'success' && result.valid === true) {
+          if (result.user) this.setCurrentUser({ ...targetUser, ...result.user, sessionToken: targetUser.sessionToken, sessionExpiresAt: result.expiresAt || targetUser.sessionExpiresAt });
+          this.sessionValidationCache[token] = { result: true, timestamp: now };
+          return true;
+        }
+        this.setCurrentUser(null);
+        this.sessionValidationCache[token] = { result: false, timestamp: now };
+        return false;
+      } catch { return false; }
+    }
+
     const scriptUrl = this.getBackendUrl();
 
     const isOnline = typeof navigator === 'undefined' || navigator.onLine !== false;
@@ -863,6 +882,20 @@ class StorageService {
     }
   }
 
+  private getPostgresApiUrl(): string {
+    return String(POSTGRES_API_URL || '').trim().replace(/\/$/, '');
+  }
+
+  private async postgresRequest(path: string, init: RequestInit = {}): Promise<Response> {
+    const base = this.getPostgresApiUrl();
+    if (!base) throw new Error('POSTGRES_API_NOT_CONFIGURED');
+    const user = this.getCurrentUser();
+    const headers = new Headers(init.headers || {});
+    headers.set('Content-Type', 'application/json');
+    if (user?.sessionToken) headers.set('Authorization', 'Bearer ' + user.sessionToken);
+    return fetch(base + path, { ...init, headers });
+  }
+
   public async login(
     email: string,
     password: string
@@ -874,8 +907,35 @@ class StorageService {
       return { success: false, code: 'INVALID_CREDENTIALS', message: 'يرجى إدخال البريد الإلكتروني وكلمة المرور' };
     }
 
+    const postgresUrl = this.getPostgresApiUrl();
     const settings = this.getSettings();
     const scriptUrl = settings.googleAppsScriptUrl || DEFAULT_BACKEND_URL;
+
+    if (postgresUrl) {
+      try {
+        const response = await this.postgresRequest('/api/login', {
+          method: 'POST',
+          body: JSON.stringify({ email: cleanEmail, password: cleanPassword }),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok || result.status !== 'success' || !result.user || !result.sessionToken) {
+          return { success: false, code: result.code || 'INVALID_CREDENTIALS', message: result.message || 'بيانات الدخول غير صحيحة.' };
+        }
+        const userWithToken: User = {
+          ...result.user,
+          email: cleanEmail,
+          role: normalizeStaffRole(result.user.role),
+          sessionToken: String(result.sessionToken).trim(),
+          sessionExpiresAt: result.expiresAt,
+        };
+        if (userWithToken.activeSchoolId) this.setActiveSchoolId(userWithToken.activeSchoolId);
+        this.setCurrentUser(userWithToken);
+        this.sessionValidationCache[userWithToken.sessionToken || ''] = { result: true, timestamp: Date.now() };
+        return { success: true, user: userWithToken };
+      } catch (err: any) {
+        return { success: false, code: 'AUTH_SERVICE_UNAVAILABLE', message: 'تعذر الاتصال بخادم PostgreSQL: ' + (err?.message || 'خطأ في الشبكة') };
+      }
+    }
 
     // Strict Security Policy: Fail-Closed. Backend Authoritative Login ONLY.
     if (!scriptUrl || scriptUrl.length < 15) {
