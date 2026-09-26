@@ -395,7 +395,26 @@ function doPost(e) {
           requestId: requestId
         }, 400);
       }
-      var scheduleSchoolSs = getSchoolSpreadsheet(targetSchoolIdForSchedule, ss);
+      var publicScheduleCtx = resolveSchoolContext(targetSchoolIdForSchedule, ss);
+      if (!publicScheduleCtx || String(publicScheduleCtx.status || '').trim() !== 'Active') {
+        return createJsonResponse({
+          status: 'error',
+          code: 'SCHOOL_NOT_AVAILABLE',
+          message: 'المدرسة غير متاحة في البوابة العامة',
+          requestId: requestId
+        }, 404);
+      }
+
+      var scheduleSchoolSs = getSchoolSpreadsheet(publicScheduleCtx.schoolId, ss);
+      if (!scheduleSchoolSs) {
+        return createJsonResponse({
+          status: 'error',
+          code: 'SCHOOL_DATA_UNAVAILABLE',
+          message: 'تعذر الوصول إلى بيانات المدرسة',
+          requestId: requestId
+        }, 503);
+      }
+
       var gradeParam = String(postData.gradeId || postData.grade || postData.gradeName || (payload && (payload.gradeId || payload.grade || payload.gradeName)) || '').trim();
       var classroomParam = String(postData.classroomId || postData.classroom || postData.classroomName || (payload && (payload.classroomId || payload.classroom || payload.classroomName)) || '').trim();
       
