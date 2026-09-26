@@ -96,6 +96,14 @@ app.post('/api/validate-session', auth, (req,res) => {
   res.json({status:'success',valid:true,expiresAt:u.expires_at,user:{id:u.user_id,email:u.email,fullName:u.full_name,role:u.role,accessScope:u.access_scope,schoolId:u.school_id||'',activeSchoolId:u.active_school_id||'',employeeId:u.employee_id||''}});
 });
 
+app.post('/api/switch-school', auth, async (req,res) => {
+  const schoolId=String(req.body?.schoolId||'').trim();
+  if(!(await canAccessSchool(req,schoolId))) return res.status(403).json({status:'error',code:'FORBIDDEN'});
+  await pool.query('UPDATE sessions SET active_school_id=$1 WHERE id=$2',[schoolId,req.auth.session_id]);
+  const {rows}=await pool.query('SELECT id,code,name,status FROM schools WHERE id=$1 LIMIT 1',[schoolId]);
+  res.json({status:'success',activeSchoolId:schoolId,school:rows[0]||null});
+});
+
 app.post('/api/logout', auth, async (req,res) => {
   await pool.query('UPDATE sessions SET status=\'REVOKED\',revoked_at=now() WHERE id=$1',[req.auth.session_id]);
   res.json({status:'success'});
