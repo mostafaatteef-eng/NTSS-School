@@ -5628,6 +5628,140 @@ class StorageService {
     }
   }
 
+  private async postLeaveManagementAction(
+    action: string,
+    data?: Record<string, unknown>
+  ): Promise<{ success: boolean; code?: string; message?: string; data?: any; leave?: LeaveRecord; permission?: EmployeePermissionRecord }> {
+    const user = this.getCurrentUser();
+    if (!user?.sessionToken) {
+      return { success: false, code: 'AUTH_REQUIRED', message: 'يجب تسجيل الدخول بجلسة عمل معتمدة.' };
+    }
+
+    const scriptUrl = this.getBackendUrl();
+    const online = typeof navigator === 'undefined' || navigator.onLine !== false;
+    if (!scriptUrl || scriptUrl.length < 15 || !online) {
+      return { success: false, code: 'SERVICE_UNAVAILABLE', message: 'هذه العملية تتطلب الاتصال بالخادم المعتمد.' };
+    }
+
+    try {
+      const response = await fetch(scriptUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action,
+          sessionToken: user.sessionToken,
+          ...(data ? { data } : {}),
+        }),
+      });
+
+      let res: any = null;
+      try { res = await response.json(); } catch {}
+      const code = String(res?.code || '');
+
+      if (!response.ok || res?.status === 'error') {
+        if (response.status === 401 || ['SESSION_EXPIRED','INVALID_SESSION','SESSION_REVOKED','UNAUTHORIZED','AUTH_REQUIRED'].includes(code)) {
+          this.setCurrentUser(null);
+        }
+        return {
+          success: false,
+          code: code || 'LEAVE_MANAGEMENT_ACTION_FAILED',
+          message: res?.message || 'تعذر تنفيذ العملية.',
+        };
+      }
+
+      return {
+        success: true,
+        message: res?.message || 'تم تنفيذ العملية بنجاح.',
+        data: res?.data,
+        leave: res?.leave as LeaveRecord | undefined,
+        permission: res?.permission as EmployeePermissionRecord | undefined,
+      };
+    } catch {
+      return { success: false, code: 'NETWORK_ERROR', message: 'تعذر الاتصال بالخادم لتنفيذ العملية.' };
+    }
+  }
+
+  public async getLeaveManagementDataAuthoritative(): Promise<{
+    success: boolean;
+    code?: string;
+    message?: string;
+    leaves?: LeaveRecord[];
+    permissions?: EmployeePermissionRecord[];
+  }> {
+    const result = await this.postLeaveManagementAction('getLeaveManagementData');
+    if (!result.success) return result;
+    return {
+      success: true,
+      message: result.message,
+      leaves: Array.isArray(result.data?.leaves) ? result.data.leaves : [],
+      permissions: Array.isArray(result.data?.permissions) ? result.data.permissions : [],
+    };
+  }
+
+  public async createManagedLeaveAuthoritative(input: {
+    employeeId: string;
+    leaveType: LeaveType;
+    startDate: string;
+    endDate: string;
+    reason: string;
+    notes?: string;
+    attachment?: string;
+  }) {
+    return this.postLeaveManagementAction('createManagedLeave', {
+      employeeId: String(input.employeeId || '').trim(),
+      leaveType: String(input.leaveType || '').trim(),
+      startDate: String(input.startDate || '').trim(),
+      endDate: String(input.endDate || '').trim(),
+      reason: String(input.reason || '').trim(),
+      notes: String(input.notes || '').trim(),
+      attachment: String(input.attachment || ''),
+    });
+  }
+
+  public async createManagedPermissionAuthoritative(input: {
+    employeeId: string;
+    date: string;
+    permissionType: string;
+    startTime: string;
+    endTime: string;
+    reason: string;
+    notes?: string;
+    attachment?: string;
+  }) {
+    return this.postLeaveManagementAction('createManagedPermission', {
+      employeeId: String(input.employeeId || '').trim(),
+      date: String(input.date || '').trim(),
+      permissionType: String(input.permissionType || '').trim(),
+      startTime: String(input.startTime || '').trim(),
+      endTime: String(input.endTime || '').trim(),
+      reason: String(input.reason || '').trim(),
+      notes: String(input.notes || '').trim(),
+      attachment: String(input.attachment || ''),
+    });
+  }
+
+  public async setManagedLeaveStatusAuthoritative(id: string, status: 'مقبولة' | 'مرفوضة', reason?: string) {
+    return this.postLeaveManagementAction(
+      status === 'مقبولة' ? 'approveManagedLeave' : 'rejectManagedLeave',
+      { id: String(id || '').trim(), reason: String(reason || '').trim() }
+    );
+  }
+
+  public async setManagedPermissionStatusAuthoritative(id: string, status: 'مقبولة' | 'مرفوضة', reason?: string) {
+    return this.postLeaveManagementAction(
+      status === 'مقبولة' ? 'approveManagedPermission' : 'rejectManagedPermission',
+      { id: String(id || '').trim(), reason: String(reason || '').trim() }
+    );
+  }
+
+  public async deleteManagedLeaveAuthoritative(id: string) {
+    return this.postLeaveManagementAction('deleteLeave', { id: String(id || '').trim() });
+  }
+
+  public async deleteManagedPermissionAuthoritative(id: string) {
+    return this.postLeaveManagementAction('deletePermission', { id: String(id || '').trim() });
+  }
+
   public async getStaffSelfRequestsAuthoritative(): Promise<{
     success: boolean;
     code?: string;
