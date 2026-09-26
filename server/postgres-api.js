@@ -176,7 +176,7 @@ app.get('/api/student-attendance', auth, async (req,res) => {
   const to=String(req.query.to||from);
   const {rows}=await pool.query(
     `SELECT a.id,a.student_id AS "studentId",s.full_name AS "studentName",a.attendance_date AS "attendanceDate",a.status
-     FROM student_attendance a JOIN students s ON s.id=a.student_id
+     FROM student_attendance a JOIN students s ON s.school_id=a.school_id AND s.id=a.student_id
      WHERE a.school_id=$1 AND a.attendance_date BETWEEN $2::date AND $3::date
      ORDER BY a.attendance_date DESC,s.full_name LIMIT 500`,[schoolId,from,to]);
   res.json({status:'success',data:rows});
