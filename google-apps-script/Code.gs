@@ -7134,7 +7134,8 @@ function setManagedStudentStatus(ss, payload, effectiveSchoolId, actorUsername, 
   var studentId = String(payload.id || '').trim();
   var requestedStatus = String(payload.status || '').trim();
 
-  if (!studentId || ['نشط', 'غير نشط', 'Active', 'Inactive'].indexOf(requestedStatus) === -1) {
+  var allowedStatuses = ['نشط', 'غير نشط', 'موقوف', 'منقول', 'متخرج', 'Active', 'Inactive'];
+  if (!studentId || allowedStatuses.indexOf(requestedStatus) === -1) {
     return { success: false, code: 'INVALID_STUDENT_STATUS_REQUEST', message: 'معرف الطالب وحالة صالحة مطلوبان.' };
   }
 
