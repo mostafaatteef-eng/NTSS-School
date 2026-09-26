@@ -193,6 +193,72 @@ export default {
         return json({ status: 'success', activeSchoolId: schoolId }, 200, corsOrigin);
       }
 
+      if (request.method === 'POST' && path === '/users/manage') {
+        if (user.role !== 'SystemAdmin') return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);
+        const body: any = await request.json();
+        const action=String(body.action||''); const data: any=body.data||{};
+        const project = async (row: any) => {
+          const access=await pool.query('SELECT school_id FROM user_school_access WHERE user_id=$1 ORDER BY school_id',[row.id]);
+          return {id:row.id,email:row.email,username:row.username,fullName:row.full_name,role:row.role,accessScope:row.access_scope,schoolId:row.school_id||'',employeeId:row.employee_id||undefined,status:row.status,allowedSchoolIds:access.rows.map((x:any)=>x.school_id),createdAt:row.created_at,updatedAt:row.updated_at,lastLogin:row.last_login_at};
+        };
+        if(action==='adminGetUsers'){
+          const rows=await pool.query('SELECT * FROM users ORDER BY full_name');
+          const out=[]; for(const row of rows.rows) out.push(await project(row));
+          return json({status:'success',data:out},200,corsOrigin);
+        }
+        const targetId=String(data.id||data.userId||'').trim();
+        if(action==='deleteUser'){
+          if(!targetId)return json({status:'error',code:'TARGET_REQUIRED'},400,corsOrigin);
+          if(targetId===user.user_id)return json({status:'error',code:'SELF_DELETE_DENIED'},409,corsOrigin);
+          const admins=await pool.query("SELECT count(*)::int n FROM users WHERE role='SystemAdmin' AND is_active=true AND status='Active'");
+          const target=await pool.query('SELECT role FROM users WHERE id=$1',[targetId]);
+          if(!target.rowCount)return json({status:'error',code:'NOT_FOUND'},404,corsOrigin);
+          if(target.rows[0].role==='SystemAdmin' && Number(admins.rows[0].n)<=1)return json({status:'error',code:'LAST_SYSTEM_ADMIN_PROTECTED'},409,corsOrigin);
+          await pool.query('DELETE FROM users WHERE id=$1',[targetId]);
+          return json({status:'success',message:'تم حذف الحساب.'},200,corsOrigin);
+        }
+        if(action==='resetUserPassword'){
+          const password=String(data.newPassword||'');
+          if(password.length<8)return json({status:'error',code:'PASSWORD_TOO_SHORT'},400,corsOrigin);
+          const salt=crypto.randomBytes(16).toString('hex'); const iterations=10000;
+          const hash=legacyPasswordHash(password,salt,iterations);
+          const u=await pool.query('UPDATE users SET password_hash=$2,password_salt=$3,password_iterations=$4,updated_at=now() WHERE id=$1 RETURNING id',[targetId,hash,salt,iterations]);
+          if(!u.rowCount)return json({status:'error',code:'NOT_FOUND'},404,corsOrigin);
+          await pool.query("UPDATE sessions SET status='REVOKED',revoked_at=now() WHERE user_id=$1 AND status='ACTIVE'",[targetId]);
+          return json({status:'success',message:'تم تحديث كلمة المرور وإلغاء الجلسات السابقة.'},200,corsOrigin);
+        }
+        if(action==='toggleUserStatus'){
+          if(targetId===user.user_id && String(data.newStatus)!=='Active')return json({status:'error',code:'SELF_DISABLE_DENIED'},409,corsOrigin);
+          const status=['Active','Inactive','Suspended'].includes(String(data.newStatus))?String(data.newStatus):'Inactive';
+          const u=await pool.query('UPDATE users SET status=$2,is_active=$3,updated_at=now() WHERE id=$1 RETURNING *',[targetId,status,status==='Active']);
+          if(!u.rowCount)return json({status:'error',code:'NOT_FOUND'},404,corsOrigin);
+          if(status!=='Active')await pool.query("UPDATE sessions SET status='REVOKED',revoked_at=now() WHERE user_id=$1 AND status='ACTIVE'",[targetId]);
+          return json({status:'success',message:'تم تحديث حالة الحساب.',user:await project(u.rows[0])},200,corsOrigin);
+        }
+        if(action==='revokeUserSessions'){
+          await pool.query("UPDATE sessions SET status='REVOKED',revoked_at=now() WHERE user_id=$1 AND status='ACTIVE'",[targetId]);
+          return json({status:'success',message:'تم إلغاء جلسات المستخدم.'},200,corsOrigin);
+        }
+        if(action!=='saveUser')return json({status:'error',code:'ACTION_NOT_MIGRATED'},400,corsOrigin);
+        const email=String(data.email||'').trim().toLowerCase(); const username=String(data.username||'').trim().toLowerCase();
+        const role=String(data.role||'').trim(); const fullName=String(data.fullName||'').trim();
+        if(role==='SystemAdmin' && user.role!=='SystemAdmin')return json({status:'error',code:'ROLE_ESCALATION_DENIED'},403,corsOrigin);
+        const allowed=Array.isArray(data.allowedSchoolIds)?[...new Set(data.allowedSchoolIds.map((x:any)=>String(x||'').trim().toUpperCase()).filter(Boolean))]:[];
+        if(!targetId){
+          const password=String(data.password||''); if(!email||!username||!fullName||password.length<8)return json({status:'error',code:'INVALID_USER'},400,corsOrigin);
+          const id='USR-'+crypto.randomBytes(8).toString('hex').toUpperCase(); const salt=crypto.randomBytes(16).toString('hex'); const iterations=10000; const hash=legacyPasswordHash(password,salt,iterations);
+          const scope=role==='SystemAdmin'?'GLOBAL':'SCHOOL'; const schoolId=scope==='GLOBAL'?null:String(data.schoolId||'').trim().toUpperCase()||null;
+          const s=await pool.query('INSERT INTO users(id,email,username,full_name,role,access_scope,school_id,employee_id,password_hash,password_salt,password_iterations,status,is_active) VALUES($1,$2,$3,$4,$5,$6,$7,NULLIF($8,\'\'),$9,$10,$11,\'Active\',true) RETURNING *',[id,email,username,fullName,role,scope,schoolId,String(data.employeeId||''),hash,salt,iterations]);
+          for(const sid of allowed.length?allowed:(schoolId?[schoolId]:[])) await pool.query('INSERT INTO user_school_access(user_id,school_id) SELECT $1,$2 WHERE EXISTS(SELECT 1 FROM schools WHERE id=$2) ON CONFLICT DO NOTHING',[id,sid]);
+          return json({status:'success',message:'تم إنشاء الحساب.',user:await project(s.rows[0])},201,corsOrigin);
+        }
+        const existing=await pool.query('SELECT * FROM users WHERE id=$1',[targetId]); if(!existing.rowCount)return json({status:'error',code:'NOT_FOUND'},404,corsOrigin);
+        const old=existing.rows[0]; const nextRole=role||old.role; const scope=nextRole==='SystemAdmin'?'GLOBAL':'SCHOOL'; const schoolId=scope==='GLOBAL'?null:(data.schoolId===undefined?old.school_id:String(data.schoolId||'').trim().toUpperCase()||null);
+        const u=await pool.query('UPDATE users SET email=COALESCE(NULLIF($2,\'\'),email),username=COALESCE(NULLIF($3,\'\'),username),full_name=COALESCE(NULLIF($4,\'\'),full_name),role=$5,access_scope=$6,school_id=$7,employee_id=CASE WHEN $8=\'\' THEN employee_id ELSE $8 END,updated_at=now() WHERE id=$1 RETURNING *',[targetId,email,username,fullName,nextRole,scope,schoolId,String(data.employeeId||'')]);
+        if(data.allowedSchoolIds!==undefined){await pool.query('DELETE FROM user_school_access WHERE user_id=$1',[targetId]);for(const sid of allowed.length?allowed:(schoolId?[schoolId]:[]))await pool.query('INSERT INTO user_school_access(user_id,school_id) SELECT $1,$2 WHERE EXISTS(SELECT 1 FROM schools WHERE id=$2) ON CONFLICT DO NOTHING',[targetId,sid]);}
+        return json({status:'success',message:'تم تحديث الحساب.',user:await project(u.rows[0])},200,corsOrigin);
+      }
+
       if (request.method === 'POST' && path === '/schedule/manage') {
         const body: any = await request.json();
         const action = String(body.action || '');
