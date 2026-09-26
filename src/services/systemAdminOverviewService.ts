@@ -69,94 +69,68 @@ export class SystemAdminOverviewService {
    * Only calls action: 'adminGetSystemOverview'.
    * Never reads local student/employee cache.
    */
-  public async getSystemOverview(
-    caller?: User | null
-  ): Promise<SystemOverviewOperationResult> {
+  public async getSystemOverview(caller?: User | null): Promise<SystemOverviewOperationResult> {
     const check = this.validateSystemAdminCaller(caller);
-    if (!check.allowed || !check.user) {
-      return check.error!;
-    }
+    if (!check.allowed || !check.user) return check.error!;
     const user = check.user;
-
-    const scriptUrl = storageService.getBackendUrl();
-    const isOnline = typeof navigator === 'undefined' || navigator.onLine !== false;
-    if (!scriptUrl || scriptUrl.length < 15 || !isOnline) {
-      return {
-        success: false,
-        code: 'SERVICE_UNAVAILABLE',
-        message: 'تعذر الاتصال بالخادم الرئيسي لاسترجاع النظرة العامة.',
-      };
+    const apiUrl = ((typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_POSTGRES_API_URL) as string) || '';
+    if (!apiUrl || !user.sessionToken) {
+      return { success: false, code: 'SERVICE_UNAVAILABLE', message: 'تعذر الاتصال بخادم PostgreSQL لاسترجاع النظرة العامة.' };
     }
 
     try {
-      const response = await fetch(scriptUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({
-          action: 'adminGetSystemOverview',
-          sessionToken: user.sessionToken,
-        }),
-      });
+      const base = apiUrl.replace(/\/$/, '');
+      const headers = { Authorization: `Bearer ${user.sessionToken}` };
+      const schoolsResponse = await fetch(`${base}/api/schools`, { headers });
+      const schoolsPayload = await schoolsResponse.json().catch(() => ({}));
+      if (!schoolsResponse.ok || schoolsPayload.status !== 'success' || !Array.isArray(schoolsPayload.data)) {
+        return { success: false, code: schoolsPayload.code || `HTTP_${schoolsResponse.status}`, message: 'تعذر تحميل مؤشرات المدارس من PostgreSQL.' };
+      }
 
-      if (!response.ok) {
+      const rows = await Promise.all(schoolsPayload.data.map(async (s: any) => {
+        const schoolId = String(s.id || '').trim().toUpperCase();
         try {
-          const errRes = await response.json();
-          if (errRes && errRes.code) {
-            return {
-              success: false,
-              code: errRes.code,
-              message: errRes.message || `خطأ في استجابة الخادم (${response.status}) أثناء جلب النظرة العامة.`,
-            };
-          }
-        } catch {}
-        return {
-          success: false,
-          code: `HTTP_${response.status}`,
-          message: `خطأ في استجابة الخادم (${response.status}) أثناء جلب النظرة العامة.`,
-        };
-      }
+          const [studentsRes, employeesRes] = await Promise.all([
+            fetch(`${base}/api/students?schoolId=${encodeURIComponent(schoolId)}&page=1&pageSize=10`, { headers }),
+            fetch(`${base}/api/employees?schoolId=${encodeURIComponent(schoolId)}&page=1&pageSize=10`, { headers }),
+          ]);
+          const [students, employees] = await Promise.all([
+            studentsRes.json().catch(() => ({})), employeesRes.json().catch(() => ({})),
+          ]);
+          const available = studentsRes.ok && employeesRes.ok && students.status === 'success' && employees.status === 'success';
+          return {
+            schoolId, schoolCode: String(s.code || '').trim().toUpperCase(), schoolName: String(s.name || '').trim(),
+            status: String(s.status || '').toUpperCase() === 'ACTIVE' ? 'Active' : 'Inactive',
+            dataStatus: available ? 'AVAILABLE' : 'UNAVAILABLE',
+            studentsCount: available ? Number(students.pagination?.total || 0) : null,
+            employeesCount: available ? Number(employees.pagination?.total || 0) : null,
+          };
+        } catch {
+          return {
+            schoolId, schoolCode: String(s.code || '').trim().toUpperCase(), schoolName: String(s.name || '').trim(),
+            status: String(s.status || '').toUpperCase() === 'ACTIVE' ? 'Active' : 'Inactive',
+            dataStatus: 'UNAVAILABLE', studentsCount: null, employeesCount: null,
+          };
+        }
+      }));
 
-      const res = await response.json();
-      if (res.status === 'success' && res.summary && Array.isArray(res.schools)) {
-        const overviewData: SystemOverviewResponse = {
-          summary: {
-            studentsTotal: Number(res.summary.studentsTotal) || 0,
-            employeesTotal: Number(res.summary.employeesTotal) || 0,
-            schoolsIncluded: Number(res.summary.schoolsIncluded) || 0,
-            schoolsUnavailable: Number(res.summary.schoolsUnavailable) || 0,
-          },
-          schools: res.schools.map((s: any) => ({
-            schoolId: String(s.schoolId || '').trim().toUpperCase(),
-            schoolCode: String(s.schoolCode || '').trim().toUpperCase(),
-            schoolName: String(s.schoolName || '').trim(),
-            status: String(s.status || '').trim().toLowerCase() === 'inactive' ? 'Inactive' : 'Active',
-            dataStatus: s.dataStatus,
-            studentsCount: typeof s.studentsCount === 'number' ? s.studentsCount : null,
-            employeesCount: typeof s.employeesCount === 'number' ? s.employeesCount : null,
-          })),
-          generatedAt: res.generatedAt || new Date().toISOString(),
-        };
-
-        return {
-          success: true,
-          message: 'تم استرجاع النظرة العامة للمنظومة بنجاح.',
-          data: overviewData,
-        };
-      }
-
-      return {
-        success: false,
-        code: res.code || 'GET_OVERVIEW_FAILED',
-        message: res.message || 'فشل استرجاع النظرة العامة من الخادم.',
+      const available = rows.filter((s: any) => s.dataStatus === 'AVAILABLE');
+      const data: SystemOverviewResponse = {
+        summary: {
+          studentsTotal: available.reduce((n: number, s: any) => n + Number(s.studentsCount || 0), 0),
+          employeesTotal: available.reduce((n: number, s: any) => n + Number(s.employeesCount || 0), 0),
+          schoolsIncluded: available.length,
+          schoolsUnavailable: rows.length - available.length,
+        },
+        schools: rows as any,
+        generatedAt: new Date().toISOString(),
       };
+      return { success: true, message: 'تم استرجاع النظرة العامة للمنظومة بنجاح.', data };
     } catch (err: any) {
-      return {
-        success: false,
-        code: 'NETWORK_ERROR',
-        message: err?.message || 'حدث خطأ في الاتصال أثناء استرجاع النظرة العامة.',
-      };
+      return { success: false, code: 'NETWORK_ERROR', message: err?.message || 'حدث خطأ في الاتصال بخادم PostgreSQL.' };
     }
   }
+
 }
 
 export const systemAdminOverviewService = SystemAdminOverviewService.getInstance();
