@@ -1102,14 +1102,22 @@ class StorageService {
   public async logoutStaffSession(): Promise<void> {
     const user = this.getCurrentUser();
     const token = String(user?.sessionToken || '').trim();
-    const scriptUrl = this.getBackendUrl();
     const online = typeof navigator === 'undefined' || navigator.onLine !== false;
 
     // Clear local UX/session state immediately; backend revocation is best-effort.
     this.setCurrentUser(null);
 
-    if (!token || !scriptUrl || scriptUrl.length < 15 || !online) return;
+    if (!token || !online) return;
 
+    if (isPostgresBackendEnabled()) {
+      try {
+        await postgresApiRequest<any>('/logout', token, { method: 'POST', body: '{}' });
+      } catch {}
+      return;
+    }
+
+    const scriptUrl = this.getBackendUrl();
+    if (!scriptUrl || scriptUrl.length < 15) return;
     try {
       await fetch(scriptUrl, {
         method: 'POST',
