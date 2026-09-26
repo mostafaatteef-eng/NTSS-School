@@ -24,7 +24,6 @@ import {
 import * as XLSX from 'xlsx';
 import {
   Student,
-  StudentTransferHistory,
   normalizeStudentGender,
   normalizeStudentReligion,
   normalizeStudentEnrollmentState,
@@ -34,7 +33,7 @@ import { hasPermission } from '../../utils/permissions';
 import { ImportWizardModal } from '../import/ImportWizardModal';
 import { StudentProfileModal } from './StudentProfileModal';
 import { StudentPromotionWizard } from './StudentPromotionWizard';
-import { formatEgyptianDate, getCairoNowISO } from '../../utils/egyptianTime';
+import { formatEgyptianDate } from '../../utils/egyptianTime';
 
 export const StudentsView: React.FC = () => {
   const [students, setStudents] = useState<Student[]>(() => storageService.getStudents());
@@ -305,6 +304,10 @@ export const StudentsView: React.FC = () => {
   };
 
   const handleOpenTransfer = (student: Student) => {
+    if (!canEditStudent) {
+      setManagementError('ليست لديك صلاحية نقل الطلاب بين الفصول.');
+      return;
+    }
     setTransferModalStudent(student);
     setTransferData({
       toGrade: student.grade,
@@ -314,36 +317,38 @@ export const StudentsView: React.FC = () => {
     });
   };
 
-  const handleExecuteTransfer = (e: React.FormEvent) => {
+  const handleExecuteTransfer = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!transferModalStudent || !transferData.toGrade || !transferData.toClassroom) {
-      alert('يرجى تحديد الصف والفصل المحول إليه');
+    setManagementError('');
+
+    if (!canEditStudent) {
+      setManagementError('ليست لديك صلاحية نقل الطلاب بين الفصول.');
       return;
     }
 
-    const currentYearId = activeAcademicYear?.id || 'AY-CURRENT';
-    const now = getCairoNowISO();
+    if (!transferModalStudent || !transferData.toGrade || !transferData.toClassroom) {
+      setManagementError('يرجى تحديد الصف والفصل المحول إليه.');
+      return;
+    }
 
-    const transferRecord: StudentTransferHistory = {
-      id: `TRF-${Date.now()}`,
+    setManagementAction(`transfer-student:${transferModalStudent.id}`);
+    const result = await storageService.transferManagedStudentAuthoritative({
       studentId: transferModalStudent.id,
-      studentCode: transferModalStudent.studentCode,
-      studentName: transferModalStudent.name,
-      academicYearId: currentYearId,
-      fromGrade: transferModalStudent.grade,
-      fromClassroom: transferModalStudent.classroom,
+      academicYearId: activeAcademicYear?.id,
       toGrade: transferData.toGrade,
       toClassroom: transferData.toClassroom,
-      transferType: 'نقل فصل',
       reason: transferData.reason,
-      transferDate: now.split('T')[0],
       notes: transferData.notes,
-      createdAt: now,
-    };
+    });
+    setManagementAction(null);
 
-    storageService.saveStudentTransfer(transferRecord);
+    if (!result.success) {
+      setManagementError(result.message || 'تعذر نقل الطالب.');
+      return;
+    }
+
     setTransferModalStudent(null);
-    reloadStudents();
+    await reloadStudents();
   };
 
   const handleDelete = async (id: string, name: string) => {
@@ -722,13 +727,16 @@ export const StudentsView: React.FC = () => {
                         >
                           <Eye className="w-4 h-4" />
                         </button>
-                        <button
-                          onClick={() => handleOpenTransfer(student)}
-                          className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
-                          title="نقل فصل / تحويل شعبة"
-                        >
-                          <ArrowRightLeft className="w-4 h-4" />
-                        </button>
+                        {canEditStudent && (
+                          <button
+                            disabled={managementAction !== null}
+                            onClick={() => handleOpenTransfer(student)}
+                            className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer disabled:opacity-40"
+                            title="نقل فصل / تحويل شعبة"
+                          >
+                            <ArrowRightLeft className="w-4 h-4" />
+                          </button>
+                        )}
                         {canEditStudent && (
                           <>
                             <button
@@ -833,9 +841,10 @@ export const StudentsView: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  className="px-6 py-2 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 cursor-pointer shadow-xs"
+                  disabled={managementAction !== null}
+                  className="px-6 py-2 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 cursor-pointer shadow-xs disabled:opacity-50"
                 >
-                  تأكيد النقل الآن
+                  {managementAction?.startsWith('transfer-student:') ? 'جارٍ النقل...' : 'تأكيد النقل الآن'}
                 </button>
               </div>
             </form>
