@@ -258,6 +258,26 @@ export class SchoolAdminService {
       };
     }
 
+    if (isPostgresBackendEnabled()) {
+      try {
+        const pg = await postgresApiRequest<any>('/schools/create', user.sessionToken || '', {
+          method: 'POST',
+          body: JSON.stringify({ schoolId, schoolCode, schoolName }),
+        });
+        if (!pg.ok || pg.body?.status !== 'success' || !pg.body?.data) {
+          return { success: false, code: pg.body?.code || `HTTP_${pg.status}`, message: pg.body?.message || 'فشل إنشاء المدرسة في PostgreSQL.' };
+        }
+        const safeSchool = this.sanitizeSchoolDto({
+          schoolId: pg.body.data.id, schoolCode: pg.body.data.code, schoolName: pg.body.data.name,
+          status: pg.body.data.status, createdAt: pg.body.data.created_at, updatedAt: pg.body.data.updated_at,
+        });
+        this.syncClientSchoolsCache([...existing.filter(s => s.schoolId !== safeSchool.schoolId), safeSchool]);
+        return { success: true, message: 'تم تسجيل المدرسة بنجاح.', data: safeSchool };
+      } catch {
+        return { success: false, code: 'NETWORK_ERROR', message: 'تعذر الاتصال بخادم PostgreSQL أثناء إنشاء المدرسة.' };
+      }
+    }
+
     const scriptUrl = storageService.getBackendUrl();
     const isOnline = typeof navigator === 'undefined' || navigator.onLine !== false;
     if (!scriptUrl || scriptUrl.length < 15 || !isOnline) {
@@ -412,6 +432,27 @@ export class SchoolAdminService {
         };
       }
       cleanUpdates.status = st as 'Active' | 'Inactive';
+    }
+
+    if (isPostgresBackendEnabled()) {
+      try {
+        const pg = await postgresApiRequest<any>('/schools/update', user.sessionToken || '', {
+          method: 'POST',
+          body: JSON.stringify({ schoolId: targetSchoolId, ...cleanUpdates }),
+        });
+        if (!pg.ok || pg.body?.status !== 'success' || !pg.body?.data) {
+          return { success: false, code: pg.body?.code || `HTTP_${pg.status}`, message: pg.body?.message || 'فشل تحديث المدرسة في PostgreSQL.' };
+        }
+        const safeSchool = this.sanitizeSchoolDto({
+          schoolId: pg.body.data.id, schoolCode: pg.body.data.code, schoolName: pg.body.data.name,
+          status: pg.body.data.status, createdAt: pg.body.data.created_at, updatedAt: pg.body.data.updated_at,
+        });
+        const cached = storageService.getSchools();
+        this.syncClientSchoolsCache([...cached.filter(s => s.schoolId !== safeSchool.schoolId), safeSchool]);
+        return { success: true, message: 'تم تحديث المدرسة بنجاح.', data: safeSchool };
+      } catch {
+        return { success: false, code: 'NETWORK_ERROR', message: 'تعذر الاتصال بخادم PostgreSQL أثناء تحديث المدرسة.' };
+      }
     }
 
     const scriptUrl = storageService.getBackendUrl();
