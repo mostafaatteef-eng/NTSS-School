@@ -1317,6 +1317,7 @@ function doPost(e) {
       }
       output.message = stdBatchRes.message;
       output.savedCount = stdBatchRes.savedCount;
+      output.records = stdBatchRes.records || [];
       return createJsonResponse(output, 200);
     }
 
@@ -6788,11 +6789,19 @@ function createJsonResponse(obj, statusCode) {
 // -------------------------------------------------------------
 
 function saveDailyStudentAttendanceBatch(ss, payload, authUsername, authRole, requestId) {
+  payload = payload || {};
   var date = String(payload.date || '').trim();
+  var gradeScope = String(payload.gradeId || '').trim();
+  var classroomScope = String(payload.classroomId || '').trim();
   var records = payload.records;
 
-  if (!date || !records || !Array.isArray(records) || records.length === 0) {
-    return { success: false, code: 'INVALID_PAYLOAD', message: 'تاريخ وسجلات الحضور والغياب مطلوبة' };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !records || !Array.isArray(records) || records.length === 0) {
+    return { success: false, code: 'INVALID_PAYLOAD', message: 'تاريخ صالح وسجلات حضور الطلاب مطلوبة' };
+  }
+
+  var parsedDate = new Date(date + 'T12:00:00Z');
+  if (isNaN(parsedDate.getTime())) {
+    return { success: false, code: 'INVALID_ATTENDANCE_DATE', message: 'تاريخ حضور الطلاب غير صالح' };
   }
 
   var sheet = ss.getSheetByName(SHEETS.STUDENT_ATTENDANCE);
@@ -6800,43 +6809,179 @@ function saveDailyStudentAttendanceBatch(ss, payload, authUsername, authRole, re
     return { success: false, code: 'SHEET_NOT_FOUND', message: 'جدول حضور الطلاب غير موجود' };
   }
 
+  var students = getSheetData(ss, SHEETS.STUDENTS);
+  var studentMap = {};
+  for (var s = 0; s < students.length; s++) {
+    var studentKey = String(students[s].id || students[s].studentId || '').trim().toLowerCase();
+    if (studentKey) studentMap[studentKey] = students[s];
+  }
+
+  var allowedStatuses = {
+    'حاضر': 'حاضر',
+    'متأخر': 'متأخر',
+    'غائب': 'غائب',
+    'غائب بعذر': 'غائب بعذر',
+    'غائب بدون عذر': 'غائب بدون عذر',
+    'مأذون': 'مأذون',
+    'مريض': 'مريض',
+    'نشاط / رحلة': 'نشاط / رحلة',
+    'موقوف': 'موقوف',
+    'هروب': 'هروب',
+    'لم يسجل': 'لم يسجل',
+    'عطلة': 'عطلة',
+    'Present': 'حاضر',
+    'Late': 'متأخر',
+    'Absent': 'غائب',
+    'Excused': 'مأذون'
+  };
+
+  function matchesScope(valueA, valueB, scopeValue) {
+    if (!scopeValue) return true;
+    var scope = String(scopeValue).trim().toLowerCase();
+    return String(valueA || '').trim().toLowerCase() === scope ||
+      String(valueB || '').trim().toLowerCase() === scope;
+  }
+
+  // Pre-validate the complete batch before any persistence.
+  var validated = [];
+  var seenStudentIds = {};
+  for (var v = 0; v < records.length; v++) {
+    var input = records[v] || {};
+    var studentId = String(input.studentId || '').trim();
+    var studentKey = studentId.toLowerCase();
+
+    if (!studentId) {
+      return { success: false, code: 'STUDENT_ID_REQUIRED', message: 'معرف الطالب مطلوب لكل سجل حضور' };
+    }
+
+    var student = studentMap[studentKey];
+    if (!student) {
+      return {
+        success: false,
+        code: 'ATTENDANCE_STUDENT_NOT_FOUND',
+        message: 'تعذر حفظ الحضور: الطالب غير موجود في المدرسة النشطة: ' + studentId
+      };
+    }
+
+    var studentStatus = String(student.status || student.studentStatus || '').trim().toLowerCase();
+    if (studentStatus && studentStatus !== 'نشط' && studentStatus !== 'active') {
+      return {
+        success: false,
+        code: 'ATTENDANCE_STUDENT_INACTIVE',
+        message: 'تعذر حفظ الحضور لطالب غير نشط: ' + studentId
+      };
+    }
+
+    if (seenStudentIds[studentKey]) {
+      return {
+        success: false,
+        code: 'DUPLICATE_STUDENT_IN_BATCH',
+        message: 'يوجد أكثر من سجل لنفس الطالب داخل دفعة الحضور: ' + studentId
+      };
+    }
+    seenStudentIds[studentKey] = true;
+
+    var suppliedDate = String(input.date || '').trim();
+    if (suppliedDate && suppliedDate !== date) {
+      return {
+        success: false,
+        code: 'STUDENT_ATTENDANCE_DATE_MISMATCH',
+        message: 'تاريخ أحد سجلات الطلاب لا يطابق تاريخ الدفعة المعتمد'
+      };
+    }
+
+    if (!matchesScope(student.gradeId, student.grade || student.gradeName, gradeScope)) {
+      return {
+        success: false,
+        code: 'STUDENT_OUTSIDE_GRADE_SCOPE',
+        message: 'الطالب خارج نطاق الصف المحدد للدفعة: ' + studentId
+      };
+    }
+
+    if (!matchesScope(student.classroomId, student.classroom || student.classroomNumber, classroomScope)) {
+      return {
+        success: false,
+        code: 'STUDENT_OUTSIDE_CLASSROOM_SCOPE',
+        message: 'الطالب خارج نطاق الفصل المحدد للدفعة: ' + studentId
+      };
+    }
+
+    var rawStatus = String(input.status || '').trim();
+    var canonicalStatus = allowedStatuses[rawStatus];
+    if (!canonicalStatus) {
+      return {
+        success: false,
+        code: 'INVALID_STUDENT_ATTENDANCE_STATUS',
+        message: 'حالة حضور غير معتمدة للطالب: ' + studentId
+      };
+    }
+
+    var lateMinutes = parseInt(input.lateMinutes || 0, 10) || 0;
+    if (lateMinutes < 0 || lateMinutes > 1440) {
+      return {
+        success: false,
+        code: 'INVALID_LATE_MINUTES',
+        message: 'عدد دقائق التأخير غير صالح للطالب: ' + studentId
+      };
+    }
+    if (canonicalStatus !== 'متأخر') lateMinutes = 0;
+
+    validated.push({
+      input: input,
+      student: student,
+      studentId: studentId,
+      status: canonicalStatus,
+      lateMinutes: lateMinutes
+    });
+  }
+
   var existing = getSheetData(ss, SHEETS.STUDENT_ATTENDANCE);
   var existingMap = {};
   for (var i = 0; i < existing.length; i++) {
     var item = existing[i];
-    var itemKey = String(item.date || '').trim() + '_' + String(item.studentId || '').trim();
+    var itemKey = String(item.date || '').trim() + '_' + String(item.studentId || '').trim().toLowerCase();
     existingMap[itemKey] = item;
   }
 
-  var savedCount = 0;
-  for (var r = 0; r < records.length; r++) {
-    var rec = records[r];
-    var studentId = String(rec.studentId || '').trim();
-    if (!studentId) continue;
+  var dayNames = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+  var canonicalDayName = dayNames[parsedDate.getUTCDay()] || '';
+  var savedRecords = [];
 
-    var recDate = String(rec.date || date).trim();
-    var key = recDate + '_' + studentId;
+  for (var r = 0; r < validated.length; r++) {
+    var entry = validated[r];
+    var inputRecord = entry.input;
+    var studentRecord = entry.student;
+    var key = date + '_' + entry.studentId.toLowerCase();
     var prev = existingMap[key];
 
+    var canonicalGrade = String(studentRecord.grade || studentRecord.gradeName || '').trim();
+    var canonicalClassroom = String(studentRecord.classroom || studentRecord.classroomNumber || '').trim();
+    var canonicalStage = String(studentRecord.stage || '').trim();
+
     var finalRecord = {
-      id: rec.id || (prev && prev.id) || ('STATT_' + recDate.replace(/-/g, '') + '_' + studentId),
-      studentId: studentId,
-      studentCode: rec.studentCode || (prev && prev.studentCode) || '',
-      studentName: rec.studentName || (prev && prev.studentName) || '',
-      grade: rec.grade || (prev && prev.grade) || payload.gradeId || '',
-      classroom: rec.classroom || (prev && prev.classroom) || payload.classroomId || '',
-      date: recDate,
-      dayName: rec.dayName || (prev && prev.dayName) || '',
-      status: rec.status || 'Present',
-      lateMinutes: parseInt(rec.lateMinutes || 0, 10) || 0,
-      excused: rec.status === 'Excused' || rec.excused === true,
-      notes: rec.notes || (prev && prev.notes) || '',
+      id: (prev && prev.id) || ('STATT_' + date.replace(/-/g, '') + '_' + entry.studentId),
+      studentId: entry.studentId,
+      studentCode: String(studentRecord.studentCode || studentRecord.schoolStudentCode || '').trim(),
+      studentName: String(studentRecord.name || '').trim(),
+      stage: canonicalStage,
+      grade: canonicalGrade,
+      gradeId: String(studentRecord.gradeId || '').trim(),
+      classroom: canonicalClassroom,
+      classroomId: String(studentRecord.classroomId || '').trim(),
+      academicYearId: String(studentRecord.academicYearId || '').trim(),
+      date: date,
+      dayName: canonicalDayName,
+      status: entry.status,
+      lateMinutes: entry.lateMinutes,
+      excused: entry.status === 'مأذون' || entry.status === 'غائب بعذر' || entry.status === 'مريض',
+      notes: String(inputRecord.notes || (prev && prev.notes) || '').trim(),
       recordedBy: authUsername || 'System',
-      recordedAt: getCairoISOString()
+      recordedAt: getCairoISOString(),
+      updatedAt: getCairoISOString()
     };
 
     upsertRecord(ss, SHEETS.STUDENT_ATTENDANCE, 'id', finalRecord);
-    savedCount++;
+    savedRecords.push(finalRecord);
   }
 
   recordAuthoritativeAudit(
@@ -6847,10 +6992,15 @@ function saveDailyStudentAttendanceBatch(ss, payload, authUsername, authRole, re
     'ATTENDANCE_BATCH_SAVE',
     'STUDENT_ATTENDANCE',
     date,
-    'حفظ حضور وغياب دفعة طلاب - التاريخ: ' + date + ' - العدد: ' + savedCount
+    'حفظ حضور وغياب دفعة طلاب - التاريخ: ' + date + ' - العدد: ' + savedRecords.length
   );
 
-  return { success: true, message: 'تم حفظ حضور وغياب الطلاب بنجاح (' + savedCount + ' طالب)', savedCount: savedCount };
+  return {
+    success: true,
+    message: 'تم حفظ حضور وغياب الطلاب بنجاح (' + savedRecords.length + ' طالب)',
+    savedCount: savedRecords.length,
+    records: savedRecords
+  };
 }
 
 function saveDailyStaffAttendanceBatch(ss, payload, authUsername, authRole, requestId) {
