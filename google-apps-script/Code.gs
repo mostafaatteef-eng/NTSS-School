@@ -333,6 +333,57 @@ function doPost(e) {
     }
 
 
+    // Public safe school registry for entry portals.
+    // Exposes identifiers and names only; never spreadsheetId or operational metadata.
+    if (action === 'getPublicSchools') {
+      var publicSchools = getPublicSchoolsSafe(ss);
+      output.schools = publicSchools;
+      return createJsonResponse(output, 200);
+    }
+
+    // Public school-scoped grade/class options derived only from published schedule rows.
+    if (action === 'getPublicScheduleOptions') {
+      var optionsSchoolId = String(postData.schoolId || (payload && payload.schoolId) || '').trim();
+      if (!optionsSchoolId) {
+        return createJsonResponse({
+          status: 'error',
+          code: 'SCHOOL_CONTEXT_REQUIRED',
+          message: 'يرجى تحديد المدرسة أولاً',
+          requestId: requestId
+        }, 400);
+      }
+
+      var optionsCtx = resolveSchoolContext(optionsSchoolId, ss);
+      if (!optionsCtx || String(optionsCtx.status || '').trim() !== 'Active') {
+        return createJsonResponse({
+          status: 'error',
+          code: 'SCHOOL_NOT_AVAILABLE',
+          message: 'المدرسة غير متاحة في البوابة العامة',
+          requestId: requestId
+        }, 404);
+      }
+
+      var optionsSchoolSs = getSchoolSpreadsheet(optionsCtx.schoolId, ss);
+      if (!optionsSchoolSs) {
+        return createJsonResponse({
+          status: 'error',
+          code: 'SCHOOL_DATA_UNAVAILABLE',
+          message: 'تعذر الوصول إلى بيانات المدرسة',
+          requestId: requestId
+        }, 503);
+      }
+
+      var publicOptions = getPublicScheduleOptionsSafe(optionsSchoolSs);
+      output.school = {
+        schoolId: optionsCtx.schoolId,
+        schoolCode: optionsCtx.schoolCode,
+        schoolName: optionsCtx.schoolName
+      };
+      output.grades = publicOptions.grades;
+      output.classrooms = publicOptions.classrooms;
+      return createJsonResponse(output, 200);
+    }
+
     // Public Student Class Schedule (School-Scoped, NO login, NO token, strictly published lessons only)
     if (action === 'getPublicClassSchedule') {
       var targetSchoolIdForSchedule = String(postData.schoolId || (payload && payload.schoolId) || '').trim();
@@ -6455,6 +6506,68 @@ function toggleUserStatusSecure(ss, targetUserId, newStatus) {
     }
   }
   return { success: false, message: 'المستخدم غير موجود' };
+}
+
+function getPublicSchoolsSafe(masterSs) {
+  var schools = getSheetData(masterSs, SHEETS.MASTER_SCHOOLS);
+  return schools
+    .filter(function(s) {
+      return String(s.status || '').trim() === 'Active' &&
+        !!String(s.schoolId || '').trim() &&
+        !!String(s.spreadsheetId || '').trim();
+    })
+    .map(function(s) {
+      return {
+        schoolId: String(s.schoolId || '').trim(),
+        schoolCode: String(s.schoolCode || '').trim(),
+        schoolName: String(s.schoolName || '').trim()
+      };
+    });
+}
+
+function getPublicScheduleOptionsSafe(ss) {
+  var schedule = getSheetData(ss, SHEETS.SCHEDULE);
+  var gradeMap = {};
+  var classroomMap = {};
+
+  schedule.forEach(function(row) {
+    var status = String(row.status || '').trim().toLowerCase();
+    if (status !== 'published') return;
+    if (row.isActive === false || row.isActive === 'false') return;
+    if (row.isCancelled === true || row.isCancelled === 'true') return;
+
+    var gradeId = String(row.gradeId || row.grade || row.gradeName || '').trim();
+    var gradeName = String(row.gradeName || row.grade || row.gradeId || '').trim();
+    var classroomId = String(row.classroomId || row.classroom || row.classroomName || '').trim();
+    var classroomName = String(row.classroomName || row.classroom || row.classroomId || '').trim();
+
+    if (gradeId || gradeName) {
+      var gradeKey = (gradeId || gradeName).toLowerCase();
+      if (!gradeMap[gradeKey]) {
+        gradeMap[gradeKey] = {
+          id: gradeId || gradeName,
+          name: gradeName || gradeId
+        };
+      }
+    }
+
+    if (classroomId || classroomName) {
+      var classKey = (classroomId || classroomName).toLowerCase();
+      if (!classroomMap[classKey]) {
+        classroomMap[classKey] = {
+          id: classroomId || classroomName,
+          name: classroomName || classroomId,
+          gradeId: gradeId || gradeName,
+          gradeName: gradeName || gradeId
+        };
+      }
+    }
+  });
+
+  return {
+    grades: Object.keys(gradeMap).map(function(k) { return gradeMap[k]; }),
+    classrooms: Object.keys(classroomMap).map(function(k) { return classroomMap[k]; })
+  };
 }
 
 function getPublicClassSchedule(ss, gradeIdentifier, classroomIdentifier) {
