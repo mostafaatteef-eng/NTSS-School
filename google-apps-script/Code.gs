@@ -3267,10 +3267,17 @@ function handleStaffLogin(masterSs, normalizedEmail, inputPassword, requestId) {
     }
   } catch (uErr) {}
 
-  // 10. Keep login latency low. The session row itself is the
-  // authoritative successful-login record; avoid a second synchronous
-  // spreadsheet write on the critical authentication path. Operational
-  // actions continue to be audited normally.
+  // 10. Security Audit: Safe event without password, hash, salt, or sessionToken
+  recordAuthoritativeAudit(
+    masterSs,
+    requestId,
+    normalizedEmail,
+    role,
+    'LOGIN_SUCCESS',
+    'AUTH',
+    matchedUser.id,
+    'تسجيل دخول ناجح وإنشاء جلسة عمل معتمدة. نطاق: ' + accessScope + '، مدرسة: ' + (boundSchoolId || 'GLOBAL')
+  );
 
   // 11. Safe User DTO (No secrets or spreadsheetId)
   var sanitizedUser = {
