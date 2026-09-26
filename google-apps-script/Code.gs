@@ -1564,6 +1564,7 @@ function doPost(e) {
       }
       output.message = staffBatchRes.message;
       output.savedCount = staffBatchRes.savedCount;
+      output.records = staffBatchRes.records || [];
       return createJsonResponse(output, 200);
     }
 
@@ -6856,8 +6857,13 @@ function saveDailyStaffAttendanceBatch(ss, payload, authUsername, authRole, requ
   var date = String(payload.date || '').trim();
   var records = payload.records;
 
-  if (!date || !records || !Array.isArray(records) || records.length === 0) {
-    return { success: false, code: 'INVALID_PAYLOAD', message: 'تاريخ وسجلات الحضور والغياب مطلوبة' };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !records || !Array.isArray(records) || records.length === 0) {
+    return { success: false, code: 'INVALID_PAYLOAD', message: 'تاريخ صالح وسجلات الحضور والغياب مطلوبة' };
+  }
+
+  var parsedDate = new Date(date + 'T12:00:00Z');
+  if (isNaN(parsedDate.getTime())) {
+    return { success: false, code: 'INVALID_ATTENDANCE_DATE', message: 'تاريخ الحضور غير صالح' };
   }
 
   var sheet = ss.getSheetByName(SHEETS.ATTENDANCE);
@@ -6865,46 +6871,173 @@ function saveDailyStaffAttendanceBatch(ss, payload, authUsername, authRole, requ
     return { success: false, code: 'SHEET_NOT_FOUND', message: 'جدول حضور العاملين غير موجود' };
   }
 
+  var employees = getSheetData(ss, SHEETS.EMPLOYEES);
+  var employeeMap = {};
+  for (var e = 0; e < employees.length; e++) {
+    var employeeIdKey = String(employees[e].id || '').trim().toLowerCase();
+    if (employeeIdKey) employeeMap[employeeIdKey] = employees[e];
+  }
+
+  var allowedStatuses = {
+    'حاضر': 'حاضر',
+    'متأخر': 'متأخر',
+    'غائب': 'غائب',
+    'مأذونية': 'مأذونية',
+    'إذن عمل': 'إذن عمل',
+    'إجازة': 'إجازة',
+    'عطلة أسبوعية': 'عطلة أسبوعية',
+    'راحة': 'راحة',
+    'نصف يوم': 'نصف يوم',
+    'Present': 'حاضر',
+    'Late': 'متأخر',
+    'Absent': 'غائب',
+    'Excused': 'مأذونية'
+  };
+
+  // Pre-validate the entire batch before any writes to avoid partial persistence.
+  var validated = [];
+  var seenEmployeeIds = {};
+  for (var v = 0; v < records.length; v++) {
+    var input = records[v] || {};
+    var empId = String(input.employeeId || '').trim();
+    var empKey = empId.toLowerCase();
+
+    if (!empId) {
+      return { success: false, code: 'EMPLOYEE_ID_REQUIRED', message: 'رقم الموظف مطلوب لكل سجل حضور' };
+    }
+    if (!employeeMap[empKey]) {
+      return {
+        success: false,
+        code: 'ATTENDANCE_EMPLOYEE_NOT_FOUND',
+        message: 'تعذر حفظ الحضور: الموظف غير موجود في المدرسة النشطة: ' + empId
+      };
+    }
+    if (seenEmployeeIds[empKey]) {
+      return {
+        success: false,
+        code: 'DUPLICATE_EMPLOYEE_IN_BATCH',
+        message: 'يوجد أكثر من سجل لنفس الموظف داخل دفعة الحضور: ' + empId
+      };
+    }
+    seenEmployeeIds[empKey] = true;
+
+    var suppliedDate = String(input.date || '').trim();
+    if (suppliedDate && suppliedDate !== date) {
+      return {
+        success: false,
+        code: 'ATTENDANCE_DATE_MISMATCH',
+        message: 'تاريخ أحد سجلات الحضور لا يطابق تاريخ الدفعة المعتمد'
+      };
+    }
+
+    var rawStatus = String(input.status || '').trim();
+    var canonicalStatus = allowedStatuses[rawStatus];
+    if (!canonicalStatus) {
+      return {
+        success: false,
+        code: 'INVALID_ATTENDANCE_STATUS',
+        message: 'حالة حضور غير معتمدة للموظف: ' + empId
+      };
+    }
+
+    validated.push({
+      input: input,
+      employee: employeeMap[empKey],
+      employeeId: empId,
+      status: canonicalStatus
+    });
+  }
+
   var existing = getSheetData(ss, SHEETS.ATTENDANCE);
   var existingMap = {};
   for (var i = 0; i < existing.length; i++) {
     var item = existing[i];
-    var itemKey = String(item.date || '').trim() + '_' + String(item.employeeId || '').trim();
+    var itemKey = String(item.date || '').trim() + '_' + String(item.employeeId || '').trim().toLowerCase();
     existingMap[itemKey] = item;
   }
 
-  var savedCount = 0;
-  for (var r = 0; r < records.length; r++) {
-    var rec = records[r];
-    var empId = String(rec.employeeId || '').trim();
-    if (!empId) continue;
+  var dayNames = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+  var canonicalDayName = dayNames[parsedDate.getUTCDay()] || '';
+  var savedRecords = [];
 
-    var recDate = String(rec.date || date).trim();
-    var key = recDate + '_' + empId;
+  for (var r = 0; r < validated.length; r++) {
+    var entry = validated[r];
+    var rec = entry.input;
+    var emp = entry.employee;
+    var key = date + '_' + entry.employeeId.toLowerCase();
     var prev = existingMap[key];
 
+    var isWorkingStatus = entry.status === 'حاضر' || entry.status === 'متأخر' || entry.status === 'نصف يوم';
+    var scheduledStart = String(emp.workStartTime || '08:00').trim();
+    var scheduledEnd = String(emp.workEndTime || '14:30').trim();
+
+    var checkIn = isWorkingStatus
+      ? String(rec.checkIn || (prev && prev.checkIn) || scheduledStart).trim()
+      : '';
+    var checkOut = isWorkingStatus
+      ? String(rec.checkOut || (prev && prev.checkOut) || scheduledEnd).trim()
+      : '';
+
+    var checkInMinutes = parseTeacherSelfTime(checkIn);
+    var checkOutMinutes = parseTeacherSelfTime(checkOut);
+    var scheduledStartMinutes = parseTeacherSelfTime(scheduledStart);
+    var scheduledEndMinutes = parseTeacherSelfTime(scheduledEnd);
+
+    if ((checkIn && checkInMinutes === null) || (checkOut && checkOutMinutes === null)) {
+      return {
+        success: false,
+        code: 'INVALID_ATTENDANCE_TIME',
+        message: 'وقت الحضور أو الانصراف غير صالح للموظف: ' + entry.employeeId
+      };
+    }
+    if (isWorkingStatus && checkInMinutes !== null && checkOutMinutes !== null && checkOutMinutes < checkInMinutes) {
+      return {
+        success: false,
+        code: 'INVALID_ATTENDANCE_TIME_RANGE',
+        message: 'وقت الانصراف يجب ألا يسبق وقت الحضور للموظف: ' + entry.employeeId
+      };
+    }
+
+    var workingHours = 0;
+    if (isWorkingStatus && checkInMinutes !== null && checkOutMinutes !== null) {
+      workingHours = Math.round(((checkOutMinutes - checkInMinutes) / 60) * 100) / 100;
+    }
+
+    var lateMinutes = 0;
+    if (isWorkingStatus && checkInMinutes !== null && scheduledStartMinutes !== null) {
+      lateMinutes = Math.max(0, checkInMinutes - scheduledStartMinutes);
+    }
+
+    var earlyLeaveMinutes = 0;
+    var overtimeHours = 0;
+    if (isWorkingStatus && checkOutMinutes !== null && scheduledEndMinutes !== null) {
+      earlyLeaveMinutes = Math.max(0, scheduledEndMinutes - checkOutMinutes);
+      overtimeHours = Math.round((Math.max(0, checkOutMinutes - scheduledEndMinutes) / 60) * 100) / 100;
+    }
+
     var finalRecord = {
-      id: rec.id || (prev && prev.id) || ('EMPATT_' + recDate.replace(/-/g, '') + '_' + empId),
-      employeeId: empId,
-      employeeName: rec.employeeName || (prev && prev.employeeName) || '',
-      department: rec.department || (prev && prev.department) || '',
-      date: recDate,
-      dayName: rec.dayName || (prev && prev.dayName) || '',
-      checkIn: rec.checkIn || (prev && prev.checkIn) || (rec.status === 'Present' ? '08:00' : ''),
-      checkOut: rec.checkOut || (prev && prev.checkOut) || (rec.status === 'Present' ? '14:30' : ''),
-      workingHours: rec.status === 'Present' ? 6.5 : 0,
-      lateMinutes: parseInt(rec.lateMinutes || 0, 10) || 0,
-      earlyLeaveMinutes: 0,
-      overtimeHours: 0,
-      status: rec.status || 'Present',
-      notes: rec.notes || (prev && prev.notes) || '',
-      checkInTimestamp: getCairoISOString(),
-      checkOutTimestamp: '',
+      id: (prev && prev.id) || ('EMPATT_' + date.replace(/-/g, '') + '_' + entry.employeeId),
+      schoolId: String(emp.schoolId || '').trim(),
+      employeeId: entry.employeeId,
+      employeeName: String(emp.name || emp.fullName || '').trim(),
+      department: String(emp.department || emp.specialization || emp.jobTitle || '').trim(),
+      date: date,
+      dayName: canonicalDayName,
+      checkIn: checkIn,
+      checkOut: checkOut,
+      workingHours: workingHours,
+      lateMinutes: lateMinutes,
+      earlyLeaveMinutes: earlyLeaveMinutes,
+      overtimeHours: overtimeHours,
+      status: entry.status,
+      notes: String(rec.notes || (prev && prev.notes) || '').trim(),
+      checkInTimestamp: checkIn ? getCairoISOString() : '',
+      checkOutTimestamp: checkOut ? getCairoISOString() : '',
       updatedAt: getCairoISOString()
     };
 
     upsertRecord(ss, SHEETS.ATTENDANCE, 'id', finalRecord);
-    savedCount++;
+    savedRecords.push(finalRecord);
   }
 
   recordAuthoritativeAudit(
@@ -6915,10 +7048,15 @@ function saveDailyStaffAttendanceBatch(ss, payload, authUsername, authRole, requ
     'ATTENDANCE_BATCH_SAVE',
     'ATTENDANCE',
     date,
-    'حفظ حضور وغياب دفعة المعلمين والعاملين - التاريخ: ' + date + ' - العدد: ' + savedCount
+    'حفظ حضور وغياب دفعة المعلمين والعاملين - التاريخ: ' + date + ' - العدد: ' + savedRecords.length
   );
 
-  return { success: true, message: 'تم حفظ حضور وغياب العاملين بنجاح (' + savedCount + ' موظف)', savedCount: savedCount };
+  return {
+    success: true,
+    message: 'تم حفظ حضور وغياب العاملين بنجاح (' + savedRecords.length + ' موظف)',
+    savedCount: savedRecords.length,
+    records: savedRecords
+  };
 }
 
 function validateUsernamePolicy(username) {
