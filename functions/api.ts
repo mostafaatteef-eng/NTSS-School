@@ -193,6 +193,42 @@ export default {
         return json({ status: 'success', activeSchoolId: schoolId }, 200, corsOrigin);
       }
 
+      if (request.method === 'POST' && path === '/schedule/manage') {
+        const body: any = await request.json();
+        const action = String(body.action || '');
+        const data: any = body.data || {};
+        const schoolId = String(body.schoolId || user.active_school_id || user.school_id || '').trim();
+        if (!(await canAccessSchool(user, schoolId))) return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);
+        const allowedRoles = new Set(['SystemAdmin','Admin','SchoolAdmin','SchoolDirector','Supervisor','TeacherAffairs']);
+        if (!allowedRoles.has(String(user.role || ''))) return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);
+        if (action === 'getSchedule') {
+          const rows=await pool.query('SELECT * FROM schedule WHERE school_id=$1 ORDER BY weekday,period_no,id',[schoolId]);
+          return json({status:'success',data:rows.rows.map((r:any)=>({...(r.payload||{}),id:r.id,schoolId:r.school_id,academicYearId:r.academic_year_id,teacherId:r.teacher_id,grade:r.grade,classroom:r.classroom,weekday:r.weekday,periodNo:r.period_no}))},200,corsOrigin);
+        }
+        const id=String(data.id||'').trim() || ('SCH-'+schoolId+'-'+crypto.randomBytes(8).toString('hex').toUpperCase());
+        if (action === 'deleteScheduleEntry') {
+          const d=await pool.query('DELETE FROM schedule WHERE school_id=$1 AND id=$2 RETURNING id',[schoolId,id]);
+          if(!d.rowCount)return json({status:'error',code:'NOT_FOUND'},404,corsOrigin);
+          await pool.query('INSERT INTO audit_logs(school_id,user_id,username,role,action,entity,target_id,details) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[schoolId,user.user_id,user.email,user.role,'DELETE','SCHEDULE',id,'Deleted through Neon API']);
+          return json({status:'success',message:'تم حذف الحصة من الجدول'},200,corsOrigin);
+        }
+        if (action !== 'saveScheduleEntry') return json({status:'error',code:'ACTION_NOT_MIGRATED'},400,corsOrigin);
+        const collision=await pool.query('SELECT school_id FROM schedule WHERE id=$1 AND school_id<>$2',[id,schoolId]);
+        if(collision.rowCount)return json({status:'error',code:'CROSS_SCHOOL_ID_COLLISION'},409,corsOrigin);
+        const payload=JSON.stringify({...data,id});
+        const saved=await pool.query(
+          `INSERT INTO schedule(id,school_id,academic_year_id,teacher_id,grade,classroom,weekday,period_no,payload)
+           VALUES($1,$2,NULLIF($3,''),NULLIF($4,''),$5,$6,$7,$8,$9::jsonb)
+           ON CONFLICT(id) DO UPDATE SET academic_year_id=EXCLUDED.academic_year_id,teacher_id=EXCLUDED.teacher_id,grade=EXCLUDED.grade,classroom=EXCLUDED.classroom,weekday=EXCLUDED.weekday,period_no=EXCLUDED.period_no,payload=EXCLUDED.payload,updated_at=now()
+           WHERE schedule.school_id=EXCLUDED.school_id RETURNING *`,
+          [id,schoolId,String(data.academicYearId||''),String(data.teacherId||''),String(data.grade||''),String(data.classroom||''),String(data.weekday||data.day||''),Number(data.periodNo||data.period||0)||null,payload]
+        );
+        if(!saved.rowCount)return json({status:'error',code:'SCHEDULE_WRITE_REJECTED'},409,corsOrigin);
+        await pool.query('INSERT INTO audit_logs(school_id,user_id,username,role,action,entity,target_id,details) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[schoolId,user.user_id,user.email,user.role,'UPSERT','SCHEDULE',id,'Saved through Neon API']);
+        const r:any=saved.rows[0];
+        return json({status:'success',message:'تم حفظ الحصة في الجدول بنجاح',data:{...(r.payload||{}),id:r.id,schoolId:r.school_id}},200,corsOrigin);
+      }
+
       if (request.method === 'POST' && path === '/leave-management') {
         const body: any = await request.json();
         const action = String(body.action || '');
