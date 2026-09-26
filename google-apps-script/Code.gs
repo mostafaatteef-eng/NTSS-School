@@ -8929,6 +8929,174 @@ function provisionInitialSystemFromScriptProperties() {
 }
 
 /**
+ * Server-only SystemAdmin credential configuration / rotation.
+ * NOT exposed through doGet/doPost.
+ *
+ * Script Properties:
+ * - SYSTEM_ADMIN_EMAIL
+ * - SYSTEM_ADMIN_PASSWORD
+ * - SYSTEM_ADMIN_FULL_NAME (optional)
+ * - SYSTEM_ADMIN_USER_ID (optional; required only when multiple SystemAdmin accounts exist
+ *   and the configured email does not already identify the target)
+ *
+ * Security:
+ * - Never stores plaintext password in sheets.
+ * - Deletes SYSTEM_ADMIN_PASSWORD immediately after successful hashing.
+ * - Derives allowedSchoolIds from the active Master_Schools registry.
+ * - Forces GLOBAL semantics by clearing schoolId and employeeId.
+ * - Revokes existing staff sessions for the configured SystemAdmin.
+ */
+function configureSystemAdminFromScriptProperties() {
+  var props = PropertiesService.getScriptProperties();
+  if (!props) {
+    return { success: false, code: 'PROPERTIES_UNAVAILABLE', message: 'Script Properties are not available.' };
+  }
+
+  var cleanEmail = normalizeEmail(props.getProperty('SYSTEM_ADMIN_EMAIL'));
+  var cleanPassword = String(props.getProperty('SYSTEM_ADMIN_PASSWORD') || '').trim();
+  var cleanFullName = String(props.getProperty('SYSTEM_ADMIN_FULL_NAME') || '').trim() || 'مدير النظام';
+  var targetUserId = String(props.getProperty('SYSTEM_ADMIN_USER_ID') || '').trim();
+
+  if (!cleanEmail || !isValidEmailFormat(cleanEmail)) {
+    return { success: false, code: 'INVALID_EMAIL', message: 'SYSTEM_ADMIN_EMAIL is missing or invalid.' };
+  }
+  if (!cleanPassword) {
+    return { success: false, code: 'PASSWORD_REQUIRED', message: 'SYSTEM_ADMIN_PASSWORD is required.' };
+  }
+
+  var passValidation = validatePasswordPolicy(cleanPassword, cleanEmail);
+  if (!passValidation.valid) {
+    return { success: false, code: 'INVALID_PASSWORD_POLICY', message: passValidation.message };
+  }
+
+  var masterSs = SpreadsheetApp.getActiveSpreadsheet();
+  ensureProductionStaffSheetsExist(masterSs);
+
+  var schools = getSheetData(masterSs, SHEETS.MASTER_SCHOOLS);
+  var allowedSchoolIds = schools
+    .filter(function(s) {
+      return String(s.status || '').trim() === 'Active' && !!String(s.schoolId || '').trim();
+    })
+    .map(function(s) {
+      return String(s.schoolId || '').trim().toUpperCase();
+    });
+
+  if (allowedSchoolIds.length === 0) {
+    return { success: false, code: 'NO_ACTIVE_SCHOOLS', message: 'No active schools are registered in Master_Schools.' };
+  }
+
+  var users = getSheetData(masterSs, SHEETS.USERS);
+  var emailMatches = users.filter(function(u) {
+    return normalizeEmail(u.email) === cleanEmail;
+  });
+
+  if (emailMatches.length > 1) {
+    return { success: false, code: 'DUPLICATE_ACCOUNT_EMAIL', message: 'Configured email is duplicated in Users.' };
+  }
+
+  var target = emailMatches.length === 1 ? emailMatches[0] : null;
+  if (target && String(target.role || '').trim() !== 'SystemAdmin') {
+    return { success: false, code: 'EMAIL_ALREADY_USED', message: 'Configured email belongs to a non-SystemAdmin account.' };
+  }
+
+  if (!target && targetUserId) {
+    for (var i = 0; i < users.length; i++) {
+      if (String(users[i].id || '').trim() === targetUserId) {
+        if (String(users[i].role || '').trim() !== 'SystemAdmin') {
+          return { success: false, code: 'INVALID_TARGET_USER', message: 'SYSTEM_ADMIN_USER_ID does not reference a SystemAdmin.' };
+        }
+        target = users[i];
+        break;
+      }
+    }
+    if (!target) {
+      return { success: false, code: 'TARGET_USER_NOT_FOUND', message: 'SYSTEM_ADMIN_USER_ID was not found.' };
+    }
+  }
+
+  if (!target) {
+    var systemAdmins = users.filter(function(u) {
+      return String(u.role || '').trim() === 'SystemAdmin';
+    });
+
+    if (systemAdmins.length === 1) {
+      target = systemAdmins[0];
+    } else if (systemAdmins.length > 1) {
+      return {
+        success: false,
+        code: 'SYSTEM_ADMIN_TARGET_AMBIGUOUS',
+        message: 'Multiple SystemAdmin accounts exist. Set SYSTEM_ADMIN_USER_ID to select the target safely.'
+      };
+    }
+  }
+
+  var salt = generateSecureRandomToken(16);
+  var hash = computeSaltedHash(passValidation.cleanPassword, salt, PBKDF2_ITERATIONS);
+  var nowIso = getCairoISOString();
+
+  var configuredUser = target || {
+    id: 'usr-admin-' + Utilities.getUuid().replace(/-/g, '').substring(0, 12),
+    username: 'systemadmin',
+    createdAt: nowIso
+  };
+
+  configuredUser.email = cleanEmail;
+  configuredUser.fullName = cleanFullName;
+  configuredUser.role = 'SystemAdmin';
+  configuredUser.status = 'Active';
+  configuredUser.department = 'إدارة النظام';
+  configuredUser.schoolId = '';
+  configuredUser.employeeId = '';
+  configuredUser.allowedSchoolIds = JSON.stringify(allowedSchoolIds);
+  configuredUser.passwordHash = hash;
+  configuredUser.passwordSalt = salt;
+  configuredUser.passwordAlgorithm = 'PBKDF2-HMAC-SHA256';
+  configuredUser.passwordIterations = PBKDF2_ITERATIONS;
+  configuredUser.passwordChangedAt = nowIso;
+
+  upsertRecord(masterSs, SHEETS.USERS, 'id', configuredUser);
+
+  // Revoke previous staff sessions after credential rotation.
+  var sessions = getSheetData(masterSs, SHEETS.SESSIONS);
+  for (var s = 0; s < sessions.length; s++) {
+    if (
+      String(sessions[s].userId || '').trim() === String(configuredUser.id || '').trim() &&
+      String(sessions[s].status || '').trim().toUpperCase() === 'ACTIVE'
+    ) {
+      sessions[s].status = 'REVOKED';
+      upsertRecord(masterSs, SHEETS.SESSIONS, 'sessionId', sessions[s]);
+    }
+  }
+
+  props.deleteProperty('SYSTEM_ADMIN_PASSWORD');
+  props.deleteProperty('SYSTEM_ADMIN_EMAIL');
+  props.deleteProperty('SYSTEM_ADMIN_FULL_NAME');
+  props.deleteProperty('SYSTEM_ADMIN_USER_ID');
+  props.setProperty('SYSTEM_ADMIN_CREDENTIALS_CONFIGURED_AT', nowIso);
+
+  recordAuthoritativeAudit(
+    masterSs,
+    'SYSADMIN_CONFIG_' + Utilities.getUuid().substring(0, 8),
+    cleanEmail,
+    'SystemAdmin',
+    'SYSTEM_ADMIN_CREDENTIALS_CONFIGURED',
+    'USERS',
+    configuredUser.id,
+    'تم ضبط بيانات دخول مدير النظام من Script Properties وإبطال الجلسات السابقة'
+  );
+
+  return {
+    success: true,
+    userId: configuredUser.id,
+    email: cleanEmail,
+    role: 'SystemAdmin',
+    accessScope: 'GLOBAL',
+    allowedSchoolIds: allowedSchoolIds,
+    message: 'SystemAdmin credentials configured successfully.'
+  };
+}
+
+/**
  * Manual verification helper function.
  * Strictly non-public: logs verification findings to Logger without revealing secrets.
  *
