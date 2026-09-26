@@ -1882,72 +1882,72 @@ class StorageService {
   public async saveDailyStaffAttendanceBatchToBackend(params: {
     date: string;
     records: AttendanceRecord[];
-  }): Promise<{ success: boolean; message?: string; savedCount?: number; records?: AttendanceRecord[]; cacheUpdated?: boolean }> {
+  }): Promise<{ success: boolean; message?: string; savedCount?: number; records?: AttendanceRecord[] }> {
     const { date, records } = params;
     if (!records || records.length === 0) {
-      return { success: true, message: 'لا توجد سجلات لحفظها', savedCount: 0, records: [], cacheUpdated: false };
+      return { success: true, message: 'لا توجد سجلات لحفظها', savedCount: 0, records: [] };
     }
+
+    // Client submits only operational inputs. Identity metadata, IDs, calculated values,
+    // school context and timestamps are owned by the authoritative backend.
+    const requestRecords = records.map(rec => ({
+      employeeId: String(rec.employeeId || '').trim(),
+      date,
+      status: rec.status,
+      checkIn: String(rec.checkIn || '').trim(),
+      checkOut: String(rec.checkOut || '').trim(),
+      notes: String(rec.notes || '').trim(),
+    }));
 
     const backendRes = await this.pushPostDirect('saveDailyStaffAttendanceBatch', {
       date,
-      records,
+      records: requestRecords,
     });
 
     if (!backendRes.success) {
-      // STRICT: Do NOT update localStorage if backend failed.
       return {
         success: false,
         message: backendRes.message || 'فشل حفظ حضور العاملين في الخادم. لم يتم تحديث التخزين المحلي.',
-        cacheUpdated: false,
       };
     }
 
-    // Only server-returned canonical records may update the UX cache.
-    const canonicalRecords = Array.isArray(backendRes.records)
-      ? backendRes.records as AttendanceRecord[]
-      : null;
+    // Never hydrate the cache from the client payload after a backend save.
+    // The server must echo the canonical records it actually persisted.
+    const authoritativeRecords: AttendanceRecord[] = Array.isArray(backendRes.records)
+      ? backendRes.records
+      : [];
 
-    if (!canonicalRecords) {
+    if (authoritativeRecords.length !== records.length) {
       return {
-        success: true,
-        message: backendRes.message || 'تم الحفظ في الخادم، لكن لم يتم تحديث النسخة المحلية لعدم استلام سجلات معتمدة.',
-        savedCount: Number(backendRes.savedCount || records.length),
-        records: [],
-        cacheUpdated: false,
+        success: false,
+        message: 'تمت استجابة الخادم بدون مجموعة السجلات المعتمدة كاملة. لم يتم تحديث التخزين المحلي حفاظاً على تطابق البيانات.',
       };
     }
 
     const all = this.getAttendance();
     const map = new Map<string, AttendanceRecord>();
     all.forEach(a => {
-      map.set(`${a.date}_${a.employeeId}`, a);
+      map.set(`${String(a.date || '').trim()}_${String(a.employeeId || '').trim().toLowerCase()}`, a);
     });
 
-    canonicalRecords.forEach(rec => {
-      const key = `${rec.date}_${rec.employeeId}`;
-      map.set(key, { ...rec });
+    authoritativeRecords.forEach(rec => {
+      const key = `${String(rec.date || '').trim()}_${String(rec.employeeId || '').trim().toLowerCase()}`;
+      map.set(key, rec);
     });
 
-    const updatedList = Array.from(map.values());
-    try {
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify(updatedList));
-      }
-    } catch {}
-
+    localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify(Array.from(map.values())));
     this.logAudit(
       'UPDATE',
       'ATTENDANCE',
-      `تحديث نسخة العرض المحلية من السجلات المعتمدة للخادم لعدد (${canonicalRecords.length}) موظف بتاريخ (${date})`
+      `تحديث كاش دوام العاملين من الاستجابة المعتمدة للخادم لعدد (${authoritativeRecords.length}) موظف بتاريخ (${date})`
     );
     this.notifyChange();
 
     return {
       success: true,
-      message: backendRes.message || `تم حفظ دوام العاملين بنجاح (${canonicalRecords.length} موظف)`,
-      savedCount: Number(backendRes.savedCount || canonicalRecords.length),
-      records: canonicalRecords,
-      cacheUpdated: true,
+      message: backendRes.message || `تم حفظ دوام العاملين بنجاح (${authoritativeRecords.length} موظف)`,
+      savedCount: authoritativeRecords.length,
+      records: authoritativeRecords,
     };
   }
 
