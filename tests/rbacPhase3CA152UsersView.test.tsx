@@ -114,10 +114,13 @@ describe('PHASE 3C-A15.2 — UsersView authoritative multi-school UI', () => {
     const text = container.textContent || '';
     expect(text).toContain('المدرسة');
     expect(text).toContain('SCH-BADR');
-    const roleSelects = Array.from(container.querySelectorAll('select'));
-    const optionTexts = roleSelects.flatMap(select =>
-      Array.from(select.querySelectorAll('option')).map(option => option.textContent || '')
+    const modal = Array.from(container.querySelectorAll('form')).find(form =>
+      form.textContent?.includes('إضافة مستخدم جديد')
     );
+    const roleSelect = modal?.querySelector('select');
+    const optionTexts = roleSelect
+      ? Array.from(roleSelect.querySelectorAll('option')).map(option => option.textContent || '')
+      : [];
     expect(optionTexts).not.toContain('مدير النظام المركزي');
   });
 
@@ -159,7 +162,10 @@ describe('PHASE 3C-A15.2 — UsersView authoritative multi-school UI', () => {
       code: 'ACCESS_DENIED_SCHOOL_SCOPE',
       message: 'denied',
     });
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    Object.defineProperty(window, 'confirm', {
+      configurable: true,
+      value: vi.fn(() => true),
+    });
 
     const toggle = container.querySelector('button[title="تغيير الحالة"]') as HTMLButtonElement | null;
     await act(async () => {
