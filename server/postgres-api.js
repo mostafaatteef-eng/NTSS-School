@@ -182,5 +182,30 @@ app.get('/api/student-attendance', auth, async (req,res) => {
   res.json({status:'success',data:rows});
 });
 
+app.get('/api/schools', auth, async (req,res) => {
+  const params=[]; let sql='SELECT id,code,name,status FROM schools WHERE status=\'ACTIVE\'';
+  if(req.auth.access_scope!=='GLOBAL'){
+    params.push(req.auth.user_id,req.auth.school_id);
+    sql += ' AND (id=$2 OR id IN (SELECT school_id FROM user_school_access WHERE user_id=$1))';
+  }
+  sql += ' ORDER BY name';
+  const {rows}=await pool.query(sql,params);
+  res.json({status:'success',data:rows});
+});
+
+app.get('/api/employees', auth, async (req,res) => {
+  const schoolId=resolveSchoolId(req);
+  if(!schoolId) return res.status(400).json({status:'error',code:'SCHOOL_CONTEXT_REQUIRED'});
+  if(!(await canAccessSchool(req,schoolId))) return res.status(403).json({status:'error',code:'FORBIDDEN'});
+  const page=Math.max(1,Number(req.query.page||1)), pageSize=Math.min(100,Math.max(10,Number(req.query.pageSize||50))), offset=(page-1)*pageSize;
+  const q=String(req.query.q||'').trim(); const values=[schoolId]; let where='school_id=$1';
+  if(q){values.push('%'+q+'%'); where+=' AND (full_name ILIKE $2 OR employee_code ILIKE $2)';}
+  const count=await pool.query('SELECT count(*)::int total FROM employees WHERE '+where,values);
+  values.push(pageSize,offset); const li=values.length-1, oi=values.length;
+  const data=await pool.query('SELECT * FROM employees WHERE '+where+' ORDER BY full_name LIMIT $'+li+' OFFSET $'+oi,values);
+  res.json({status:'success',data:data.rows,pagination:{page,pageSize,total:count.rows[0].total,pages:Math.ceil(count.rows[0].total/pageSize)}});
+});
+
+
 app.use((err,_req,res,_next)=>{ console.error(err); res.status(500).json({status:'error',code:'INTERNAL_SERVER_ERROR'}); });
 app.listen(PORT,()=>console.log(`NTSS PostgreSQL API listening on :${PORT}`));
