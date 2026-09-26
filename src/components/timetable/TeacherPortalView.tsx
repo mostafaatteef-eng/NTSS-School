@@ -465,6 +465,20 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ onBackToLo
   }
 
   // AUTHENTICATED TEACHER PORTAL
+  const authoritativeTeacherSession = storageService.getTeacherSession();
+  const teacherSchoolId = String(authoritativeTeacherSession?.schoolId || '').trim();
+  const teacherPortalUser: User = {
+    id: activeTeacher.id,
+    username: authoritativeTeacherSession?.username || activeTeacher.teacherCode || activeTeacher.name,
+    fullName: activeTeacher.name,
+    role: 'Teacher',
+    accessScope: 'SELF',
+    employeeId: activeTeacher.id,
+    schoolId: teacherSchoolId,
+    activeSchoolId: teacherSchoolId,
+    allowedSchoolIds: teacherSchoolId ? [teacherSchoolId] : [],
+  };
+
   return (
     <div className="space-y-6" dir="rtl">
       {/* Teacher Portal Independent Header & Security Guard Banner */}
@@ -689,7 +703,7 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ onBackToLo
       {/* TAB: CURRICULUM PLANS & DISTRIBUTION */}
       {portalTab === 'curriculum' && (
         <div>
-          <CurriculumPlansView currentUser={currentUser || null} />
+          <CurriculumPlansView currentUser={teacherPortalUser} />
         </div>
       )}
 
@@ -839,16 +853,7 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ onBackToLo
       {portalTab === 'requests' && (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
           <MyRequestsView
-            currentUser={
-              currentUser || {
-                id: activeTeacher.id,
-                username: activeTeacher.teacherCode || activeTeacher.name,
-                fullName: activeTeacher.name,
-                role: 'Teacher',
-                employeeId: activeTeacher.id,
-                schoolId: (activeTeacher as any).schoolId || 'SCH-001',
-              }
-            }
+            currentUser={teacherPortalUser}
           />
         </div>
       )}
