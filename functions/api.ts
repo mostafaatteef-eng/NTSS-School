@@ -259,6 +259,24 @@ export default {
         return json({status:'success',message:'تم تحديث الحساب.',user:await project(u.rows[0])},200,corsOrigin);
       }
 
+      if (request.method === 'POST' && path === '/settings/manage') {
+        const body: any=await request.json(); const action=String(body.action||''); const data:any=body.data||{};
+        const schoolId=String(body.schoolId||user.active_school_id||user.school_id||'').trim();
+        if(!(await canAccessSchool(user,schoolId)))return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);
+        if(action==='getSettings'){
+          const row=await pool.query("SELECT details FROM audit_logs WHERE school_id=$1 AND entity='SYSTEM_SETTINGS' AND action='SNAPSHOT' ORDER BY created_at DESC,id DESC LIMIT 1",[schoolId]);
+          if(!row.rowCount)return json({status:'success',data:null},200,corsOrigin);
+          try{return json({status:'success',data:JSON.parse(String(row.rows[0].details||'{}'))},200,corsOrigin);}catch{return json({status:'success',data:null},200,corsOrigin);}
+        }
+        if(action!=='saveSettings')return json({status:'error',code:'ACTION_NOT_MIGRATED'},400,corsOrigin);
+        const allowedRoles=new Set(['SystemAdmin','Admin','SchoolAdmin','SchoolDirector']);
+        if(!allowedRoles.has(String(user.role||'')))return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);
+        const safe={...data};
+        delete safe.googleAppsScriptUrl; delete safe.sessionToken; delete safe.password; delete safe.passwordHash; delete safe.databaseUrl;
+        await pool.query("INSERT INTO audit_logs(school_id,user_id,username,role,action,entity,target_id,details) VALUES($1,$2,$3,$4,'SNAPSHOT','SYSTEM_SETTINGS','CURRENT',$5)",[schoolId,user.user_id,user.email,user.role,JSON.stringify(safe)]);
+        return json({status:'success',message:'تم حفظ إعدادات المدرسة في PostgreSQL.',data:safe},200,corsOrigin);
+      }
+
       if (request.method === 'POST' && path === '/academic-years/manage') {
         const body: any=await request.json(); const action=String(body.action||''); const data:any=body.data||{};
         const schoolId=String(body.schoolId||user.active_school_id||user.school_id||'').trim();
