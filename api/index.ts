@@ -1,4 +1,4 @@
-import handler from '../functions/api';
+import handler from '../functions/api.ts';
 
 export default async function vercelHandler(request: any, response: any) {
   const protocol = request.headers['x-forwarded-proto'] || 'https';
