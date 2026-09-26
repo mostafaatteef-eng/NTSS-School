@@ -12,6 +12,14 @@ const allowedOrigins = new Set([
 const isAllowedOrigin = (origin: string) => allowedOrigins.has(origin.replace(/\/$/, ''));
 const tokenHash = (value: string) => crypto.createHash('sha256').update(value).digest('hex');
 
+const legacyPasswordHash = (password: string, salt: string, iterations: number) => {
+  let digest = crypto.createHmac('sha256', salt).update(password + salt).digest();
+  for (let i = 1; i < Math.max(1, Number(iterations || 10000)); i++) {
+    digest = crypto.createHmac('sha256', salt).update(digest.toString('hex')).digest();
+  }
+  return digest.toString('hex');
+};
+
 function json(data: unknown, status = 200, origin = '') {
   return new Response(JSON.stringify(data), { status, headers: {
     'content-type': 'application/json',
