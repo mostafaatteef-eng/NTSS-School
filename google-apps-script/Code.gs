@@ -3002,15 +3002,10 @@ function handleStaffLogin(masterSs, normalizedEmail, inputPassword, requestId) {
     return { success: false, code: 'CREDENTIALS_REQUIRED', message: 'يرجى إدخال البريد الإلكتروني وكلمة المرور' };
   }
 
-  ensureProductionStaffSheetsExist(masterSs);
-  var masterUsersSheet = masterSs.getSheetByName(SHEETS.USERS);
-  if (masterUsersSheet) {
-    ensureHeaderColumn(masterUsersSheet, 'email');
-    ensureHeaderColumn(masterUsersSheet, 'schoolId');
-    ensureHeaderColumn(masterUsersSheet, 'allowedSchoolIds');
-    ensureHeaderColumn(masterUsersSheet, 'employeeId');
-  }
-
+  // Authentication is a hot path: schema creation/migration must never run
+  // during every login. Provisioning/deployment owns schema migration.
+  // Running ensureProductionStaffSheetsExist() here scanned every canonical
+  // sheet and re-ran idempotent migrations before password verification.
   var masterUsers = getSheetData(masterSs, SHEETS.USERS);
   if (!masterUsers || masterUsers.length === 0) {
     recordAuthoritativeAudit(masterSs, requestId, normalizedEmail, '', 'LOGIN_FAILED', 'AUTH', '', 'قاعدة بيانات المستخدمين فارغة');
