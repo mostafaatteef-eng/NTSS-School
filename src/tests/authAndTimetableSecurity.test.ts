@@ -190,82 +190,68 @@ describe('NTSS ERP - Security, Login Numbers, First Login & Timetable Integratio
     expect(current).toBeNull();
   });
 
-  it('Test 12: Public student schedule endpoint returns only sanitized fields (no nationalId, no phone)', async () => {
-    const scheduleItem: ScheduleItem = {
-      id: 'SCHED-PUBLIC-1',
-      grade: 'الصف الأول الثانوي',
-      classroom: '1/1',
-      dayOfWeek: 'الأحد',
-      periodNumber: 1,
-      startTime: '08:00',
-      endTime: '08:45',
-      subject: 'البرمجة والذكاء الاصطناعي',
-      teacherName: 'م. أحمد حسني',
-      room: 'معمل الحاسب 1',
-      status: 'Published',
-      isActive: true,
-    };
-    storageService.saveSchedule([scheduleItem]);
+  it('Test 12: Public student schedule is school-authoritative and sanitized', async () => {
+    vi.spyOn(storageService, 'getBackendUrl').mockReturnValue('https://example.com/public-schedule');
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        status: 'success',
+        schoolId: 'SCH-BADR',
+        gradeName: 'الصف الأول الثانوي',
+        classroomName: '1/1',
+        schedule: [{
+          dayOfWeek: 'الأحد',
+          periodNumber: 1,
+          startTime: '08:00',
+          endTime: '08:45',
+          subjectName: 'البرمجة والذكاء الاصطناعي',
+          teacherDisplayName: 'م. أحمد حسني',
+          roomName: 'معمل الحاسب 1',
+        }],
+      }),
+    } as Response);
 
-    const res = await storageService.getPublicClassSchedule('الصف الأول الثانوي', '1/1');
+    const res = await storageService.getPublicClassSchedule(
+      'الصف الأول الثانوي',
+      '1/1',
+      'SCH-BADR'
+    );
+
     expect(res.success).toBe(true);
-    expect(res.data).toBeDefined();
-    expect(res.data?.lessons.length).toBe(1);
+    expect(res.data?.schoolId).toBe('SCH-BADR');
+    expect(res.data?.lessons?.length).toBe(1);
 
-    const lesson = res.data?.lessons[0];
+    const lesson = res.data?.lessons?.[0];
     expect(lesson?.subjectName).toBe('البرمجة والذكاء الاصطناعي');
-    expect(lesson?.teacherDisplayName).toBe('م. أحمد حسني');
-    expect(lesson?.periodNumber).toBe(1);
-
-    // Verify absence of sensitive data in response
     expect((lesson as any).nationalId).toBeUndefined();
     expect((lesson as any).teacherPhone).toBeUndefined();
     expect((lesson as any).salary).toBeUndefined();
+
+    const body = JSON.parse(String((fetchSpy.mock.calls[0][1] as RequestInit).body));
+    expect(body.action).toBe('getPublicClassSchedule');
+    expect(body.schoolId).toBe('SCH-BADR');
   });
 
-  it('Test 13: Public student schedule excludes drafts, cancelled, and inactive lessons', async () => {
-    const items: ScheduleItem[] = [
-      {
-        id: 'SCHED-PUB',
-        grade: 'الصف الأول الثانوي',
-        classroom: '1/2',
-        dayOfWeek: 'الإثنين',
-        periodNumber: 1,
-        subject: 'شبكات الحاسب',
-        teacherName: 'أ. محمود',
-        status: 'Published',
-        isActive: true,
-      },
-      {
-        id: 'SCHED-DRAFT',
-        grade: 'الصف الأول الثانوي',
-        classroom: '1/2',
-        dayOfWeek: 'الإثنين',
-        periodNumber: 2,
-        subject: 'رياضيات تطبيقية',
-        teacherName: 'أ. خالد',
-        status: 'Draft',
-        isActive: true,
-      },
-      {
-        id: 'SCHED-CANCELLED',
-        grade: 'الصف الأول الثانوي',
-        classroom: '1/2',
-        dayOfWeek: 'الإثنين',
-        periodNumber: 3,
-        subject: 'فيزياء',
-        teacherName: 'أ. سامي',
-        status: 'Published',
-        isActive: true,
-        isCancelled: true,
-      },
-    ];
-    storageService.saveSchedule(items);
+  it('Test 13: Public student schedule fails closed without school context and never reads local schedule', async () => {
+    storageService.saveSchedule([{
+      id: 'LOCAL-PUBLISHED-SHOULD-NOT-BE-AUTHORITY',
+      grade: 'الصف الأول الثانوي',
+      classroom: '1/2',
+      dayOfWeek: 'الإثنين',
+      periodNumber: 1,
+      subject: 'بيانات محلية',
+      teacherName: 'معلم محلي',
+      status: 'Published',
+      isActive: true,
+    }]);
 
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
     const res = await storageService.getPublicClassSchedule('الصف الأول الثانوي', '1/2');
-    expect(res.success).toBe(true);
-    expect(res.data?.lessons.length).toBe(1);
-    expect(res.data?.lessons[0].subjectName).toBe('شبكات الحاسب');
+
+    expect(res.success).toBe(false);
+    expect(res.data).toBeUndefined();
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it('Test 14: Timetable scheduling validates teacher registration (rejects unknown teacher code)', () => {
