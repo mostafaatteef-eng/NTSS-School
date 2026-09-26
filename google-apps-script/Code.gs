@@ -1179,6 +1179,74 @@ function doPost(e) {
       return createJsonResponse(output, 200);
     }
 
+    if (action === 'createManagedStudent') {
+      var createStudentResult = createManagedStudentRecord(
+        schoolSs,
+        payload || {},
+        effectiveSchoolId,
+        authenticatedUsername,
+        authenticatedRole,
+        requestId
+      );
+      if (!createStudentResult.success) {
+        return createJsonResponse({
+          status: 'error',
+          code: createStudentResult.code || 'STUDENT_CREATE_FAILED',
+          message: createStudentResult.message,
+          requestId: requestId
+        }, createStudentResult.httpStatus || 400);
+      }
+      output.message = createStudentResult.message;
+      output.student = createStudentResult.student;
+      output.enrollment = createStudentResult.enrollment || null;
+      return createJsonResponse(output, 200);
+    }
+
+    if (action === 'updateManagedStudent') {
+      var updateStudentResult = updateManagedStudentRecord(
+        schoolSs,
+        payload || {},
+        effectiveSchoolId,
+        authenticatedUsername,
+        authenticatedRole,
+        requestId
+      );
+      if (!updateStudentResult.success) {
+        return createJsonResponse({
+          status: 'error',
+          code: updateStudentResult.code || 'STUDENT_UPDATE_FAILED',
+          message: updateStudentResult.message,
+          requestId: requestId
+        }, updateStudentResult.httpStatus || 400);
+      }
+      output.message = updateStudentResult.message;
+      output.student = updateStudentResult.student;
+      output.enrollment = updateStudentResult.enrollment || null;
+      return createJsonResponse(output, 200);
+    }
+
+    if (action === 'setManagedStudentStatus') {
+      var studentStatusResult = setManagedStudentStatus(
+        schoolSs,
+        payload || {},
+        effectiveSchoolId,
+        authenticatedUsername,
+        authenticatedRole,
+        requestId
+      );
+      if (!studentStatusResult.success) {
+        return createJsonResponse({
+          status: 'error',
+          code: studentStatusResult.code || 'STUDENT_STATUS_FAILED',
+          message: studentStatusResult.message,
+          requestId: requestId
+        }, studentStatusResult.httpStatus || 400);
+      }
+      output.message = studentStatusResult.message;
+      output.student = studentStatusResult.student;
+      return createJsonResponse(output, 200);
+    }
+
     if (action === 'saveStudent' && payload) {
       if (payload.id) {
         var curStudents = getSheetData(schoolSs, SHEETS.STUDENTS);
@@ -3669,6 +3737,9 @@ var ACTION_PERMISSION_MAP = {
   saveStudent: 'students.create',
   bulkSaveStudents: 'students.import',
   deleteStudent: 'students.delete',
+  createManagedStudent: 'students.create',
+  updateManagedStudent: 'students.edit',
+  setManagedStudentStatus: 'students.edit',
 
   // Student Attendance
   getStudentAttendance: 'studentAttendance.view',
@@ -6787,6 +6858,331 @@ function createJsonResponse(obj, statusCode) {
 // -------------------------------------------------------------
 // BATCH ATTENDANCE & SECURE TEACHER ACCOUNT HELPERS
 // -------------------------------------------------------------
+
+function findStudentRecordById(records, id) {
+  var targetId = String(id || '').trim().toLowerCase();
+  if (!targetId) return null;
+  for (var i = 0; i < records.length; i++) {
+    if (String(records[i].id || records[i].studentId || '').trim().toLowerCase() === targetId) {
+      return records[i];
+    }
+  }
+  return null;
+}
+
+function validateManagedStudentUniqueness(students, studentId, studentCode, nationalId) {
+  var ownId = String(studentId || '').trim().toLowerCase();
+  var code = String(studentCode || '').trim().toLowerCase();
+  var nid = String(nationalId || '').trim();
+
+  for (var i = 0; i < students.length; i++) {
+    var currentId = String(students[i].id || students[i].studentId || '').trim().toLowerCase();
+    if (ownId && currentId === ownId) continue;
+
+    if (code && String(students[i].studentCode || '').trim().toLowerCase() === code) {
+      return { success: false, code: 'DUPLICATE_STUDENT_CODE', message: 'كود الطالب مستخدم بالفعل داخل المدرسة.' };
+    }
+    if (nid && String(students[i].nationalId || '').trim() === nid) {
+      return { success: false, code: 'DUPLICATE_STUDENT_NATIONAL_ID', message: 'الرقم القومي مستخدم بالفعل لطالب آخر داخل المدرسة.' };
+    }
+  }
+
+  return { success: true };
+}
+
+function normalizeManagedStudentPayload(payload, existing, effectiveSchoolId) {
+  payload = payload || {};
+  existing = existing || {};
+
+  var name = String(payload.name !== undefined ? payload.name : existing.name || '').trim();
+  var stage = String(payload.stage !== undefined ? payload.stage : existing.stage || '').trim();
+  var grade = String(payload.grade !== undefined ? payload.grade : existing.grade || '').trim();
+  var classroom = String(payload.classroom !== undefined ? payload.classroom : existing.classroom || '').trim();
+  var studentCode = String(payload.studentCode !== undefined ? payload.studentCode : existing.studentCode || '').trim();
+
+  if (!name || !grade || !classroom) {
+    return {
+      success: false,
+      code: 'INVALID_STUDENT_PAYLOAD',
+      message: 'اسم الطالب والصف والفصل حقول مطلوبة.'
+    };
+  }
+
+  if (!studentCode) {
+    studentCode = 'STD-' + Utilities.getUuid().replace(/-/g, '').substring(0, 8).toUpperCase();
+  }
+
+  var status = String(existing.status || 'نشط').trim();
+  if (!existing.id) status = 'نشط';
+
+  return {
+    success: true,
+    student: {
+      id: String(existing.id || '').trim(),
+      schoolId: String(effectiveSchoolId || '').trim().toUpperCase(),
+      studentCode: studentCode,
+      name: name,
+      nationalId: String(payload.nationalId !== undefined ? payload.nationalId : existing.nationalId || '').trim(),
+      gender: String(payload.gender !== undefined ? payload.gender : existing.gender || '').trim(),
+      religion: String(payload.religion !== undefined ? payload.religion : existing.religion || '').trim(),
+      studentStatus: String(payload.studentStatus !== undefined ? payload.studentStatus : existing.studentStatus || '').trim(),
+      birthDate: String(payload.birthDate !== undefined ? payload.birthDate : existing.birthDate || '').trim(),
+      stage: stage,
+      stageId: String(payload.stageId !== undefined ? payload.stageId : existing.stageId || '').trim(),
+      grade: grade,
+      gradeId: String(payload.gradeId !== undefined ? payload.gradeId : existing.gradeId || '').trim(),
+      gradeName: String(payload.gradeName !== undefined ? payload.gradeName : existing.gradeName || grade).trim(),
+      classroom: classroom,
+      classroomId: String(payload.classroomId !== undefined ? payload.classroomId : existing.classroomId || '').trim(),
+      classroomNumber: String(payload.classroomNumber !== undefined ? payload.classroomNumber : existing.classroomNumber || '').trim(),
+      section: String(payload.section !== undefined ? payload.section : existing.section || '').trim(),
+      academicYear: String(payload.academicYear !== undefined ? payload.academicYear : existing.academicYear || '').trim(),
+      academicYearId: String(payload.academicYearId !== undefined ? payload.academicYearId : existing.academicYearId || '').trim(),
+      status: status,
+      enrollmentDate: String(payload.enrollmentDate !== undefined ? payload.enrollmentDate : existing.enrollmentDate || '').trim(),
+      phone: String(payload.phone !== undefined ? payload.phone : existing.phone || '').trim(),
+      parentId: String(payload.parentId !== undefined ? payload.parentId : existing.parentId || '').trim(),
+      parentName: String(payload.parentName !== undefined ? payload.parentName : existing.parentName || '').trim(),
+      relationship: String(payload.relationship !== undefined ? payload.relationship : existing.relationship || '').trim(),
+      parentPhone: String(payload.parentPhone !== undefined ? payload.parentPhone : existing.parentPhone || '').trim(),
+      parentEmail: String(payload.parentEmail !== undefined ? payload.parentEmail : existing.parentEmail || '').trim().toLowerCase(),
+      address: String(payload.address !== undefined ? payload.address : existing.address || '').trim(),
+      initialBehaviorScore: payload.initialBehaviorScore !== undefined
+        ? Number(payload.initialBehaviorScore)
+        : (existing.initialBehaviorScore !== undefined ? Number(existing.initialBehaviorScore) : 100),
+      notes: String(payload.notes !== undefined ? payload.notes : existing.notes || '').trim()
+    }
+  };
+}
+
+function upsertManagedStudentEnrollment(ss, student, enrollmentContext, actorUsername) {
+  enrollmentContext = enrollmentContext || {};
+  var academicYearId = String(enrollmentContext.academicYearId || student.academicYearId || '').trim();
+  if (!academicYearId) return null;
+
+  var academicYears = getSheetData(ss, SHEETS.ACADEMIC_YEARS);
+  var matchedYear = null;
+  for (var i = 0; i < academicYears.length; i++) {
+    if (String(academicYears[i].id || '').trim() === academicYearId) {
+      matchedYear = academicYears[i];
+      break;
+    }
+  }
+
+  var academicYearName = String(
+    (matchedYear && matchedYear.name) ||
+    enrollmentContext.academicYearName ||
+    student.academicYear ||
+    ''
+  ).trim();
+
+  var now = getCairoISOString();
+  var enrollments = getSheetData(ss, SHEETS.STUDENT_ENROLLMENTS);
+  var existingEnrollment = null;
+  for (var e = 0; e < enrollments.length; e++) {
+    if (
+      String(enrollments[e].studentId || '').trim() === String(student.id || '').trim() &&
+      String(enrollments[e].academicYearId || '').trim() === academicYearId
+    ) {
+      existingEnrollment = enrollments[e];
+      break;
+    }
+  }
+
+  var enrollment = {
+    id: String((existingEnrollment && existingEnrollment.id) || ('ENR-' + student.id + '-' + academicYearId)).trim(),
+    studentId: student.id,
+    studentCode: student.studentCode,
+    studentName: student.name,
+    academicYearId: academicYearId,
+    academicYearName: academicYearName,
+    gradeId: student.gradeId || '',
+    grade: student.grade,
+    classroomId: student.classroomId || '',
+    classroom: student.classroom,
+    section: student.section || '',
+    stage: student.stage || '',
+    enrollmentStatus: student.status === 'نشط' || student.status === 'Active' ? 'نشط' : 'موقوف',
+    status: 'ACTIVE',
+    promotionStatus: (existingEnrollment && existingEnrollment.promotionStatus) || 'ENROLLED',
+    enrollmentDate: String(
+      (existingEnrollment && existingEnrollment.enrollmentDate) ||
+      (matchedYear && matchedYear.startDate) ||
+      enrollmentContext.enrollmentDate ||
+      student.enrollmentDate ||
+      ''
+    ).trim(),
+    createdBy: String((existingEnrollment && existingEnrollment.createdBy) || actorUsername || '').trim(),
+    createdAt: String((existingEnrollment && existingEnrollment.createdAt) || now).trim(),
+    updatedAt: now
+  };
+
+  upsertRecord(ss, SHEETS.STUDENT_ENROLLMENTS, 'id', enrollment);
+  return enrollment;
+}
+
+function createManagedStudentRecord(ss, payload, effectiveSchoolId, actorUsername, actorRole, requestId) {
+  var normalized = normalizeManagedStudentPayload(payload, {}, effectiveSchoolId);
+  if (!normalized.success) return normalized;
+
+  var students = getSheetData(ss, SHEETS.STUDENTS);
+  var uniqueness = validateManagedStudentUniqueness(
+    students,
+    '',
+    normalized.student.studentCode,
+    normalized.student.nationalId
+  );
+  if (!uniqueness.success) return uniqueness;
+
+  var now = getCairoISOString();
+  normalized.student.id = 'STU-' + Utilities.getUuid().replace(/-/g, '').substring(0, 12).toUpperCase();
+  normalized.student.studentId = normalized.student.id;
+  normalized.student.createdAt = now;
+  normalized.student.updatedAt = now;
+
+  upsertRecord(ss, SHEETS.STUDENTS, 'id', normalized.student);
+  var enrollment = upsertManagedStudentEnrollment(
+    ss,
+    normalized.student,
+    payload.enrollmentContext || {},
+    actorUsername
+  );
+
+  recordAuthoritativeAudit(
+    ss,
+    requestId,
+    actorUsername,
+    actorRole,
+    'STUDENT_CREATED',
+    'STUDENTS',
+    normalized.student.id,
+    'إنشاء سجل طالب معتمد'
+  );
+
+  return {
+    success: true,
+    message: 'تم إنشاء الطالب بنجاح.',
+    student: normalized.student,
+    enrollment: enrollment
+  };
+}
+
+function updateManagedStudentRecord(ss, payload, effectiveSchoolId, actorUsername, actorRole, requestId) {
+  var studentId = String(payload.id || '').trim();
+  if (!studentId) {
+    return { success: false, code: 'STUDENT_ID_REQUIRED', message: 'معرف الطالب مطلوب للتعديل.' };
+  }
+
+  var students = getSheetData(ss, SHEETS.STUDENTS);
+  var existing = findStudentRecordById(students, studentId);
+  if (!existing) {
+    return { success: false, code: 'RESOURCE_NOT_FOUND', message: 'سجل الطالب غير موجود.', httpStatus: 404 };
+  }
+
+  if (
+    existing.schoolId &&
+    String(existing.schoolId).trim().toUpperCase() !== String(effectiveSchoolId || '').trim().toUpperCase()
+  ) {
+    return { success: false, code: 'CROSS_SCHOOL_ACCESS_DENIED', message: 'الطالب خارج نطاق المدرسة الحالية.', httpStatus: 403 };
+  }
+
+  var normalized = normalizeManagedStudentPayload(payload, existing, effectiveSchoolId);
+  if (!normalized.success) return normalized;
+
+  var uniqueness = validateManagedStudentUniqueness(
+    students,
+    studentId,
+    normalized.student.studentCode,
+    normalized.student.nationalId
+  );
+  if (!uniqueness.success) return uniqueness;
+
+  normalized.student.id = String(existing.id || studentId).trim();
+  normalized.student.studentId = normalized.student.id;
+  normalized.student.status = String(existing.status || 'نشط').trim();
+  normalized.student.createdAt = String(existing.createdAt || getCairoISOString()).trim();
+  normalized.student.updatedAt = getCairoISOString();
+
+  upsertRecord(ss, SHEETS.STUDENTS, 'id', normalized.student);
+  var enrollment = upsertManagedStudentEnrollment(
+    ss,
+    normalized.student,
+    payload.enrollmentContext || {},
+    actorUsername
+  );
+
+  recordAuthoritativeAudit(
+    ss,
+    requestId,
+    actorUsername,
+    actorRole,
+    'STUDENT_UPDATED',
+    'STUDENTS',
+    normalized.student.id,
+    'تعديل سجل طالب معتمد'
+  );
+
+  return {
+    success: true,
+    message: 'تم تحديث بيانات الطالب بنجاح.',
+    student: normalized.student,
+    enrollment: enrollment
+  };
+}
+
+function setManagedStudentStatus(ss, payload, effectiveSchoolId, actorUsername, actorRole, requestId) {
+  var studentId = String(payload.id || '').trim();
+  var requestedStatus = String(payload.status || '').trim();
+
+  if (!studentId || ['نشط', 'غير نشط', 'Active', 'Inactive'].indexOf(requestedStatus) === -1) {
+    return { success: false, code: 'INVALID_STUDENT_STATUS_REQUEST', message: 'معرف الطالب وحالة صالحة مطلوبان.' };
+  }
+
+  var students = getSheetData(ss, SHEETS.STUDENTS);
+  var existing = findStudentRecordById(students, studentId);
+  if (!existing) {
+    return { success: false, code: 'RESOURCE_NOT_FOUND', message: 'سجل الطالب غير موجود.', httpStatus: 404 };
+  }
+
+  if (
+    existing.schoolId &&
+    String(existing.schoolId).trim().toUpperCase() !== String(effectiveSchoolId || '').trim().toUpperCase()
+  ) {
+    return { success: false, code: 'CROSS_SCHOOL_ACCESS_DENIED', message: 'الطالب خارج نطاق المدرسة الحالية.', httpStatus: 403 };
+  }
+
+  existing.schoolId = String(effectiveSchoolId || '').trim().toUpperCase();
+  existing.status = requestedStatus === 'Active' ? 'نشط' : requestedStatus === 'Inactive' ? 'غير نشط' : requestedStatus;
+  existing.updatedAt = getCairoISOString();
+
+  upsertRecord(ss, SHEETS.STUDENTS, 'id', existing);
+
+  var enrollments = getSheetData(ss, SHEETS.STUDENT_ENROLLMENTS);
+  for (var i = 0; i < enrollments.length; i++) {
+    if (String(enrollments[i].studentId || '').trim() === studentId) {
+      enrollments[i].enrollmentStatus = existing.status === 'نشط' ? 'نشط' : 'موقوف';
+      enrollments[i].updatedAt = getCairoISOString();
+      upsertRecord(ss, SHEETS.STUDENT_ENROLLMENTS, 'id', enrollments[i]);
+    }
+  }
+
+  recordAuthoritativeAudit(
+    ss,
+    requestId,
+    actorUsername,
+    actorRole,
+    'STUDENT_STATUS_CHANGED',
+    'STUDENTS',
+    studentId,
+    'تغيير حالة الطالب إلى: ' + existing.status
+  );
+
+  return {
+    success: true,
+    message: existing.status === 'نشط' ? 'تم تفعيل الطالب.' : 'تم أرشفة الطالب كغير نشط.',
+    student: existing
+  };
+}
 
 function saveDailyStudentAttendanceBatch(ss, payload, authUsername, authRole, requestId) {
   payload = payload || {};
