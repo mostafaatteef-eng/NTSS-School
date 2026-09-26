@@ -53,7 +53,11 @@ export const StudentScheduleAccessView: React.FC = () => {
     setErrorMessage('');
 
     try {
-      const res = await storageService.getPublicClassSchedule(selectedGrade, selectedClassroom);
+      const res = await storageService.getPublicClassSchedule(
+        selectedGrade,
+        selectedClassroom,
+        storageService.getActiveSchoolId()
+      );
       if (res.success && res.data) {
         setScheduleData(res.data);
       } else {
