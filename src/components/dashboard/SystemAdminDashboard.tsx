@@ -669,7 +669,7 @@ export const SystemAdminDashboard: React.FC<SystemAdminDashboardProps> = ({
                 {schools.map(school => {
                   const isActive = school.status === 'Active';
                   const isCurrentActive = school.schoolId === currentActiveSchoolId;
-                  const isAllowed = effectiveUser?.accessScope === 'GLOBAL' || allowedSchoolIds.includes(school.schoolId);
+                  const isAllowed = allowedSchoolIds.includes(school.schoolId);
                   const isSwitching = switchingSchoolId === school.schoolId;
 
                   return (
