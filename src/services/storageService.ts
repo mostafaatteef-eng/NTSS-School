@@ -44,6 +44,9 @@ import {
   PromotionRule,
   PublicClassScheduleDTO,
   PublicClassScheduleLesson,
+  PublicSchoolOption,
+  PublicScheduleGradeOption,
+  PublicScheduleClassroomOption,
   QualityMetricOverview,
   QualityStandard,
   StandardScore,
@@ -995,6 +998,31 @@ class StorageService {
         code: 'AUTH_SERVICE_UNAVAILABLE',
         message: `تعذر الاتصال بخادم المصادقة المعتمد: ${err?.message || 'خطأ في الشبكة'}. تم إغلاق مسار الدخول أمنياً (Fail-Closed).`
       };
+    }
+  }
+
+  public async logoutStaffSession(): Promise<void> {
+    const user = this.getCurrentUser();
+    const token = String(user?.sessionToken || '').trim();
+    const scriptUrl = this.getBackendUrl();
+    const online = typeof navigator === 'undefined' || navigator.onLine !== false;
+
+    // Clear local UX/session state immediately; backend revocation is best-effort.
+    this.setCurrentUser(null);
+
+    if (!token || !scriptUrl || scriptUrl.length < 15 || !online) return;
+
+    try {
+      await fetch(scriptUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'logout',
+          sessionToken: token,
+        }),
+      });
+    } catch {
+      // Local session remains cleared even when network revocation cannot complete.
     }
   }
 
@@ -4861,108 +4889,177 @@ class StorageService {
     };
   }
 
+  public async getPublicSchools(): Promise<{
+    success: boolean;
+    schools?: PublicSchoolOption[];
+    message?: string;
+  }> {
+    const scriptUrl = this.getBackendUrl();
+    const online = typeof navigator === 'undefined' || navigator.onLine !== false;
+
+    if (!scriptUrl || scriptUrl.length < 15 || !online) {
+      return {
+        success: false,
+        message: 'تعذر الاتصال بالخادم لتحميل المدارس المتاحة.',
+      };
+    }
+
+    try {
+      const response = await fetch(scriptUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: 'getPublicSchools' }),
+      });
+      const res = await response.json();
+
+      if (!response.ok || res?.status === 'error') {
+        return {
+          success: false,
+          message: res?.message || 'تعذر تحميل المدارس المتاحة.',
+        };
+      }
+
+      return {
+        success: true,
+        schools: Array.isArray(res?.schools)
+          ? res.schools.map((school: any) => ({
+              schoolId: String(school.schoolId || '').trim(),
+              schoolCode: String(school.schoolCode || '').trim(),
+              schoolName: String(school.schoolName || '').trim(),
+            })).filter((school: PublicSchoolOption) => !!school.schoolId && !!school.schoolName)
+          : [],
+      };
+    } catch {
+      return {
+        success: false,
+        message: 'تعذر الاتصال بالخادم لتحميل المدارس المتاحة.',
+      };
+    }
+  }
+
+  public async getPublicScheduleOptions(schoolId: string): Promise<{
+    success: boolean;
+    school?: PublicSchoolOption;
+    grades?: PublicScheduleGradeOption[];
+    classrooms?: PublicScheduleClassroomOption[];
+    message?: string;
+  }> {
+    const cleanSchoolId = String(schoolId || '').trim().toUpperCase();
+    if (!cleanSchoolId) {
+      return { success: false, message: 'يرجى تحديد المدرسة أولاً.' };
+    }
+
+    const scriptUrl = this.getBackendUrl();
+    const online = typeof navigator === 'undefined' || navigator.onLine !== false;
+    if (!scriptUrl || scriptUrl.length < 15 || !online) {
+      return { success: false, message: 'تعذر الاتصال بالخادم لتحميل الصفوف والفصول.' };
+    }
+
+    try {
+      const response = await fetch(scriptUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'getPublicScheduleOptions',
+          schoolId: cleanSchoolId,
+        }),
+      });
+      const res = await response.json();
+
+      if (!response.ok || res?.status === 'error') {
+        return {
+          success: false,
+          message: res?.message || 'تعذر تحميل الصفوف والفصول لهذه المدرسة.',
+        };
+      }
+
+      return {
+        success: true,
+        school: res?.school
+          ? {
+              schoolId: String(res.school.schoolId || '').trim(),
+              schoolCode: String(res.school.schoolCode || '').trim(),
+              schoolName: String(res.school.schoolName || '').trim(),
+            }
+          : undefined,
+        grades: Array.isArray(res?.grades)
+          ? res.grades.map((grade: any) => ({
+              id: String(grade.id || '').trim(),
+              name: String(grade.name || '').trim(),
+            })).filter((grade: PublicScheduleGradeOption) => !!grade.id && !!grade.name)
+          : [],
+        classrooms: Array.isArray(res?.classrooms)
+          ? res.classrooms.map((classroom: any) => ({
+              id: String(classroom.id || '').trim(),
+              name: String(classroom.name || '').trim(),
+              gradeId: String(classroom.gradeId || '').trim(),
+              gradeName: String(classroom.gradeName || '').trim(),
+            })).filter((classroom: PublicScheduleClassroomOption) => !!classroom.id && !!classroom.name)
+          : [],
+      };
+    } catch {
+      return { success: false, message: 'تعذر الاتصال بالخادم لتحميل الصفوف والفصول.' };
+    }
+  }
+
   public async getPublicClassSchedule(
     gradeName: string,
     classroomName: string,
     schoolId?: string
   ): Promise<{ success: boolean; data?: PublicClassScheduleDTO; message?: string }> {
-    const cleanGrade = (gradeName || '').trim();
-    const cleanClass = (classroomName || '').trim();
-    const cleanSchoolId = (schoolId || this.getActiveSchoolId()).trim();
+    const cleanGrade = String(gradeName || '').trim();
+    const cleanClass = String(classroomName || '').trim();
+    const cleanSchoolId = String(schoolId || '').trim().toUpperCase();
 
+    if (!cleanSchoolId) {
+      return { success: false, message: 'يرجى تحديد المدرسة أولاً.' };
+    }
     if (!cleanGrade || !cleanClass) {
-      return { success: false, message: 'يرجى تحديد الصف والفصل الدراسي' };
+      return { success: false, message: 'يرجى تحديد الصف والفصل الدراسي.' };
     }
 
-    const settings = this.getSettings();
-    const scriptUrl = settings.googleAppsScriptUrl || DEFAULT_BACKEND_URL;
+    const scriptUrl = this.getBackendUrl();
+    const online = typeof navigator === 'undefined' || navigator.onLine !== false;
+    if (!scriptUrl || scriptUrl.length < 15 || !online) {
+      return { success: false, message: 'تعذر الاتصال بالخادم لعرض الجدول.' };
+    }
 
-    // 1. Authoritative Backend Request (NO token required, public endpoint)
-    if (scriptUrl && scriptUrl.length > 15 && navigator.onLine) {
-      try {
-        const response = await fetch(scriptUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({
-            action: 'getPublicClassSchedule',
-            gradeName: cleanGrade,
-            classroomName: cleanClass,
-            schoolId: cleanSchoolId,
-          }),
-        });
+    try {
+      const response = await fetch(scriptUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'getPublicClassSchedule',
+          gradeName: cleanGrade,
+          classroomName: cleanClass,
+          schoolId: cleanSchoolId,
+        }),
+      });
+      const res = await response.json();
 
-        if (response.ok) {
-          const res = await response.json();
-          if (res.status === 'success' && res.schedule) {
-            return {
-              success: true,
-              data: {
-                gradeName: res.gradeName || cleanGrade,
-                classroomName: res.classroomName || cleanClass,
-                schedule: res.schedule || [],
-              },
-            };
-          }
-        }
-      } catch (err: any) {
-        console.warn('Backend getPublicClassSchedule failed, reading published local schedule...', err);
+      if (!response.ok || res?.status === 'error' || !Array.isArray(res?.schedule)) {
+        return {
+          success: false,
+          message: res?.message || 'تعذر تحميل الجدول الدراسي.',
+        };
       }
+
+      return {
+        success: true,
+        data: {
+          schoolId: String(res.schoolId || cleanSchoolId).trim(),
+          gradeName: String(res.gradeName || cleanGrade).trim(),
+          classroomName: String(res.classroomName || cleanClass).trim(),
+          schedule: res.schedule,
+          lessons: res.schedule,
+        },
+      };
+    } catch {
+      return {
+        success: false,
+        message: 'تعذر الاتصال بالخادم لعرض الجدول الدراسي.',
+      };
     }
-
-    // 2. Local Fallback (Strictly Published schedule only, projected to safe DTO)
-    const allSchedule = this.getSchedule();
-    const matching = allSchedule.filter(s => {
-      const status = String(s.status || '').toLowerCase();
-      if (status !== 'published') return false;
-      if (s.isActive === false) return false;
-      if (s.isCancelled === true) return false;
-
-      const sGrade = String(s.grade || (s as any).gradeName || s.gradeId || '').trim().toLowerCase();
-      const sClass = String(s.classroom || (s as any).classroomName || s.classroomId || '').trim().toLowerCase();
-      const targetGrade = cleanGrade.toLowerCase();
-      const targetClass = cleanClass.toLowerCase();
-
-      const gradeMatch = sGrade === targetGrade || sGrade.includes(targetGrade) || targetGrade.includes(sGrade);
-      const classMatch = sClass === targetClass || sClass.includes(targetClass) || targetClass.includes(sClass);
-      return gradeMatch && classMatch;
-    });
-
-    const dayWeights: Record<string, number> = {
-      'الأحد': 1,
-      'الإثنين': 2,
-      'الاثنين': 2,
-      'الثلاثاء': 3,
-      'الأربعاء': 4,
-      'الاربعاء': 4,
-      'الخميس': 5,
-    };
-
-    matching.sort((a, b) => {
-      const dA = dayWeights[a.dayOfWeek || a.dayName || ''] || 9;
-      const dB = dayWeights[b.dayOfWeek || b.dayName || ''] || 9;
-      if (dA !== dB) return dA - dB;
-      return (Number(a.periodNumber) || 0) - (Number(b.periodNumber) || 0);
-    });
-
-    const safeLessons: PublicClassScheduleLesson[] = matching.map(s => ({
-      dayOfWeek: s.dayOfWeek || s.dayName || '',
-      periodNumber: Number(s.periodNumber) || 0,
-      startTime: s.startTime || '',
-      endTime: s.endTime || '',
-      subjectName: s.subject || (s as any).subjectName || '',
-      teacherDisplayName: s.teacherName || 'معلم المادة',
-      roomName: s.room || s.roomId || '',
-    }));
-
-    return {
-      success: true,
-      data: {
-        gradeName: cleanGrade,
-        classroomName: cleanClass,
-        schedule: safeLessons,
-        lessons: safeLessons,
-      },
-    };
   }
 
   // ============================================================================
