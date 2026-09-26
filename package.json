@@ -13,7 +13,8 @@
     "test": "vitest run",
     "db:check": "node scripts/checkPostgresSchema.js",
     "api:dev": "node server/postgres-api.js",
-    "api:start": "node server/postgres-api.js"
+    "api:start": "node server/postgres-api.js",
+    "db:import": "node scripts/importSheetsExportToPostgres.js"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
