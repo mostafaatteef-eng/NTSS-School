@@ -14,6 +14,7 @@
 import { School, User } from '../types';
 import { storageService } from './storageService';
 import { MASTER_SCHOOLS_KEY } from './migrationScope014MultiSchool';
+import { isPostgresBackendEnabled, postgresApiRequest } from './backend/postgresRuntime';
 
 export interface CreateSchoolInput {
   schoolCode: string;
@@ -115,6 +116,29 @@ export class SchoolAdminService {
       return check.error!;
     }
     const user = check.user;
+
+    if (isPostgresBackendEnabled()) {
+      try {
+        const pg = await postgresApiRequest<any>('/schools', user.sessionToken || '');
+        if (!pg.ok || pg.body?.status !== 'success' || !Array.isArray(pg.body?.data)) {
+          return {
+            success: false,
+            code: pg.body?.code || `HTTP_${pg.status}`,
+            message: pg.body?.message || 'تعذر تحميل سجل المدارس من PostgreSQL.',
+          };
+        }
+        const safeSchools: School[] = pg.body.data.map((s: any) => this.sanitizeSchoolDto({
+          schoolId: s.id,
+          schoolCode: s.code,
+          schoolName: s.name,
+          status: s.status,
+        }));
+        this.syncClientSchoolsCache(safeSchools);
+        return { success: true, message: 'تم استرجاع قائمة المدارس بنجاح.', data: safeSchools };
+      } catch {
+        return { success: false, code: 'NETWORK_ERROR', message: 'تعذر الاتصال بخادم PostgreSQL لإدارة المدارس.' };
+      }
+    }
 
     const scriptUrl = storageService.getBackendUrl();
     const isOnline = typeof navigator === 'undefined' || navigator.onLine !== false;
