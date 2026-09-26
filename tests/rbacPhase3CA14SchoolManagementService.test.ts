@@ -1,11 +1,212 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
+import vm from 'node:vm';
+import crypto from 'node:crypto';
 import { schoolAdminService } from '../src/services/schoolAdminService';
 import { storageService } from '../src/services/storageService';
 import { MASTER_SCHOOLS_KEY } from '../src/services/migrationScope014MultiSchool';
 import { School, User } from '../src/types';
 
-describe('PHASE 3C-A14.1 — SYSTEMADMIN SCHOOL MANAGEMENT SERVICE LAYER', () => {
+// ============================================================================
+// GAS Sandboxed Environment for Direct Code.gs Testing
+// ============================================================================
+class MockGasSheet {
+  name: string;
+  headers: string[];
+  rows: any[][];
+
+  constructor(name: string, headers: string[] = [], initialRows: any[][] = []) {
+    this.name = name;
+    this.headers = [...headers];
+    this.rows = initialRows.map(r => [...r]);
+  }
+
+  getName() { return this.name; }
+  getLastColumn() { return this.headers.length; }
+  getLastRow() { return this.rows.length + (this.headers.length > 0 ? 1 : 0); }
+
+  getDataRange() {
+    return {
+      getValues: () => [this.headers, ...this.rows],
+    };
+  }
+
+  getRange(r: number, c: number, numRows = 1, numCols = 1) {
+    return {
+      getValues: () => {
+        const res: any[][] = [];
+        for (let ro = 0; ro < numRows; ro++) {
+          const rowArr: any[] = [];
+          const curR = r + ro;
+          for (let co = 0; co < numCols; co++) {
+            const curC = c + co;
+            if (curR === 1) {
+              rowArr.push(this.headers[curC - 1] || '');
+            } else {
+              const row = this.rows[curR - 2];
+              rowArr.push(row ? (row[curC - 1] !== undefined ? row[curC - 1] : '') : '');
+            }
+          }
+          res.push(rowArr);
+        }
+        return res;
+      },
+      setValue: (val: any) => {
+        if (r === 1) {
+          while (this.headers.length < c) this.headers.push('');
+          this.headers[c - 1] = val;
+        } else {
+          while (this.rows.length <= r - 2) this.rows.push(new Array(this.headers.length).fill(''));
+          this.rows[r - 2][c - 1] = val;
+        }
+      },
+      setValues: (matrix: any[][]) => {
+        for (let ro = 0; ro < matrix.length; ro++) {
+          for (let co = 0; co < matrix[ro].length; co++) {
+            const curR = r + ro;
+            const curC = c + co;
+            if (curR === 1) {
+              while (this.headers.length < curC) this.headers.push('');
+              this.headers[curC - 1] = matrix[ro][co];
+            } else {
+              while (this.rows.length <= curR - 2) this.rows.push(new Array(this.headers.length).fill(''));
+              this.rows[curR - 2][curC - 1] = matrix[ro][co];
+            }
+          }
+        }
+      },
+      setBackground: () => {},
+    };
+  }
+
+  appendRow(rowArr: any[]) {
+    this.rows.push([...rowArr]);
+  }
+}
+
+interface ScriptPropertiesStore {
+  [key: string]: string;
+}
+
+function createGasTestEnv(options: {
+  properties?: ScriptPropertiesStore;
+  failingSpreadsheetIds?: string[];
+  initialUsers?: any[][];
+  initialSchools?: any[][];
+} = {}) {
+  const codeGsPath = path.resolve(process.cwd(), 'google-apps-script/Code.gs');
+  const codeContent = fs.readFileSync(codeGsPath, 'utf8');
+
+  const propertiesStore: ScriptPropertiesStore = { ...(options.properties || {}) };
+
+  const sheets: Record<string, MockGasSheet> = {
+    Users: new MockGasSheet('Users', [
+      'id', 'username', 'passwordHash', 'passwordSalt', 'passwordAlgorithm', 'passwordIterations',
+      'fullName', 'role', 'status', 'department', 'email', 'schoolId', 'allowedSchoolIds',
+      'employeeId', 'createdAt', 'lastLogin', 'passwordChangedAt',
+    ], options.initialUsers || []),
+    Sessions: new MockGasSheet('Sessions', [
+      'sessionId', 'tokenHash', 'userId', 'username', 'fullName', 'role', 'schoolId',
+      'email', 'accessScope', 'allowedSchoolIds', 'activeSchoolId', 'employeeId',
+      'createdAt', 'expiresAt', 'status',
+    ]),
+    Teacher_Sessions: new MockGasSheet('Teacher_Sessions', [
+      'sessionId', 'tokenHash', 'teacherId', 'employeeId', 'teacherCode', 'teacherName',
+      'schoolId', 'createdAt', 'expiresAt', 'status',
+    ]),
+    Master_Schools: new MockGasSheet('Master_Schools', [
+      'schoolId', 'schoolCode', 'schoolName', 'spreadsheetId', 'status', 'createdAt', 'updatedAt',
+    ], options.initialSchools || []),
+    Audit_Logs: new MockGasSheet('Audit_Logs', [
+      'id', 'timestamp', 'username', 'userRole', 'action', 'entity', 'targetId', 'details', 'requestId',
+    ]),
+  };
+
+  const masterSs = {
+    getId: () => 'master-ss-id',
+    getSheetByName: (name: string) => sheets[name] || null,
+    insertSheet: (name: string) => {
+      const s = new MockGasSheet(name, []);
+      sheets[name] = s;
+      return s;
+    },
+  };
+
+  const logs: string[] = [];
+
+  const sandbox: any = {
+    console,
+    Math,
+    Date,
+    Logger: {
+      log: (...args: any[]) => {
+        logs.push(args.map(a => String(a)).join(' '));
+      },
+    },
+    Utilities: {
+      getUuid: () => crypto.randomUUID(),
+      formatDate: (d: Date, tz: string, fmt: string) => d.toISOString(),
+      computeDigest: (algo: any, value: string) => {
+        const hash = crypto.createHash('sha256').update(value, 'utf8').digest();
+        return Array.from(hash);
+      },
+      computeHmacSha256Signature: (value: any, key: string) => {
+        const hmac = crypto.createHmac('sha256', key);
+        if (Array.isArray(value)) {
+          hmac.update(Buffer.from(value));
+        } else {
+          hmac.update(String(value), 'utf8');
+        }
+        return Array.from(hmac.digest());
+      },
+      base64Encode: () => '',
+      Charset: { UTF_8: 'UTF-8' },
+      DigestAlgorithm: { SHA_256: 'SHA-256' },
+    },
+    ContentService: {
+      MimeType: { JSON: 'application/json' },
+      createTextOutput: (s: string) => ({
+        getContent: () => s,
+        setMimeType: () => ({ getContent: () => s }),
+      }),
+    },
+    PropertiesService: {
+      getScriptProperties: () => ({
+        getProperty: (k: string) => propertiesStore[k] || null,
+        setProperty: (k: string, v: string) => { propertiesStore[k] = v; },
+        deleteProperty: (k: string) => { delete propertiesStore[k]; },
+        getProperties: () => ({ ...propertiesStore }),
+      }),
+    },
+    SpreadsheetApp: {
+      getActiveSpreadsheet: () => masterSs,
+      openById: (id: string) => {
+        if (!id || !id.trim()) {
+          throw new Error('SpreadsheetApp.openById: invalid ID');
+        }
+        if (options.failingSpreadsheetIds && options.failingSpreadsheetIds.includes(id)) {
+          throw new Error('SpreadsheetApp.openById: spreadsheet not reachable ' + id);
+        }
+        return {
+          getId: () => id,
+          getSheetByName: (name: string) => new MockGasSheet(name, []),
+        };
+      },
+    },
+  };
+
+  const context = vm.createContext(sandbox);
+  vm.runInContext(codeContent, context);
+
+  return { context, sheets, masterSs, propertiesStore, logs };
+}
+
+// ============================================================================
+// Service Layer & Integration Test Suite
+// ============================================================================
+describe('PHASE 3C-A14.1 & A14.1.1 — SYSTEMADMIN SCHOOL MANAGEMENT SERVICE LAYER', () => {
   const originalFetch = global.fetch;
 
   const initialMockSchools: School[] = [
@@ -43,10 +244,11 @@ describe('PHASE 3C-A14.1 — SYSTEMADMIN SCHOOL MANAGEMENT SERVICE LAYER', () =>
   const schoolAdminUser: User = {
     id: 'u-schadmin-local',
     username: 'schadmin',
-    fullName: 'مدير مدرسة بدر',
+    fullName: 'مدير المدرسة المحلي',
     role: 'SchoolAdmin',
     accessScope: 'SCHOOL',
     schoolId: 'SCH-BADR',
+    activeSchoolId: 'SCH-BADR',
     allowedSchoolIds: ['SCH-BADR'],
     sessionToken: 'tok-authoritative-schadmin-token-54321',
     status: 'Active',
@@ -55,10 +257,12 @@ describe('PHASE 3C-A14.1 — SYSTEMADMIN SCHOOL MANAGEMENT SERVICE LAYER', () =>
 
   let simulatedMasterRegistry: (School & { spreadsheetId?: string })[] = [];
   let simulatedAuditLogs: any[] = [];
+  let lastOutgoingFetchBody: any = null;
 
   beforeEach(() => {
     localStorage.clear();
     sessionStorage.clear();
+    lastOutgoingFetchBody = null;
 
     simulatedMasterRegistry = [
       {
@@ -98,7 +302,26 @@ describe('PHASE 3C-A14.1 — SYSTEMADMIN SCHOOL MANAGEMENT SERVICE LAYER', () =>
       }
 
       const body = JSON.parse(opts.body);
+      lastOutgoingFetchBody = body;
       const { action, sessionToken, school, schoolId, updates } = body;
+
+      // Public binding action guard: strictly forbidden
+      if (
+        action === 'bindSchoolSpreadsheet' ||
+        action === 'bindSchoolSpreadsheetFromScriptProperties' ||
+        action === 'setSchoolSpreadsheetId' ||
+        action === 'updateSpreadsheetId'
+      ) {
+        return {
+          ok: false,
+          status: 400,
+          json: async () => ({
+            status: 'error',
+            code: 'ACTION_NOT_FOUND',
+            message: 'الإجراء المطلوب غير متاح أو غير مصرح به عبر الواجهة العامة.',
+          }),
+        };
+      }
 
       // Authoritative Backend RBAC Gatekeeper
       const isSysAdmin = sessionToken === sysAdminUser.sessionToken;
@@ -151,6 +374,19 @@ describe('PHASE 3C-A14.1 — SYSTEMADMIN SCHOOL MANAGEMENT SERVICE LAYER', () =>
           };
         }
 
+        // Hardening Phase 3C-A14.1.1: Fail-Closed if client attempts to send spreadsheetId
+        if (school?.spreadsheetId !== undefined || body?.spreadsheetId !== undefined) {
+          return {
+            ok: false,
+            status: 403,
+            json: async () => ({
+              status: 'error',
+              code: 'CLIENT_SPREADSHEET_BINDING_FORBIDDEN',
+              message: 'ربط جدول البيانات عبر واجهة المستخدم أو العميل محظور أمنياً. الربط يتم حصرياً عبر الخادم الرئيسي.',
+            }),
+          };
+        }
+
         const newId = String(school?.schoolId || '').trim().toUpperCase();
         const newCode = String(school?.schoolCode || '').trim().toUpperCase();
         const newName = String(school?.schoolName || '').trim();
@@ -182,12 +418,13 @@ describe('PHASE 3C-A14.1 — SYSTEMADMIN SCHOOL MANAGEMENT SERVICE LAYER', () =>
           };
         }
 
+        // New schools default to Inactive with empty spreadsheetId
         const created = {
           schoolId: newId,
           schoolCode: newCode,
           schoolName: newName,
-          spreadsheetId: school?.spreadsheetId || '',
-          status: 'Active' as const,
+          spreadsheetId: '',
+          status: 'Inactive' as const,
           createdAt: '2026-09-25T12:00:00.000Z',
           updatedAt: '2026-09-25T12:00:00.000Z',
         };
@@ -321,8 +558,43 @@ describe('PHASE 3C-A14.1 — SYSTEMADMIN SCHOOL MANAGEMENT SERVICE LAYER', () =>
               }),
             };
           }
-          changedFields.status = { from: target.status, to: newStatus };
-          target.status = newStatus as 'Active' | 'Inactive';
+
+          // Strict activation rule: must have valid, reachable spreadsheet bound
+          if (newStatus === 'Active') {
+            const ssId = String(target.spreadsheetId || '').trim();
+            if (!ssId) {
+              return {
+                ok: false,
+                status: 400,
+                json: async () => ({
+                  status: 'error',
+                  code: 'SCHOOL_SPREADSHEET_NOT_BOUND',
+                  message: 'لا يمكن تفعيل المدرسة قبل ربط جدول بيانات مستقل وصالح عبر الخادم الرئيسي.',
+                }),
+              };
+            }
+            if (ssId === 'INVALID_SS_ID') {
+              return {
+                ok: false,
+                status: 400,
+                json: async () => ({
+                  status: 'error',
+                  code: 'SCHOOL_SPREADSHEET_INVALID',
+                  message: 'جدول البيانات المرتبط بالمدرسة غير صالح أو تعذر الوصول إليه.',
+                }),
+              };
+            }
+          }
+
+          if (newStatus !== target.status) {
+            changedFields.status = { from: target.status, to: newStatus };
+            target.status = newStatus as 'Active' | 'Inactive';
+            simulatedAuditLogs.push({
+              action: newStatus === 'Active' ? 'SCHOOL_ACTIVATED' : 'SCHOOL_DEACTIVATED',
+              schoolId: target.schoolId,
+              details: { status: changedFields.status },
+            });
+          }
         }
 
         target.updatedAt = '2026-09-25T12:05:00.000Z';
@@ -456,14 +728,13 @@ describe('PHASE 3C-A14.1 — SYSTEMADMIN SCHOOL MANAGEMENT SERVICE LAYER', () =>
   // 2. CREATE SCHOOL (SYSTEMADMIN ONLY, VALIDATION, DUPLICATES)
   // -------------------------------------------------------------
   describe('2. Create School', () => {
-    it('SystemAdmin create school = PASS and syncs registry cache', async () => {
+    it('SystemAdmin create school = PASS and syncs registry cache with Inactive default status', async () => {
       storageService.setCurrentUser(sysAdminUser);
 
       const input = {
         schoolCode: 'OCTOBER',
         schoolName: 'مدرسة أكتوبر الوطنية للعلوم والتقنية',
         schoolId: 'SCH-OCTOBER',
-        spreadsheetId: 'secret-raw-spreadsheet-october-id',
       };
 
       const res = await schoolAdminService.createSchool(input);
@@ -472,7 +743,8 @@ describe('PHASE 3C-A14.1 — SYSTEMADMIN SCHOOL MANAGEMENT SERVICE LAYER', () =>
       expect(res.data?.schoolId).toBe('SCH-OCTOBER');
       expect(res.data?.schoolCode).toBe('OCTOBER');
       expect(res.data?.schoolName).toBe('مدرسة أكتوبر الوطنية للعلوم والتقنية');
-      expect(res.data?.status).toBe('Active');
+      // Crucial: New school default status is Inactive
+      expect(res.data?.status).toBe('Inactive');
 
       // Crucial: spreadsheetId must NEVER be returned in public DTO
       expect((res.data as any)?.spreadsheetId).toBeUndefined();
@@ -481,6 +753,7 @@ describe('PHASE 3C-A14.1 — SYSTEMADMIN SCHOOL MANAGEMENT SERVICE LAYER', () =>
       const cached = storageService.getSchools();
       const cachedOctober = cached.find(s => s.schoolId === 'SCH-OCTOBER');
       expect(cachedOctober).toBeDefined();
+      expect(cachedOctober?.status).toBe('Inactive');
       expect((cachedOctober as any)?.spreadsheetId).toBeUndefined();
     });
 
@@ -679,12 +952,10 @@ describe('PHASE 3C-A14.1 — SYSTEMADMIN SCHOOL MANAGEMENT SERVICE LAYER', () =>
       await schoolAdminService.createSchool({
         schoolCode: 'NO_LEAK',
         schoolName: 'مدرسة عدم تسريب المعرف',
-        spreadsheetId: 'secret-raw-spreadsheet-no-leak',
       });
 
       const rawCache = localStorage.getItem(MASTER_SCHOOLS_KEY);
       expect(rawCache).not.toBeNull();
-      expect(rawCache?.includes('secret-raw-spreadsheet-no-leak')).toBe(false);
       expect(rawCache?.includes('spreadsheetId')).toBe(false);
     });
 
@@ -694,7 +965,6 @@ describe('PHASE 3C-A14.1 — SYSTEMADMIN SCHOOL MANAGEMENT SERVICE LAYER', () =>
       await schoolAdminService.createSchool({
         schoolCode: 'AUDIT_SAFE',
         schoolName: 'مدرسة آمنة في سجل التدقيق',
-        spreadsheetId: 'secret-forbidden-audit-id',
       });
 
       await schoolAdminService.updateSchool('SCH-AUDIT_SAFE', {
@@ -703,7 +973,6 @@ describe('PHASE 3C-A14.1 — SYSTEMADMIN SCHOOL MANAGEMENT SERVICE LAYER', () =>
 
       for (const log of simulatedAuditLogs) {
         const strLog = JSON.stringify(log);
-        expect(strLog.includes('secret-forbidden-audit-id')).toBe(false);
         expect(strLog.includes('spreadsheetId')).toBe(false);
       }
     });
@@ -738,6 +1007,484 @@ describe('PHASE 3C-A14.1 — SYSTEMADMIN SCHOOL MANAGEMENT SERVICE LAYER', () =>
       const schools = storageService.getSchools();
       const updated = schools.find(s => s.schoolId === 'SCH-BADR');
       expect(updated?.schoolName).toBe('اسم جديد مجدد');
+    });
+  });
+
+  // -------------------------------------------------------------
+  // 7. SERVER-ONLY SPREADSHEET BINDING HARDENING (PHASE 3C-A14.1.1)
+  // -------------------------------------------------------------
+  describe('7. Server-Only School Spreadsheet Binding Hardening (Phase 3C-A14.1.1)', () => {
+    it('Frontend create request body NEVER contains spreadsheetId', async () => {
+      storageService.setCurrentUser(sysAdminUser);
+
+      await schoolAdminService.createSchool({
+        schoolCode: 'CHECK_REQ',
+        schoolName: 'مدرسة فحص الطلب الصادر',
+        schoolId: 'SCH-CHECK_REQ',
+      });
+
+      expect(lastOutgoingFetchBody).not.toBeNull();
+      expect(lastOutgoingFetchBody.action).toBe('adminCreateSchool');
+      expect(lastOutgoingFetchBody.school).toBeDefined();
+      expect('spreadsheetId' in lastOutgoingFetchBody.school).toBe(false);
+      expect('spreadsheetId' in lastOutgoingFetchBody).toBe(false);
+      expect(JSON.stringify(lastOutgoingFetchBody).includes('spreadsheetId')).toBe(false);
+    });
+
+    it('Malicious client spreadsheetId is BLOCKED with CLIENT_SPREADSHEET_BINDING_FORBIDDEN', async () => {
+      // Direct raw fetch simulation where a rogue client tries to inject spreadsheetId
+      const scriptUrl = storageService.getBackendUrl();
+      const rawRes = await fetch(scriptUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'adminCreateSchool',
+          sessionToken: sysAdminUser.sessionToken,
+          school: {
+            schoolId: 'SCH-MALICIOUS',
+            schoolCode: 'MALICIOUS',
+            schoolName: 'مدرسة محاولة اختراق الربط',
+            spreadsheetId: 'hacked-external-sheet-id',
+          },
+        }),
+      });
+
+      expect(rawRes.ok).toBe(false);
+      expect(rawRes.status).toBe(403);
+      const data = await rawRes.json();
+      expect(data.code).toBe('CLIENT_SPREADSHEET_BINDING_FORBIDDEN');
+    });
+
+    it('New school default status is strictly Inactive with empty spreadsheetId in Master Registry', async () => {
+      storageService.setCurrentUser(sysAdminUser);
+
+      const res = await schoolAdminService.createSchool({
+        schoolCode: 'NEW_UNBOUND',
+        schoolName: 'مدرسة جديدة غير مربوطة',
+        schoolId: 'SCH-NEW_UNBOUND',
+      });
+
+      expect(res.success).toBe(true);
+      expect(res.data?.status).toBe('Inactive');
+
+      // Verify simulated backend internal row
+      const internalRow = simulatedMasterRegistry.find(s => s.schoolId === 'SCH-NEW_UNBOUND');
+      expect(internalRow).toBeDefined();
+      expect(internalRow?.status).toBe('Inactive');
+      expect(internalRow?.spreadsheetId).toBe('');
+    });
+
+    it('Activate unbound school is BLOCKED with SCHOOL_SPREADSHEET_NOT_BOUND', async () => {
+      storageService.setCurrentUser(sysAdminUser);
+
+      // Create new unbound school (status: Inactive)
+      await schoolAdminService.createSchool({
+        schoolCode: 'UNBOUND_ACTIVATE',
+        schoolName: 'مدرسة غير مربوطة للتفعيل',
+        schoolId: 'SCH-UNBOUND_ACTIVATE',
+      });
+
+      // Attempting to activate without spreadsheet binding fails-closed
+      const res = await schoolAdminService.updateSchool('SCH-UNBOUND_ACTIVATE', {
+        status: 'Active',
+      });
+
+      expect(res.success).toBe(false);
+      expect(res.code).toBe('SCHOOL_SPREADSHEET_NOT_BOUND');
+
+      // School status remains Inactive
+      const internalRow = simulatedMasterRegistry.find(s => s.schoolId === 'SCH-UNBOUND_ACTIVATE');
+      expect(internalRow?.status).toBe('Inactive');
+    });
+
+    it('Activate school with invalid/unreachable spreadsheet is BLOCKED with SCHOOL_SPREADSHEET_INVALID', async () => {
+      storageService.setCurrentUser(sysAdminUser);
+
+      // Seed a school with an invalid spreadsheet binding
+      simulatedMasterRegistry.push({
+        schoolId: 'SCH-INVALID-BIND',
+        schoolCode: 'INVALID_BIND',
+        schoolName: 'مدرسة بجدول غير صالح',
+        spreadsheetId: 'INVALID_SS_ID',
+        status: 'Inactive',
+        createdAt: '2026-09-25T12:00:00.000Z',
+        updatedAt: '2026-09-25T12:00:00.000Z',
+      });
+
+      const res = await schoolAdminService.updateSchool('SCH-INVALID-BIND', {
+        status: 'Active',
+      });
+
+      expect(res.success).toBe(false);
+      expect(res.code).toBe('SCHOOL_SPREADSHEET_INVALID');
+
+      const internalRow = simulatedMasterRegistry.find(s => s.schoolId === 'SCH-INVALID-BIND');
+      expect(internalRow?.status).toBe('Inactive');
+    });
+
+    it('Bind through public API actions is ABSENT / REJECTED', async () => {
+      const scriptUrl = storageService.getBackendUrl();
+
+      const forbiddenActions = [
+        'bindSchoolSpreadsheet',
+        'bindSchoolSpreadsheetFromScriptProperties',
+        'setSchoolSpreadsheetId',
+        'updateSpreadsheetId',
+      ];
+
+      for (const forbiddenAction of forbiddenActions) {
+        const res = await fetch(scriptUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({
+            action: forbiddenAction,
+            sessionToken: sysAdminUser.sessionToken,
+            schoolId: 'SCH-BADR',
+            spreadsheetId: 'injected-id',
+          }),
+        });
+
+        expect(res.ok).toBe(false);
+        const data = await res.json();
+        expect(data.code).toBe('ACTION_NOT_FOUND');
+      }
+    });
+
+    it('Switch active school to unbound/inactive school fails-closed', async () => {
+      storageService.setCurrentUser({
+        ...sysAdminUser,
+        allowedSchoolIds: ['SCH-BADR', 'SCH-DAMIETTA', 'SCH-UNSWITCHABLE'],
+      });
+
+      await schoolAdminService.createSchool({
+        schoolCode: 'UNSWITCHABLE',
+        schoolName: 'مدرسة غير مفعلة للتبديل',
+        schoolId: 'SCH-UNSWITCHABLE',
+      });
+
+      const switchRes = await storageService.switchActiveSchool('SCH-UNSWITCHABLE');
+      expect(switchRes.success).toBe(false);
+      expect(switchRes.code).toBe('SCHOOL_INACTIVE');
+      expect(storageService.getCurrentUser()?.activeSchoolId).toBe('SCH-BADR');
+    });
+  });
+
+  // -------------------------------------------------------------
+  // 8. DIRECT GOOGLE APPS SCRIPT Code.gs EVALUATION
+  // -------------------------------------------------------------
+  describe('8. Direct Google Apps Script Code.gs Evaluation', () => {
+    it('bindSchoolSpreadsheetFromScriptProperties is NOT in doPost routing or doGet routing', () => {
+      const { context } = createGasTestEnv();
+
+      const postRes = context.doPost({
+        postData: {
+          contents: JSON.stringify({ action: 'bindSchoolSpreadsheetFromScriptProperties', schoolId: 'SCH-BADR' }),
+        },
+      });
+      const postBody = JSON.parse(postRes.getContent());
+      expect(postBody.status).not.toBe('success');
+
+      const getRes = context.doGet({
+        parameter: { action: 'bindSchoolSpreadsheetFromScriptProperties' },
+      });
+      const getBody = JSON.parse(getRes.getContent());
+      expect(getBody.status).not.toBe('success');
+    });
+
+    it('Code.gs adminCreateSchool blocks client-provided spreadsheetId with CLIENT_SPREADSHEET_BINDING_FORBIDDEN', () => {
+      const initialUsers = [
+        [
+          'u-sys', 'sysadmin', 'hash', 'salt', 'PBKDF2', 10000,
+          'مدير النظام', 'SystemAdmin', 'Active', 'Admin', 'sys@ntss.edu.eg', '', '["*"]',
+          'EMP-01', '2026-09-01T00:00:00.000Z', '', '',
+        ],
+      ];
+      const initialSchools = [
+        ['SCH-BADR', 'BADR', 'مدرسة بدر', 'ss-badr-id', 'Active', '2026-09-01T00:00:00.000Z', '2026-09-01T00:00:00.000Z'],
+      ];
+
+      const { context } = createGasTestEnv({ initialUsers, initialSchools });
+
+      // Create session for sysadmin
+      const loginRes = context.doPost({
+        postData: {
+          contents: JSON.stringify({
+            action: 'login',
+            username: 'sysadmin',
+            password: 'password', // will fail unless mock, let's inject session directly
+          }),
+        },
+      });
+
+      // Instead inject active session in Sessions sheet directly
+      const sessionToken = 'tok-sysadmin-gas-direct';
+      const tokenHash = Array.from(crypto.createHash('sha256').update(sessionToken, 'utf8').digest())
+        .map(b => (b < 16 ? '0' : '') + b.toString(16)).join('');
+      
+      const sessionSheet = context.SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Sessions');
+      sessionSheet.appendRow([
+        'sess-1', tokenHash, 'u-sys', 'sysadmin', 'مدير النظام', 'SystemAdmin', '',
+        'sys@ntss.edu.eg', 'GLOBAL', '["*"]', 'SCH-BADR', 'EMP-01',
+        '2026-09-25T10:00:00.000Z', '2099-01-01T00:00:00.000Z', 'Active',
+      ]);
+
+      // Call adminCreateSchool with client spreadsheetId
+      const res = context.doPost({
+        postData: {
+          contents: JSON.stringify({
+            action: 'adminCreateSchool',
+            sessionToken: sessionToken,
+            school: {
+              schoolId: 'SCH-MAL',
+              schoolCode: 'MAL',
+              schoolName: 'مدرسة تسريب',
+              spreadsheetId: 'leak-sheet-id',
+            },
+          }),
+        },
+      });
+
+      const body = JSON.parse(res.getContent());
+      expect(body.status).toBe('error');
+      expect(body.code).toBe('CLIENT_SPREADSHEET_BINDING_FORBIDDEN');
+    });
+
+    it('Code.gs adminCreateSchool defaults new school to Inactive with empty spreadsheetId', () => {
+      const initialUsers = [
+        [
+          'u-sys', 'sysadmin', 'hash', 'salt', 'PBKDF2', 10000,
+          'مدير النظام', 'SystemAdmin', 'Active', 'Admin', 'sys@ntss.edu.eg', '', '["*"]',
+          'EMP-01', '2026-09-01T00:00:00.000Z', '', '',
+        ],
+      ];
+      const initialSchools = [
+        ['SCH-BADR', 'BADR', 'مدرسة بدر', 'ss-badr-id', 'Active', '2026-09-01T00:00:00.000Z', '2026-09-01T00:00:00.000Z'],
+      ];
+
+      const { context, sheets } = createGasTestEnv({ initialUsers, initialSchools });
+
+      const sessionToken = 'tok-sysadmin-gas-direct-2';
+      const tokenHash = Array.from(crypto.createHash('sha256').update(sessionToken, 'utf8').digest())
+        .map(b => (b < 16 ? '0' : '') + b.toString(16)).join('');
+      
+      const sessionSheet = sheets['Sessions'];
+      sessionSheet.appendRow([
+        'sess-2', tokenHash, 'u-sys', 'sysadmin', 'مدير النظام', 'SystemAdmin', '',
+        'sys@ntss.edu.eg', 'GLOBAL', '["*"]', 'SCH-BADR', 'EMP-01',
+        '2026-09-25T10:00:00.000Z', '2099-01-01T00:00:00.000Z', 'Active',
+      ]);
+
+      const res = context.doPost({
+        postData: {
+          contents: JSON.stringify({
+            action: 'adminCreateSchool',
+            sessionToken: sessionToken,
+            school: {
+              schoolId: 'SCH-NEW-GAS',
+              schoolCode: 'NEWGAS',
+              schoolName: 'مدرسة غاز الجديدة',
+            },
+          }),
+        },
+      });
+
+      const body = JSON.parse(res.getContent());
+      expect(body.status).toBe('success');
+      expect(body.school.status).toBe('Inactive');
+      expect(body.school.spreadsheetId).toBeUndefined();
+
+      // Check Master_Schools row
+      const masterRows = sheets['Master_Schools'].getDataRange().getValues();
+      const newRow = masterRows.find(r => r[0] === 'SCH-NEW-GAS');
+      expect(newRow).toBeDefined();
+      expect(newRow[3]).toBe(''); // spreadsheetId is empty
+      expect(newRow[4]).toBe('Inactive'); // status is Inactive
+    });
+
+    it('Code.gs adminUpdateSchool blocks activating unbound school with SCHOOL_SPREADSHEET_NOT_BOUND', () => {
+      const initialUsers = [
+        [
+          'u-sys', 'sysadmin', 'hash', 'salt', 'PBKDF2', 10000,
+          'مدير النظام', 'SystemAdmin', 'Active', 'Admin', 'sys@ntss.edu.eg', '', '["*"]',
+          'EMP-01', '2026-09-01T00:00:00.000Z', '', '',
+        ],
+      ];
+      const initialSchools = [
+        ['SCH-UNBOUND', 'UNBOUND', 'مدرسة غير مربوطة', '', 'Inactive', '2026-09-01T00:00:00.000Z', '2026-09-01T00:00:00.000Z'],
+      ];
+
+      const { context, sheets } = createGasTestEnv({ initialUsers, initialSchools });
+
+      const sessionToken = 'tok-sysadmin-gas-direct-3';
+      const tokenHash = Array.from(crypto.createHash('sha256').update(sessionToken, 'utf8').digest())
+        .map(b => (b < 16 ? '0' : '') + b.toString(16)).join('');
+      
+      const sessionSheet = sheets['Sessions'];
+      sessionSheet.appendRow([
+        'sess-3', tokenHash, 'u-sys', 'sysadmin', 'مدير النظام', 'SystemAdmin', '',
+        'sys@ntss.edu.eg', 'GLOBAL', '["*"]', '', 'EMP-01',
+        '2026-09-25T10:00:00.000Z', '2099-01-01T00:00:00.000Z', 'Active',
+      ]);
+
+      const res = context.doPost({
+        postData: {
+          contents: JSON.stringify({
+            action: 'adminUpdateSchool',
+            sessionToken: sessionToken,
+            schoolId: 'SCH-UNBOUND',
+            updates: { status: 'Active' },
+          }),
+        },
+      });
+
+      const body = JSON.parse(res.getContent());
+      expect(body.status).toBe('error');
+      expect(body.code).toBe('SCHOOL_SPREADSHEET_NOT_BOUND');
+    });
+
+    it('bindSchoolSpreadsheetFromScriptProperties fails if Script Property is missing', () => {
+      const initialSchools = [
+        ['SCH-NEW', 'NEW', 'مدرسة جديدة', '', 'Inactive', '2026-09-01T00:00:00.000Z', '2026-09-01T00:00:00.000Z'],
+      ];
+
+      const { context } = createGasTestEnv({ initialSchools, properties: {} });
+
+      expect(() => {
+        context.bindSchoolSpreadsheetFromScriptProperties('SCH-NEW');
+      }).toThrow(/SPREADSHEET_PROPERTY_NOT_FOUND/);
+    });
+
+    it('bindSchoolSpreadsheetFromScriptProperties fails if spreadsheet cannot be opened', () => {
+      const initialSchools = [
+        ['SCH-NEW', 'NEW', 'مدرسة جديدة', '', 'Inactive', '2026-09-01T00:00:00.000Z', '2026-09-01T00:00:00.000Z'],
+      ];
+
+      const { context } = createGasTestEnv({
+        initialSchools,
+        properties: {
+          'SCHOOL_SPREADSHEET_ID__SCH_NEW': 'unreachable-sheet-id',
+        },
+        failingSpreadsheetIds: ['unreachable-sheet-id'],
+      });
+
+      expect(() => {
+        context.bindSchoolSpreadsheetFromScriptProperties('SCH-NEW');
+      }).toThrow(/INVALID_SCHOOL_SPREADSHEET/);
+    });
+
+    it('bindSchoolSpreadsheetFromScriptProperties binds valid spreadsheet and records safe audit', () => {
+      const initialSchools = [
+        ['SCH-ALEX', 'ALEX', 'مدرسة الإسكندرية', '', 'Inactive', '2026-09-01T00:00:00.000Z', '2026-09-01T00:00:00.000Z'],
+      ];
+
+      const { context, sheets } = createGasTestEnv({
+        initialSchools,
+        properties: {
+          'SCHOOL_SPREADSHEET_ID__SCH_ALEX': 'valid-alex-sheet-999',
+        },
+      });
+
+      const result = context.bindSchoolSpreadsheetFromScriptProperties('SCH-ALEX', false);
+      expect(result.success).toBe(true);
+      expect(result.schoolId).toBe('SCH-ALEX');
+      expect(result.status).toBe('Inactive'); // Remains inactive unless explicitly activated
+
+      // Verify spreadsheetId bound in Master_Schools
+      const masterRows = sheets['Master_Schools'].getDataRange().getValues();
+      const alexRow = masterRows.find(r => r[0] === 'SCH-ALEX');
+      expect(alexRow[3]).toBe('valid-alex-sheet-999');
+      expect(alexRow[4]).toBe('Inactive');
+
+      // Verify Audit_Logs
+      const auditRows = sheets['Audit_Logs'].getDataRange().getValues();
+      const boundAudit = auditRows.find(r => r[4] === 'SCHOOL_SPREADSHEET_BOUND');
+      expect(boundAudit).toBeDefined();
+      expect(boundAudit[6]).toBe('SCH-ALEX');
+      // Crucial: spreadsheetId must NOT appear in audit details
+      expect(boundAudit[7]).not.toContain('valid-alex-sheet-999');
+    });
+
+    it('bindSchoolSpreadsheetFromScriptProperties with optActivate: true activates school and records audit', () => {
+      const initialSchools = [
+        ['SCH-ASWAN', 'ASWAN', 'مدرسة أسوان', '', 'Inactive', '2026-09-01T00:00:00.000Z', '2026-09-01T00:00:00.000Z'],
+      ];
+
+      const { context, sheets } = createGasTestEnv({
+        initialSchools,
+        properties: {
+          'SCHOOL_SPREADSHEET_ID__SCH_ASWAN': 'valid-aswan-sheet-777',
+        },
+      });
+
+      const result = context.bindSchoolSpreadsheetFromScriptProperties('SCH-ASWAN', true);
+      expect(result.success).toBe(true);
+      expect(result.status).toBe('Active');
+
+      const masterRows = sheets['Master_Schools'].getDataRange().getValues();
+      const aswanRow = masterRows.find(r => r[0] === 'SCH-ASWAN');
+      expect(aswanRow[3]).toBe('valid-aswan-sheet-777');
+      expect(aswanRow[4]).toBe('Active');
+
+      const auditRows = sheets['Audit_Logs'].getDataRange().getValues();
+      const actAudit = auditRows.find(r => r[4] === 'SCHOOL_ACTIVATED');
+      expect(actAudit).toBeDefined();
+      expect(actAudit[6]).toBe('SCH-ASWAN');
+      expect(actAudit[7]).not.toContain('valid-aswan-sheet-777');
+    });
+
+    it('activation via adminUpdateSchool succeeds once valid spreadsheet is bound', () => {
+      const initialUsers = [
+        [
+          'u-sys', 'sysadmin', 'hash', 'salt', 'PBKDF2', 10000,
+          'مدير النظام', 'SystemAdmin', 'Active', 'Admin', 'sys@ntss.edu.eg', '', '["*"]',
+          'EMP-01', '2026-09-01T00:00:00.000Z', '', '',
+        ],
+      ];
+      const initialSchools = [
+        ['SCH-LUXOR', 'LUXOR', 'مدرسة الأقصر', '', 'Inactive', '2026-09-01T00:00:00.000Z', '2026-09-01T00:00:00.000Z'],
+      ];
+
+      const { context, sheets } = createGasTestEnv({
+        initialUsers,
+        initialSchools,
+        properties: {
+          'SCHOOL_SPREADSHEET_ID__SCH_LUXOR': 'valid-luxor-sheet-555',
+        },
+      });
+
+      const sessionToken = 'tok-sysadmin-luxor';
+      const tokenHash = Array.from(crypto.createHash('sha256').update(sessionToken, 'utf8').digest())
+        .map(b => (b < 16 ? '0' : '') + b.toString(16)).join('');
+      
+      sheets['Sessions'].appendRow([
+        'sess-luxor', tokenHash, 'u-sys', 'sysadmin', 'مدير النظام', 'SystemAdmin', '',
+        'sys@ntss.edu.eg', 'GLOBAL', '["*"]', '', 'EMP-01',
+        '2026-09-25T10:00:00.000Z', '2099-01-01T00:00:00.000Z', 'Active',
+      ]);
+
+      // 1. First, bind spreadsheet via server function
+      context.bindSchoolSpreadsheetFromScriptProperties('SCH-LUXOR', false);
+
+      // 2. Now activate via adminUpdateSchool API
+      const res = context.doPost({
+        postData: {
+          contents: JSON.stringify({
+            action: 'adminUpdateSchool',
+            sessionToken: sessionToken,
+            schoolId: 'SCH-LUXOR',
+            updates: { status: 'Active' },
+          }),
+        },
+      });
+
+      const body = JSON.parse(res.getContent());
+      expect(body.status).toBe('success');
+      expect(body.school.status).toBe('Active');
+
+      // 3. Verify Master_Schools
+      const masterRows = sheets['Master_Schools'].getDataRange().getValues();
+      const luxorRow = masterRows.find(r => r[0] === 'SCH-LUXOR');
+      expect(luxorRow[4]).toBe('Active');
     });
   });
 });

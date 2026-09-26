@@ -19,7 +19,6 @@ export interface CreateSchoolInput {
   schoolCode: string;
   schoolName: string;
   schoolId?: string;
-  spreadsheetId?: string; // Optional creation-time binding; NEVER persisted in client cache
 }
 
 export interface UpdateSchoolInput {
@@ -138,6 +137,16 @@ export class SchoolAdminService {
       });
 
       if (!response.ok) {
+        try {
+          const errRes = await response.json();
+          if (errRes && errRes.code) {
+            return {
+              success: false,
+              code: errRes.code,
+              message: errRes.message || `خطأ في استجابة الخادم (${response.status}) أثناء جلب المدارس.`,
+            };
+          }
+        } catch {}
         return {
           success: false,
           code: `HTTP_${response.status}`,
@@ -246,12 +255,21 @@ export class SchoolAdminService {
             schoolId,
             schoolCode,
             schoolName,
-            spreadsheetId: input.spreadsheetId ? String(input.spreadsheetId).trim() : '',
           },
         }),
       });
 
       if (!response.ok) {
+        try {
+          const errRes = await response.json();
+          if (errRes && errRes.code) {
+            return {
+              success: false,
+              code: errRes.code,
+              message: errRes.message || `خطأ في استجابة الخادم (${response.status}) أثناء إنشاء المدرسة.`,
+            };
+          }
+        } catch {}
         return {
           success: false,
           code: `HTTP_${response.status}`,
@@ -395,6 +413,16 @@ export class SchoolAdminService {
       });
 
       if (!response.ok) {
+        try {
+          const errRes = await response.json();
+          if (errRes && errRes.code) {
+            return {
+              success: false,
+              code: errRes.code,
+              message: errRes.message || `خطأ في استجابة الخادم (${response.status}) أثناء تحديث المدرسة.`,
+            };
+          }
+        } catch {}
         return {
           success: false,
           code: `HTTP_${response.status}`,

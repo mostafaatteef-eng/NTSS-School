@@ -293,22 +293,22 @@ describe('PHASE 3C-A12 — AUTHORITATIVE SYSTEM ADMIN SCHOOL SWITCHING', () => {
     [
       'sess-sysadmin-1', SYSADMIN_TOKEN_HASH, 'usr-sysadmin', 'systemadmin', 'مدير النظام الشامل',
       'SystemAdmin', '', 'admin@ntss.edu.eg', 'GLOBAL', JSON.stringify(['SCH-BADR', 'SCH-DAMIETTA']),
-      'SCH-BADR', 'EMP-SYS-1', '2026-09-24T00:00:00Z', '2026-09-26T00:00:00Z', 'Active',
+      'SCH-BADR', 'EMP-SYS-1', '2026-09-24T00:00:00Z', '2099-01-01T00:00:00Z', 'Active',
     ],
     [
       'sess-schooladmin-1', SCHOOLADMIN_TOKEN_HASH, 'usr-schooladmin-badr', 'admin_badr', 'مدير مدرسة بدر',
       'SchoolAdmin', 'SCH-BADR', 'badr.admin@ntss.edu.eg', 'SCHOOL', JSON.stringify(['SCH-BADR']),
-      'SCH-BADR', 'EMP-BADR-1', '2026-09-24T00:00:00Z', '2026-09-26T00:00:00Z', 'Active',
+      'SCH-BADR', 'EMP-BADR-1', '2026-09-24T00:00:00Z', '2099-01-01T00:00:00Z', 'Active',
     ],
     [
       'sess-emp-1', EMPLOYEE_TOKEN_HASH, 'usr-employee-badr', 'emp_badr', 'موظف إداري بدر',
       'AdministrativeEmployee', 'SCH-BADR', 'badr.emp@ntss.edu.eg', 'SELF', JSON.stringify(['SCH-BADR']),
-      'SCH-BADR', 'EMP-BADR-2', '2026-09-24T00:00:00Z', '2026-09-26T00:00:00Z', 'Active',
+      'SCH-BADR', 'EMP-BADR-2', '2026-09-24T00:00:00Z', '2099-01-01T00:00:00Z', 'Active',
     ],
     [
       'sess-teacher-1', TEACHER_TOKEN_HASH, 'usr-teacher-badr', 'teacher_badr', 'معلم مدرسة بدر',
       'Teacher', 'SCH-BADR', 'teacher.badr@ntss.edu.eg', 'SELF', JSON.stringify(['SCH-BADR']),
-      'SCH-BADR', 'EMP-BADR-3', '2026-09-24T00:00:00Z', '2026-09-26T00:00:00Z', 'Active',
+      'SCH-BADR', 'EMP-BADR-3', '2026-09-24T00:00:00Z', '2099-01-01T00:00:00Z', 'Active',
     ],
   ];
 

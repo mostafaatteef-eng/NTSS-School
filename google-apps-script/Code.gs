@@ -710,7 +710,16 @@ function doPost(e) {
         var newSchoolId = String(schoolData.schoolId || '').trim().toUpperCase();
         var newSchoolCode = String(schoolData.schoolCode || '').trim().toUpperCase();
         var newSchoolName = String(schoolData.schoolName || '').trim();
-        var newSsId = String(schoolData.spreadsheetId || '').trim();
+
+        // Fail-Closed: client must NEVER send spreadsheetId (binding is strictly server-only)
+        if (schoolData.spreadsheetId !== undefined || postData.spreadsheetId !== undefined || (payload && payload.spreadsheetId !== undefined)) {
+          return createJsonResponse({
+            status: 'error',
+            code: 'CLIENT_SPREADSHEET_BINDING_FORBIDDEN',
+            message: 'ربط جدول البيانات عبر واجهة المستخدم أو العميل محظور أمنياً. الربط يتم حصرياً عبر الخادم الرئيسي.',
+            requestId: requestId
+          }, 403);
+        }
 
         if (!newSchoolId || !newSchoolCode || !newSchoolName) {
           return createJsonResponse({
@@ -734,12 +743,13 @@ function doPost(e) {
           }
         }
 
+        // New schools default to Inactive until server binds an authenticated spreadsheet
         var createdSchool = {
           schoolId: newSchoolId,
           schoolCode: newSchoolCode,
           schoolName: newSchoolName,
-          spreadsheetId: newSsId,
-          status: 'Active',
+          spreadsheetId: '',
+          status: 'Inactive',
           createdAt: getCairoISOString(),
           updatedAt: getCairoISOString()
         };
@@ -856,7 +866,7 @@ function doPost(e) {
           }
         }
 
-        // Update status if provided with strict enum validation
+        // Update status if provided with strict enum validation & server binding validation
         if (updates.status !== undefined) {
           var newStatus = String(updates.status || '').trim();
           if (newStatus !== 'Active' && newStatus !== 'Inactive') {
@@ -867,6 +877,38 @@ function doPost(e) {
               requestId: requestId
             }, 400);
           }
+
+          // Strict Activation Guard: school MUST have a valid, reachable spreadsheet bound server-side
+          if (newStatus === 'Active') {
+            var ssIdToVerify = String(targetSchool.spreadsheetId || '').trim();
+            if (!ssIdToVerify) {
+              return createJsonResponse({
+                status: 'error',
+                code: 'SCHOOL_SPREADSHEET_NOT_BOUND',
+                message: 'لا يمكن تفعيل المدرسة قبل ربط جدول بيانات مستقل وصالح عبر الخادم الرئيسي.',
+                requestId: requestId
+              }, 400);
+            }
+            try {
+              var openedTest = SpreadsheetApp.openById(ssIdToVerify);
+              if (!openedTest) {
+                return createJsonResponse({
+                  status: 'error',
+                  code: 'SCHOOL_SPREADSHEET_INVALID',
+                  message: 'جدول البيانات المرتبط بالمدرسة غير صالح أو تعذر الوصول إليه.',
+                  requestId: requestId
+                }, 400);
+              }
+            } catch (openErr) {
+              return createJsonResponse({
+                status: 'error',
+                code: 'SCHOOL_SPREADSHEET_INVALID',
+                message: 'جدول البيانات المرتبط بالمدرسة غير صالح أو تعذر الوصول إليه.',
+                requestId: requestId
+              }, 400);
+            }
+          }
+
           if (newStatus !== targetSchool.status) {
             changedFields.status = { from: targetSchool.status, to: newStatus };
             targetSchool.status = newStatus;
@@ -887,6 +929,21 @@ function doPost(e) {
           targetSchool.schoolId,
           JSON.stringify(changedFields)
         );
+
+        // Explicit activation/deactivation audits
+        if (changedFields.status) {
+          var auditAction = targetSchool.status === 'Active' ? 'SCHOOL_ACTIVATED' : 'SCHOOL_DEACTIVATED';
+          recordAuthoritativeAudit(
+            ss,
+            requestId,
+            activeSession.email || activeSession.username || authenticatedUserId,
+            authenticatedRole,
+            auditAction,
+            'MASTER_SCHOOLS',
+            targetSchool.schoolId,
+            JSON.stringify({ status: changedFields.status })
+          );
+        }
 
         output.message = 'تم تحديث بيانات المدرسة بنجاح';
         output.school = {
@@ -6312,5 +6369,118 @@ function verifyInitialSystemProvisioning() {
   Logger.log('================================================');
 
   return result;
+}
+
+/**
+ * Phase 3C-A14.1.1: Server-only manual school spreadsheet binding function.
+ * Strictly NOT exposed via doGet or doPost (cannot be invoked by clients or browsers).
+ * Must be executed manually in Google Apps Script Editor by System Owner / Cloud Operator.
+ *
+ * Reads spreadsheet ID from Script Properties using conventional naming:
+ * e.g. "SCHOOL_SPREADSHEET_ID__SCH_BADR", "SCHOOL_SPREADSHEET_ID__<CLEAN_SCHOOL_ID>"
+ * or "SCHOOL_SPREADSHEET__<CLEAN_SCHOOL_ID>"
+ *
+ * Steps:
+ * 1. Locates school in Master_Schools sheet.
+ * 2. Reads spreadsheet ID from Script Properties.
+ * 3. Validates reachability via SpreadsheetApp.openById(cleanSsId).
+ *    If fails: throws Error with code INVALID_SCHOOL_SPREADSHEET (without leaking ID).
+ * 4. Binds valid spreadsheetId to Master_Schools row.
+ * 5. Optionally activates the school if optActivate === true.
+ * 6. Records authoritative audit (SCHOOL_SPREADSHEET_BOUND, and SCHOOL_ACTIVATED if activated).
+ *    NEVER logs spreadsheetId, properties, or secrets.
+ *
+ * @param {string} schoolId - The immutable schoolId to bind.
+ * @param {boolean} [optActivate=false] - Explicit flag to activate school upon binding.
+ * @returns {Object} Result { success: boolean, schoolId: string, status: string, message: string }
+ */
+function bindSchoolSpreadsheetFromScriptProperties(schoolId, optActivate) {
+  var cleanSchoolId = String(schoolId || '').trim().toUpperCase();
+  if (!cleanSchoolId) {
+    throw new Error('INVALID_SCHOOL_ID: schoolId is required for binding.');
+  }
+
+  var props = PropertiesService.getScriptProperties();
+  if (!props) {
+    throw new Error('PROPERTIES_UNAVAILABLE: Script Properties are not accessible.');
+  }
+
+  var normalizedKeySuffix = cleanSchoolId.replace(/[^A-Z0-9]/g, '_');
+  var propKey1 = 'SCHOOL_SPREADSHEET_ID__' + normalizedKeySuffix;
+  var propKey2 = 'SCHOOL_SPREADSHEET_ID__' + cleanSchoolId;
+  var propKey3 = 'SCHOOL_SPREADSHEET__' + normalizedKeySuffix;
+
+  var boundSsId = props.getProperty(propKey1) || props.getProperty(propKey2) || props.getProperty(propKey3);
+  var cleanSsId = String(boundSsId || '').trim();
+
+  if (!cleanSsId) {
+    throw new Error('SPREADSHEET_PROPERTY_NOT_FOUND: No Script Property found for school ' + cleanSchoolId);
+  }
+
+  // Validate reachability via SpreadsheetApp.openById (Fail-Closed)
+  try {
+    var opened = SpreadsheetApp.openById(cleanSsId);
+    if (!opened) {
+      throw new Error('INVALID_SCHOOL_SPREADSHEET: Unable to access spreadsheet.');
+    }
+  } catch (err) {
+    throw new Error('INVALID_SCHOOL_SPREADSHEET: Spreadsheet is unreachable or invalid.');
+  }
+
+  var masterSs = SpreadsheetApp.getActiveSpreadsheet();
+  var existingSchools = getSheetData(masterSs, SHEETS.MASTER_SCHOOLS);
+  var target = null;
+  for (var i = 0; i < existingSchools.length; i++) {
+    if (String(existingSchools[i].schoolId || '').trim().toUpperCase() === cleanSchoolId) {
+      target = existingSchools[i];
+      break;
+    }
+  }
+
+  if (!target) {
+    throw new Error('SCHOOL_NOT_FOUND: School ' + cleanSchoolId + ' not found in Master_Schools registry.');
+  }
+
+  target.spreadsheetId = cleanSsId;
+  target.updatedAt = getCairoISOString();
+  var wasActivated = false;
+  if (optActivate === true) {
+    target.status = 'Active';
+    wasActivated = true;
+  }
+  upsertRecord(masterSs, SHEETS.MASTER_SCHOOLS, 'schoolId', target);
+
+  var reqId = 'manual-bind-' + Utilities.getUuid();
+  recordAuthoritativeAudit(
+    masterSs,
+    reqId,
+    'SYSTEM_SERVER_OPERATOR',
+    'SystemAdmin',
+    'SCHOOL_SPREADSHEET_BOUND',
+    'MASTER_SCHOOLS',
+    cleanSchoolId,
+    JSON.stringify({ bindingStatus: 'SUCCESS' })
+  );
+
+  if (wasActivated) {
+    recordAuthoritativeAudit(
+      masterSs,
+      reqId,
+      'SYSTEM_SERVER_OPERATOR',
+      'SystemAdmin',
+      'SCHOOL_ACTIVATED',
+      'MASTER_SCHOOLS',
+      cleanSchoolId,
+      JSON.stringify({ status: { from: 'Inactive', to: 'Active' } })
+    );
+  }
+
+  Logger.log('[SERVER_BINDING_SUCCESS] School ' + cleanSchoolId + ' bound successfully. Status: ' + target.status);
+  return {
+    success: true,
+    schoolId: cleanSchoolId,
+    status: target.status,
+    message: 'School spreadsheet bound successfully.'
+  };
 }
 
