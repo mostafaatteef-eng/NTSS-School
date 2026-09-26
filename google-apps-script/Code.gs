@@ -2129,7 +2129,10 @@ function doPost(e) {
         if (targetRole === 'SystemAdmin') {
           payload.schoolId = '';
           payload.employeeId = '';
-          var parsedAllowed = parseAllowedSchoolIdsGas(payload.allowedSchoolIds);
+          var allowedSource = payload.allowedSchoolIds !== undefined
+            ? payload.allowedSchoolIds
+            : (existingUser ? existingUser.allowedSchoolIds : []);
+          var parsedAllowed = parseAllowedSchoolIdsGas(allowedSource);
           var mSchools = getSheetData(ss, SHEETS.MASTER_SCHOOLS);
           var mIds = mSchools.map(function(s) { return String(s.schoolId || '').trim().toUpperCase(); });
 
@@ -4868,16 +4871,33 @@ function sanitizeUserDTO(u) {
   if (!u) return null;
   var roleStr = String(u.role || '').trim();
   var normRole = normalizeUserRoleGas(roleStr);
-  var derivedScope = deriveUserAccessScopeGas(normRole || roleStr);
 
+  if (!normRole) {
+    return {
+      id: String(u.id || '').trim(),
+      username: String(u.username || '').trim(),
+      email: normalizeEmail(u.email),
+      fullName: String(u.fullName || '').trim(),
+      role: 'NeedsAdminReview',
+      accessScope: 'SCHOOL',
+      schoolId: '',
+      allowedSchoolIds: [],
+      employeeId: '',
+      status: 'NeedsAdminReview',
+      department: String(u.department || '').trim(),
+      createdAt: u.createdAt || '',
+      lastLogin: u.lastLogin || '',
+      loginNumber: u.loginNumber || ''
+    };
+  }
+
+  var derivedScope = deriveUserAccessScopeGas(normRole);
   var safeSchoolId = '';
   var safeAllowedSchoolIds = [];
   var safeEmployeeId = '';
 
   if (derivedScope === 'GLOBAL') {
-    safeSchoolId = '';
     safeAllowedSchoolIds = parseAllowedSchoolIdsGas(u.allowedSchoolIds);
-    safeEmployeeId = '';
   } else {
     var storedSchool = String(u.schoolId || '').trim().toUpperCase();
     safeSchoolId = storedSchool;
@@ -4890,7 +4910,7 @@ function sanitizeUserDTO(u) {
     username: String(u.username || '').trim(),
     email: normalizeEmail(u.email),
     fullName: String(u.fullName || '').trim(),
-    role: normRole || roleStr,
+    role: normRole,
     accessScope: derivedScope,
     schoolId: safeSchoolId,
     allowedSchoolIds: safeAllowedSchoolIds,
@@ -4912,15 +4932,22 @@ function getSanitizedUsersList(ss, activeSession) {
   });
 
   var filtered = users.filter(function(u) {
+    var normalizedTargetRole = normalizeUserRoleGas(u.role);
+    if (!normalizedTargetRole) return false;
+
     var uSchool = String(u.schoolId || '').trim().toUpperCase();
     if (role === 'SchoolAdmin') {
-      // SchoolAdmin sees ONLY users in own school, and NEVER SystemAdmin
-      if (u.role === 'SystemAdmin') return false;
+      if (normalizedTargetRole === 'SystemAdmin') return false;
       return uSchool === sessionSchool;
     }
     if (role === 'SystemAdmin') {
-      // SystemAdmin sees SystemAdmin users, and school-scoped users within allowedSchoolIds
-      if (u.role === 'SystemAdmin') return true;
+      if (normalizedTargetRole === 'SystemAdmin') {
+        var targetAllowed = parseAllowedSchoolIdsGas(u.allowedSchoolIds);
+        for (var ta = 0; ta < targetAllowed.length; ta++) {
+          if (allowed.indexOf(targetAllowed[ta]) === -1) return false;
+        }
+        return true;
+      }
       if (!uSchool) return false;
       return allowed.indexOf(uSchool) !== -1;
     }
@@ -4969,7 +4996,14 @@ function verifyTargetUserAccess(ss, activeSession, targetUserId) {
   } else if (authRole === 'SystemAdmin') {
     var allowedSchools = (activeSession.allowedSchoolIds || []).map(function(s) { return String(s).trim().toUpperCase(); });
     var targetSch = String(target.schoolId || '').trim().toUpperCase();
-    if (targetSch && allowedSchools.indexOf(targetSch) === -1) {
+    if (normalizeUserRoleGas(target.role) === 'SystemAdmin') {
+      var targetAllowedSchools = parseAllowedSchoolIdsGas(target.allowedSchoolIds);
+      for (var tas = 0; tas < targetAllowedSchools.length; tas++) {
+        if (allowedSchools.indexOf(targetAllowedSchools[tas]) === -1) {
+          return { allowed: false, code: 'ACCESS_DENIED_SCHOOL_SCOPE', message: 'مدير النظام المستهدف لديه نطاق مدارس يتجاوز نطاق صلاحياتك' };
+        }
+      }
+    } else if (targetSch && allowedSchools.indexOf(targetSch) === -1) {
       return { allowed: false, code: 'ACCESS_DENIED_SCHOOL_SCOPE', message: 'المستخدم يتبع مدرسة خارج نطاق المدارس المصرح بها' };
     }
   }
