@@ -2,7 +2,7 @@ import pg from 'pg';
 import crypto from 'node:crypto';
 
 const { Pool } = pg;
-const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 5 });
+const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 5 }); // redeploy env 2026-09-26
 const allowedOrigins = new Set([
   ...String(process.env.CORS_ORIGINS || '').split(',').map(x => x.trim()).filter(Boolean),
   'https://mostafaatteef-eng.github.io',
