@@ -248,7 +248,7 @@ export const ImportWizardModal: React.FC<ImportWizardModalProps> = ({
   const executeImport = () => {
     setIsProcessing(true);
 
-    setTimeout(() => {
+    setTimeout(async () => {
       try {
         if (mode === 'students') {
           const studentsToImport: Student[] = rawRows.map((row, idx) => {
@@ -334,12 +334,15 @@ export const ImportWizardModal: React.FC<ImportWizardModalProps> = ({
             return empObj;
           }).filter(Boolean) as Employee[];
 
-          const res = storageService.bulkSaveEmployees(employeesToImport);
+          const res = await storageService.importManagedEmployeesAuthoritative(employeesToImport);
+          if (!res.success) {
+            throw new Error(res.message || 'تعذر استيراد بيانات العاملين من الخادم المعتمد.');
+          }
           setImportStats({
             added: res.added,
             updated: res.updated,
-            ignored: 0,
-            errors: 0,
+            ignored: res.skipped,
+            errors: res.errors.length,
           });
         }
 
