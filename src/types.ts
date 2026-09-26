@@ -1368,6 +1368,7 @@ export interface TeacherSession {
   username: string;
   schoolId: string;
   department?: string;
+  mustChangePassword?: boolean;
   expiresAt: string;
   createdAt: string;
 }
