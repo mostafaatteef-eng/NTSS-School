@@ -94,10 +94,10 @@ describe('PHASE 3C-A17.2 — Authoritative leave management freeze', () => {
     const end = storage.indexOf('public async getStaffSelfRequestsAuthoritative', start);
     const section = storage.slice(start, end);
 
-    expect(section).toContain("action: 'createManagedLeave'");
-    expect(section).toContain("action: 'createManagedPermission'");
-    expect(section).toContain("action: 'approveManagedLeave'");
-    expect(section).toContain("action: 'rejectManagedLeave'");
+    expect(section).toContain("postLeaveManagementAction('createManagedLeave'");
+    expect(section).toContain("postLeaveManagementAction('createManagedPermission'");
+    expect(section).toContain("'approveManagedLeave'");
+    expect(section).toContain("'rejectManagedLeave'");
     expect(section).not.toContain('approvedBy:');
     expect(section).not.toContain('status: input.status');
   });
