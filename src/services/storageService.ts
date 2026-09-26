@@ -68,6 +68,7 @@ import {
   User,
   normalizeStaffRole,
 } from '../types';
+import { EmployeePermissionRecord } from '../types_extended';
 import {
   MASTER_SCHOOLS_KEY,
   ACTIVE_SCHOOL_KEY,
@@ -5623,6 +5624,232 @@ class StorageService {
         success: false,
         code: 'NETWORK_ERROR',
         message: 'تعذر الاتصال بالخادم لحفظ مسودة المورد.',
+      };
+    }
+  }
+
+  public async getTeacherSelfRequestsAuthoritative(): Promise<{
+    success: boolean;
+    code?: string;
+    message?: string;
+    profile?: {
+      employeeId: string;
+      employeeName: string;
+      department: string;
+      teacherCode?: string;
+    };
+    leaves?: LeaveRecord[];
+    permissions?: EmployeePermissionRecord[];
+  }> {
+    const session = this.getTeacherSession();
+    if (!session?.teacherSessionToken) {
+      return { success: false, code: 'TEACHER_SESSION_REQUIRED', message: 'لا توجد جلسة معلم نشطة.' };
+    }
+
+    const scriptUrl = this.getBackendUrl();
+    const isOnline = typeof navigator === 'undefined' || navigator.onLine !== false;
+    if (!scriptUrl || scriptUrl.length < 15 || !isOnline) {
+      return { success: false, code: 'SERVICE_UNAVAILABLE', message: 'عرض الطلبات يتطلب الاتصال بالخادم المعتمد.' };
+    }
+
+    try {
+      const response = await fetch(scriptUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'getTeacherSelfRequests',
+          teacherSessionToken: session.teacherSessionToken,
+        }),
+      });
+
+      let res: any = null;
+      try {
+        res = await response.json();
+      } catch {}
+
+      const code = String(res?.code || '');
+      if (!response.ok || res?.status === 'error') {
+        if (response.status === 401 || [
+          'TEACHER_SESSION_REQUIRED',
+          'TEACHER_SESSION_INVALID',
+          'TEACHER_SESSION_EXPIRED',
+          'SESSION_EXPIRED',
+          'SESSION_REVOKED',
+          'INVALID_SESSION',
+        ].includes(code)) {
+          this.setTeacherSession(null);
+        }
+        return {
+          success: false,
+          code: code || 'SELF_REQUESTS_READ_FAILED',
+          message: res?.message || 'تعذر تحميل طلبات المعلم.',
+        };
+      }
+
+      return {
+        success: true,
+        message: res?.message || 'تم تحميل الطلبات بنجاح.',
+        profile: res?.data?.profile,
+        leaves: Array.isArray(res?.data?.leaves) ? res.data.leaves : [],
+        permissions: Array.isArray(res?.data?.permissions) ? res.data.permissions : [],
+      };
+    } catch {
+      return {
+        success: false,
+        code: 'NETWORK_ERROR',
+        message: 'تعذر الاتصال بالخادم لتحميل طلبات المعلم.',
+      };
+    }
+  }
+
+  public async createTeacherLeaveRequestAuthoritative(input: {
+    leaveType: LeaveType;
+    startDate: string;
+    endDate: string;
+    reason: string;
+    notes?: string;
+    attachment?: string;
+  }): Promise<{ success: boolean; code?: string; message?: string; leave?: LeaveRecord }> {
+    const session = this.getTeacherSession();
+    if (!session?.teacherSessionToken) {
+      return { success: false, code: 'TEACHER_SESSION_REQUIRED', message: 'لا توجد جلسة معلم نشطة.' };
+    }
+
+    const scriptUrl = this.getBackendUrl();
+    const isOnline = typeof navigator === 'undefined' || navigator.onLine !== false;
+    if (!scriptUrl || scriptUrl.length < 15 || !isOnline) {
+      return { success: false, code: 'SERVICE_UNAVAILABLE', message: 'إرسال طلب الإجازة يتطلب الاتصال بالخادم المعتمد.' };
+    }
+
+    try {
+      const response = await fetch(scriptUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'createTeacherLeaveRequest',
+          teacherSessionToken: session.teacherSessionToken,
+          data: {
+            leaveType: String(input.leaveType || '').trim(),
+            startDate: String(input.startDate || '').trim(),
+            endDate: String(input.endDate || '').trim(),
+            reason: String(input.reason || '').trim(),
+            notes: String(input.notes || '').trim(),
+            attachment: String(input.attachment || ''),
+          },
+        }),
+      });
+
+      let res: any = null;
+      try {
+        res = await response.json();
+      } catch {}
+
+      const code = String(res?.code || '');
+      if (!response.ok || res?.status === 'error') {
+        if (response.status === 401 || [
+          'TEACHER_SESSION_REQUIRED',
+          'TEACHER_SESSION_INVALID',
+          'TEACHER_SESSION_EXPIRED',
+          'SESSION_EXPIRED',
+          'SESSION_REVOKED',
+          'INVALID_SESSION',
+        ].includes(code)) {
+          this.setTeacherSession(null);
+        }
+        return {
+          success: false,
+          code: code || 'LEAVE_REQUEST_FAILED',
+          message: res?.message || 'تعذر إرسال طلب الإجازة.',
+        };
+      }
+
+      return {
+        success: true,
+        message: res?.message || 'تم إرسال طلب الإجازة بنجاح.',
+        leave: res?.leave as LeaveRecord | undefined,
+      };
+    } catch {
+      return {
+        success: false,
+        code: 'NETWORK_ERROR',
+        message: 'تعذر الاتصال بالخادم لإرسال طلب الإجازة.',
+      };
+    }
+  }
+
+  public async createTeacherPermissionRequestAuthoritative(input: {
+    date: string;
+    permissionType: string;
+    startTime: string;
+    endTime: string;
+    reason: string;
+    notes?: string;
+    attachment?: string;
+  }): Promise<{ success: boolean; code?: string; message?: string; permission?: EmployeePermissionRecord }> {
+    const session = this.getTeacherSession();
+    if (!session?.teacherSessionToken) {
+      return { success: false, code: 'TEACHER_SESSION_REQUIRED', message: 'لا توجد جلسة معلم نشطة.' };
+    }
+
+    const scriptUrl = this.getBackendUrl();
+    const isOnline = typeof navigator === 'undefined' || navigator.onLine !== false;
+    if (!scriptUrl || scriptUrl.length < 15 || !isOnline) {
+      return { success: false, code: 'SERVICE_UNAVAILABLE', message: 'إرسال طلب الإذن يتطلب الاتصال بالخادم المعتمد.' };
+    }
+
+    try {
+      const response = await fetch(scriptUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'createTeacherPermissionRequest',
+          teacherSessionToken: session.teacherSessionToken,
+          data: {
+            date: String(input.date || '').trim(),
+            permissionType: String(input.permissionType || '').trim(),
+            startTime: String(input.startTime || '').trim(),
+            endTime: String(input.endTime || '').trim(),
+            reason: String(input.reason || '').trim(),
+            notes: String(input.notes || '').trim(),
+            attachment: String(input.attachment || ''),
+          },
+        }),
+      });
+
+      let res: any = null;
+      try {
+        res = await response.json();
+      } catch {}
+
+      const code = String(res?.code || '');
+      if (!response.ok || res?.status === 'error') {
+        if (response.status === 401 || [
+          'TEACHER_SESSION_REQUIRED',
+          'TEACHER_SESSION_INVALID',
+          'TEACHER_SESSION_EXPIRED',
+          'SESSION_EXPIRED',
+          'SESSION_REVOKED',
+          'INVALID_SESSION',
+        ].includes(code)) {
+          this.setTeacherSession(null);
+        }
+        return {
+          success: false,
+          code: code || 'PERMISSION_REQUEST_FAILED',
+          message: res?.message || 'تعذر إرسال طلب الإذن.',
+        };
+      }
+
+      return {
+        success: true,
+        message: res?.message || 'تم إرسال طلب الإذن بنجاح.',
+        permission: res?.permission as EmployeePermissionRecord | undefined,
+      };
+    } catch {
+      return {
+        success: false,
+        code: 'NETWORK_ERROR',
+        message: 'تعذر الاتصال بالخادم لإرسال طلب الإذن.',
       };
     }
   }
