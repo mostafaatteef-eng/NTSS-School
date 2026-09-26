@@ -1327,13 +1327,32 @@ export function isValidEmailFormat(email: string): boolean {
 export function sanitizeUserDTO(u: BackendUserRecord): BackendUserRecord {
   const roleStr = String(u.role || '').trim();
   const normRole = normalizeUserRole(roleStr);
-  const derivedScope = deriveUserAccessScope(normRole || roleStr);
 
+  if (!normRole) {
+    return {
+      id: String(u.id || '').trim(),
+      username: String(u.username || '').trim(),
+      email: u.email ? normalizeEmail(u.email) : undefined,
+      fullName: String(u.fullName || '').trim(),
+      role: 'NeedsAdminReview',
+      accessScope: 'SCHOOL',
+      schoolId: '',
+      allowedSchoolIds: [],
+      employeeId: undefined,
+      status: 'NeedsAdminReview',
+      department: String(u.department || '').trim() || undefined,
+      createdAt: u.createdAt || '',
+      updatedAt: u.updatedAt || '',
+      lastLogin: u.lastLogin || '',
+      loginNumber: u.loginNumber || '',
+    };
+  }
+
+  const derivedScope = deriveUserAccessScope(normRole);
   let safeSchoolId = '';
   let safeAllowedSchoolIds: string[] = [];
 
   if (derivedScope === 'GLOBAL') {
-    safeSchoolId = '';
     safeAllowedSchoolIds = u.allowedSchoolIds
       ? Array.from(new Set(u.allowedSchoolIds.map(s => String(s).trim().toUpperCase()).filter(Boolean)))
       : [];
@@ -1348,7 +1367,7 @@ export function sanitizeUserDTO(u: BackendUserRecord): BackendUserRecord {
     username: String(u.username || '').trim(),
     email: u.email ? normalizeEmail(u.email) : undefined,
     fullName: String(u.fullName || '').trim(),
-    role: normRole || roleStr,
+    role: normRole,
     accessScope: derivedScope,
     schoolId: safeSchoolId,
     allowedSchoolIds: safeAllowedSchoolIds,
@@ -1393,14 +1412,19 @@ export function getUsersListSecure(session: ServerSession): { success: boolean; 
   const allowed = (session.allowedSchoolIds || []).map(s => s.trim().toUpperCase());
 
   const filtered = masterUsersStore.filter(u => {
+    const normalizedTargetRole = normalizeUserRole(String(u.role || ''));
+    if (!normalizedTargetRole) return false;
+
     const uSchool = String(u.schoolId || '').trim().toUpperCase();
     if (role === 'SchoolAdmin') {
-      // SchoolAdmin sees ONLY users of own school, and NEVER SystemAdmin
-      if (u.role === 'SystemAdmin') return false;
+      if (normalizedTargetRole === 'SystemAdmin') return false;
       return uSchool === sessionSchool;
     }
     if (role === 'SystemAdmin') {
-      if (u.role === 'SystemAdmin') return true;
+      if (normalizedTargetRole === 'SystemAdmin') {
+        const targetAllowed = (u.allowedSchoolIds || []).map(s => String(s).trim().toUpperCase()).filter(Boolean);
+        return targetAllowed.every(schoolId => allowed.includes(schoolId));
+      }
       if (!uSchool) return false;
       return allowed.includes(uSchool);
     }
@@ -1512,7 +1536,10 @@ export function saveUserSecure(
     if (targetRole === 'SystemAdmin') {
       payload.schoolId = '';
       payload.employeeId = '';
-      const parsedAllowed = (payload.allowedSchoolIds || []).map(s => String(s).trim().toUpperCase()).filter(Boolean);
+      const allowedSource = payload.allowedSchoolIds !== undefined
+        ? payload.allowedSchoolIds
+        : (existingUser?.allowedSchoolIds || []);
+      const parsedAllowed = (allowedSource || []).map(s => String(s).trim().toUpperCase()).filter(Boolean);
       const registry = getMasterSchoolRegistry();
 
       if (parsedAllowed.length > 0) {
@@ -1731,7 +1758,12 @@ export function deleteUserSecure(
     }
   } else if (role === 'SystemAdmin') {
     const allowed = (session.allowedSchoolIds || []).map(s => s.trim().toUpperCase());
-    if (target.schoolId && !allowed.includes(target.schoolId.trim().toUpperCase())) {
+    if (normalizeUserRole(String(target.role || '')) === 'SystemAdmin') {
+      const targetAllowed = (target.allowedSchoolIds || []).map(s => String(s).trim().toUpperCase()).filter(Boolean);
+      if (!targetAllowed.every(schoolId => allowed.includes(schoolId))) {
+        return { success: false, code: 'ACCESS_DENIED_SCHOOL_SCOPE', message: 'مدير النظام المستهدف لديه نطاق مدارس يتجاوز نطاق صلاحياتك' };
+      }
+    } else if (target.schoolId && !allowed.includes(target.schoolId.trim().toUpperCase())) {
       return { success: false, code: 'ACCESS_DENIED_SCHOOL_SCOPE', message: 'المستخدم يتبع مدرسة خارج نطاق المدارس المصرح بها' };
     }
   }
@@ -1781,7 +1813,12 @@ export function resetUserPasswordSecure(
     }
   } else if (role === 'SystemAdmin') {
     const allowed = (session.allowedSchoolIds || []).map(s => s.trim().toUpperCase());
-    if (target.schoolId && !allowed.includes(target.schoolId.trim().toUpperCase())) {
+    if (normalizeUserRole(String(target.role || '')) === 'SystemAdmin') {
+      const targetAllowed = (target.allowedSchoolIds || []).map(s => String(s).trim().toUpperCase()).filter(Boolean);
+      if (!targetAllowed.every(schoolId => allowed.includes(schoolId))) {
+        return { success: false, code: 'ACCESS_DENIED_SCHOOL_SCOPE', message: 'مدير النظام المستهدف لديه نطاق مدارس يتجاوز نطاق صلاحياتك' };
+      }
+    } else if (target.schoolId && !allowed.includes(target.schoolId.trim().toUpperCase())) {
       return { success: false, code: 'ACCESS_DENIED_SCHOOL_SCOPE', message: 'المستخدم يتبع مدرسة خارج نطاق المدارس المصرح بها' };
     }
   }
@@ -1837,7 +1874,12 @@ export function toggleUserStatusSecure(
     }
   } else if (role === 'SystemAdmin') {
     const allowed = (session.allowedSchoolIds || []).map(s => s.trim().toUpperCase());
-    if (target.schoolId && !allowed.includes(target.schoolId.trim().toUpperCase())) {
+    if (normalizeUserRole(String(target.role || '')) === 'SystemAdmin') {
+      const targetAllowed = (target.allowedSchoolIds || []).map(s => String(s).trim().toUpperCase()).filter(Boolean);
+      if (!targetAllowed.every(schoolId => allowed.includes(schoolId))) {
+        return { success: false, code: 'ACCESS_DENIED_SCHOOL_SCOPE', message: 'مدير النظام المستهدف لديه نطاق مدارس يتجاوز نطاق صلاحياتك' };
+      }
+    } else if (target.schoolId && !allowed.includes(target.schoolId.trim().toUpperCase())) {
       return { success: false, code: 'ACCESS_DENIED_SCHOOL_SCOPE', message: 'المستخدم يتبع مدرسة خارج نطاق المدارس المصرح بها' };
     }
   }
@@ -1884,7 +1926,12 @@ export function revokeUserSessionsSecure(
     }
   } else if (role === 'SystemAdmin') {
     const allowed = (session.allowedSchoolIds || []).map(s => s.trim().toUpperCase());
-    if (target.schoolId && !allowed.includes(target.schoolId.trim().toUpperCase())) {
+    if (normalizeUserRole(String(target.role || '')) === 'SystemAdmin') {
+      const targetAllowed = (target.allowedSchoolIds || []).map(s => String(s).trim().toUpperCase()).filter(Boolean);
+      if (!targetAllowed.every(schoolId => allowed.includes(schoolId))) {
+        return { success: false, code: 'ACCESS_DENIED_SCHOOL_SCOPE', message: 'مدير النظام المستهدف لديه نطاق مدارس يتجاوز نطاق صلاحياتك' };
+      }
+    } else if (target.schoolId && !allowed.includes(target.schoolId.trim().toUpperCase())) {
       return { success: false, code: 'ACCESS_DENIED_SCHOOL_SCOPE', message: 'المستخدم يتبع مدرسة خارج نطاق المدارس المصرح بها' };
     }
   }
