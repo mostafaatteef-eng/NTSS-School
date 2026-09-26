@@ -1855,27 +1855,84 @@ class StorageService {
     gradeId?: string;
     classroomId?: string;
     records: StudentAttendanceRecord[];
-  }): Promise<{ success: boolean; message?: string; savedCount?: number }> {
+  }): Promise<{ success: boolean; message?: string; savedCount?: number; records?: StudentAttendanceRecord[]; cacheUpdated?: boolean }> {
     const { date, gradeId, classroomId, records } = params;
     if (!records || records.length === 0) {
-      return { success: true, message: 'لا توجد سجلات لحفظها', savedCount: 0 };
+      return { success: true, message: 'لا توجد سجلات لحفظها', savedCount: 0, records: [], cacheUpdated: false };
     }
 
-    // 1. Authoritative Backend Batch Save
+    // Submit only operational attendance input. Student identity metadata,
+    // record IDs, grade/classroom identity and audit fields are server-owned.
+    const requestRecords = records.map(rec => ({
+      studentId: String(rec.studentId || '').trim(),
+      date,
+      status: rec.status,
+      lateMinutes: Number(rec.lateMinutes || 0),
+      notes: String(rec.notes || '').trim(),
+    }));
+
     const backendRes = await this.pushPostDirect('saveDailyStudentAttendanceBatch', {
       date,
       gradeId,
       classroomId,
-      records,
+      records: requestRecords,
     });
 
-    // 2. Save locally in storageService
-    this.saveStudentSchoolAttendanceBatch(records);
+    if (!backendRes.success) {
+      return {
+        success: false,
+        message: backendRes.message || 'فشل حفظ حضور الطلاب في الخادم. لم يتم تحديث التخزين المحلي.',
+        cacheUpdated: false,
+      };
+    }
+
+    const canonicalRecords = Array.isArray(backendRes.records)
+      ? backendRes.records as StudentAttendanceRecord[]
+      : null;
+
+    if (!canonicalRecords || canonicalRecords.length !== records.length) {
+      return {
+        success: true,
+        message: backendRes.message || 'تم الحفظ في الخادم، لكن لم يتم تحديث النسخة المحلية لعدم استلام سجلات طلاب معتمدة كاملة.',
+        savedCount: Number(backendRes.savedCount || records.length),
+        records: [],
+        cacheUpdated: false,
+      };
+    }
+
+    const current = this.getStudentAttendance();
+    const map = new Map<string, StudentAttendanceRecord>();
+    current.forEach(rec => {
+      map.set(
+        `${String(rec.date || '').trim()}_${String(rec.studentId || '').trim().toLowerCase()}`,
+        rec
+      );
+    });
+
+    canonicalRecords.forEach(rec => {
+      const key = `${String(rec.date || '').trim()}_${String(rec.studentId || '').trim().toLowerCase()}`;
+      map.set(key, { ...rec });
+    });
+
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(STORAGE_KEYS.STUDENT_ATTENDANCE, JSON.stringify(Array.from(map.values())));
+      }
+    } catch {}
+
+    this.logAudit(
+      'UPDATE',
+      'STUDENT_ATTENDANCE',
+      `تحديث نسخة عرض حضور الطلاب من السجلات المعتمدة للخادم لعدد (${canonicalRecords.length}) طالب بتاريخ (${date})`
+    );
+    this.notifyChange();
 
     return {
-      success: backendRes.success || true,
-      message: backendRes.message || `تم حفظ حضور الفصل (${records.length} طالب) بنجاح`,
-      savedCount: records.length,
+      success: true,
+      message: backendRes.message || `تم حفظ حضور الفصل بنجاح (${canonicalRecords.length} طالب)`,
+      savedCount: Number(backendRes.savedCount || canonicalRecords.length),
+      records: canonicalRecords,
+      cacheUpdated: true,
     };
   }
 
