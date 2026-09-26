@@ -479,10 +479,7 @@ class StorageService {
       return { success: false, code: 'SCHOOL_SWITCH_NOT_ALLOWED', message: 'تبديل المدرسة مخصص حصرياً لمدير النظام الشامل (SystemAdmin).' };
     }
 
-    const allowed = (currentUser.allowedSchoolIds || []).map(id => id.trim().toUpperCase());
-    if (!allowed.includes(cleanTarget)) {
-      return { success: false, code: 'ACCESS_DENIED_SCHOOL_SCOPE', message: 'المدرسة المطلوبة خارج نطاق المدارس المصرح لك بالوصول إليها.' };
-    }
+    // GLOBAL SystemAdmin may switch to any active school returned by the authoritative registry.
 
     // Client UX guard: verify school is not inactive in local cache
     const masterSchools = this.getSchools();
@@ -495,6 +492,29 @@ class StorageService {
         code: 'SCHOOL_INACTIVE',
         message: 'المدرسة المطلوبة غير مفعلة حالياً في النظام.',
       };
+    }
+
+    if (POSTGRES_API_URL && currentUser.sessionToken) {
+      try {
+        const response = await fetch(`${POSTGRES_API_URL.replace(/\/$/, '')}/api/switch-school`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${currentUser.sessionToken}` },
+          body: JSON.stringify({ schoolId: cleanTarget }),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok || result.status !== 'success') {
+          return { success: false, code: result.code || 'SWITCH_FAILED', message: result.message || 'فشل تبديل سياق المدرسة.' };
+        }
+        this.clearSchoolScopedCaches();
+        const updatedUser: User = { ...currentUser, activeSchoolId: result.activeSchoolId || cleanTarget };
+        this.setCurrentUser(updatedUser);
+        this.setActiveSchoolId(updatedUser.activeSchoolId || cleanTarget);
+        if (currentUser.sessionToken) delete this.sessionValidationCache[currentUser.sessionToken];
+        this.notifyChange();
+        return { success: true, user: updatedUser, school: targetSchoolObj, message: 'تم تبديل سياق المدرسة بنجاح.' };
+      } catch (err: any) {
+        return { success: false, code: 'NETWORK_ERROR', message: err?.message || 'حدث خطأ في الاتصال بخادم PostgreSQL.' };
+      }
     }
 
     const scriptUrl = this.getBackendUrl();
