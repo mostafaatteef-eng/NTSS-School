@@ -78,6 +78,10 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ onBackToLo
   const [resPrepUrl, setResPrepUrl] = useState('');
   const [resPresUrl, setResPresUrl] = useState('');
   const [resStudentUrl, setResStudentUrl] = useState('');
+  const [contentSaving, setContentSaving] = useState<'homework' | 'resource' | null>(null);
+  const [homeworkSaveError, setHomeworkSaveError] = useState('');
+  const [resourceSaveError, setResourceSaveError] = useState('');
+  const [portalNotice, setPortalNotice] = useState('');
 
   // Teacher portal access is session-authoritative. Stored session metadata is
   // never sufficient by itself; the token is revalidated by the backend.
@@ -129,7 +133,27 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ onBackToLo
     if (portalData) {
       setWeeklySchedule(Array.isArray(portalData.schedule) ? portalData.schedule : []);
       setHomeworkList(Array.isArray(portalData.homework) ? portalData.homework : []);
-      setResources(Array.isArray(portalData.resources) ? portalData.resources : []);
+      setResources(
+        Array.isArray(portalData.resources)
+          ? portalData.resources.map((resource: any) => ({
+              id: String(resource.id || ''),
+              teacherId: String(resource.teacherId || teacher.id),
+              subjectId: String(resource.subjectId || resource.subject || ''),
+              classroomId: String(resource.classroomId || resource.classroom || ''),
+              gradeId: resource.gradeId ? String(resource.gradeId) : undefined,
+              academicYearId: resource.academicYearId ? String(resource.academicYearId) : undefined,
+              date: resource.date ? String(resource.date) : undefined,
+              periodNumber: resource.periodNumber ? Number(resource.periodNumber) : undefined,
+              preparationUrl: resource.preparationUrl || resource.preparationNotesUrl || undefined,
+              presentationUrl: resource.presentationUrl || undefined,
+              studentResourceUrl: resource.studentResourceUrl || undefined,
+              teacherNotes: resource.teacherNotes || resource.topic || resource.title || '',
+              visibility: resource.visibility === 'Published' ? 'Published' : 'Draft',
+              createdAt: resource.createdAt || undefined,
+              updatedAt: resource.updatedAt || undefined,
+            }))
+          : []
+      );
       setExams(Array.isArray(portalData.examDuties) ? portalData.examDuties : []);
       setLoadStats(null);
       return;
@@ -145,6 +169,23 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ onBackToLo
     setExams(timetableService.getExamSchedules().filter(
       e => e.status === 'PUBLISHED' || (e.status as any) === 'Published'
     ));
+  };
+
+  const refreshAuthoritativePortalData = async (): Promise<boolean> => {
+    const validation = await storageService.validateTeacherPortalSession();
+    if (!validation.success || !validation.employee) {
+      if (!storageService.getTeacherSession()) {
+        setSessionToken(null);
+        setActiveTeacher(null);
+        setPendingTeacher(null);
+      }
+      return false;
+    }
+
+    setPendingTeacher(validation.employee);
+    setSessionToken(storageService.getTeacherSessionToken());
+    selectTeacher(validation.employee, validation.data);
+    return true;
   };
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -263,55 +304,96 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ onBackToLo
   const todayLessons = weeklySchedule.filter(s => s.dayOfWeek === todayName || s.dayName === todayName);
 
   // Homework submission
-  const handleSaveHomework = () => {
-    if (!activeTeacher || !newHwTitle.trim()) return;
+  const handleSaveHomework = async () => {
+    if (!activeTeacher || !newHwTitle.trim() || contentSaving) return;
 
-    const hw: Homework = {
-      id: `HW-${Date.now()}`,
-      title: newHwTitle.trim(),
+    setContentSaving('homework');
+    setHomeworkSaveError('');
+    setPortalNotice('');
+
+    const result = await storageService.saveTeacherHomeworkDraftAuthoritative({
+      title: newHwTitle,
       description: newHwDesc,
       subject: newHwSubject || 'العلوم التقنية التخصصية',
-      grade: newHwClassroom.startsWith('1') ? 'الصف الأول الثانوي' : 'الصف الثاني الثانوي',
+      grade: newHwClassroom.startsWith('1')
+        ? 'الصف الأول الثانوي'
+        : newHwClassroom.startsWith('2')
+          ? 'الصف الثاني الثانوي'
+          : 'الصف الثالث الثانوي',
       classroom: newHwClassroom,
-      teacherId: activeTeacher.id,
-      teacherName: activeTeacher.name,
       assignedDate: new Date().toISOString().split('T')[0],
       dueDate: newHwDueDate || new Date().toISOString().split('T')[0],
-      status: 'Published',
-      createdAt: new Date().toISOString(),
-    };
+    });
 
-    storageService.saveHomework(hw);
-    setHomeworkList([...homeworkList, hw]);
+    if (!result.success) {
+      setHomeworkSaveError(result.message || 'تعذر حفظ مسودة الواجب.');
+      if (!storageService.getTeacherSession()) {
+        setSessionToken(null);
+        setActiveTeacher(null);
+      }
+      setContentSaving(null);
+      return;
+    }
+
+    const refreshed = await refreshAuthoritativePortalData();
+    if (!refreshed) {
+      setHomeworkSaveError('تم الحفظ، لكن تعذر إعادة تحميل بيانات البوابة من الخادم.');
+      setContentSaving(null);
+      return;
+    }
+
     setIsHwModalOpen(false);
     setNewHwTitle('');
+    setNewHwSubject('');
     setNewHwDesc('');
+    setNewHwDueDate('');
+    setPortalNotice(result.message || 'تم حفظ الواجب كمسودة للمراجعة.');
+    setContentSaving(null);
   };
 
   // Resource submission
-  const handleSaveResource = () => {
-    if (!activeTeacher || !resTopic.trim()) return;
+  const handleSaveResource = async () => {
+    if (!activeTeacher || !resTopic.trim() || contentSaving) return;
 
-    const resItem: TeacherLessonResource = {
-      id: `RES-${Date.now()}`,
-      teacherId: activeTeacher.id,
-      subjectId: 'SUB-GEN',
-      classroomId: resClassroom,
-      preparationUrl: resPrepUrl.trim() || undefined,
-      presentationUrl: resPresUrl.trim() || undefined,
-      studentResourceUrl: resStudentUrl.trim() || undefined,
-      teacherNotes: resTopic.trim(),
-      visibility: resStudentUrl.trim() ? 'Published' : 'Draft',
-      updatedAt: new Date().toISOString(),
-    };
+    setContentSaving('resource');
+    setResourceSaveError('');
+    setPortalNotice('');
 
-    timetableService.saveTeacherLessonResource(resItem);
-    setResources([...resources, resItem]);
+    const result = await storageService.saveTeacherResourceDraftAuthoritative({
+      title: resTopic,
+      topic: resTopic,
+      subject: resSubject,
+      classroom: resClassroom,
+      preparationNotesUrl: resPrepUrl,
+      presentationUrl: resPresUrl,
+      studentResourceUrl: resStudentUrl,
+    });
+
+    if (!result.success) {
+      setResourceSaveError(result.message || 'تعذر حفظ مسودة المورد.');
+      if (!storageService.getTeacherSession()) {
+        setSessionToken(null);
+        setActiveTeacher(null);
+      }
+      setContentSaving(null);
+      return;
+    }
+
+    const refreshed = await refreshAuthoritativePortalData();
+    if (!refreshed) {
+      setResourceSaveError('تم الحفظ، لكن تعذر إعادة تحميل بيانات البوابة من الخادم.');
+      setContentSaving(null);
+      return;
+    }
+
     setIsResModalOpen(false);
     setResTopic('');
+    setResSubject('');
     setResPrepUrl('');
     setResPresUrl('');
     setResStudentUrl('');
+    setPortalNotice(result.message || 'تم حفظ المورد كمسودة للمراجعة.');
+    setContentSaving(null);
   };
 
   if (mustChangePassword && sessionToken && pendingTeacher) {
@@ -495,6 +577,13 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ onBackToLo
           حساب المعلم معزول تماماً عن نظام ERP الإداري
         </div>
       </div>
+
+      {portalNotice && (
+        <div className="flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-xs font-bold text-emerald-800">
+          <CheckCircle2 className="h-4 w-4 shrink-0" />
+          {portalNotice}
+        </div>
+      )}
 
       {/* Teacher Profile Banner */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
@@ -716,7 +805,7 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ onBackToLo
               الواجبات المنزلية والمهام المكلف بها الطلاب
             </h3>
             <button
-              onClick={() => setIsHwModalOpen(true)}
+              onClick={() => { setHomeworkSaveError(''); setIsHwModalOpen(true); }}
               className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5"
             >
               <Plus className="w-4 h-4" />
@@ -756,7 +845,7 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ onBackToLo
               </p>
             </div>
             <button
-              onClick={() => setIsResModalOpen(true)}
+              onClick={() => { setResourceSaveError(''); setIsResModalOpen(true); }}
               className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5"
             >
               <Plus className="w-4 h-4" />
@@ -869,6 +958,12 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ onBackToLo
               </button>
             </div>
 
+            {homeworkSaveError && (
+              <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-bold text-rose-700">
+                {homeworkSaveError}
+              </div>
+            )}
+
             <div className="space-y-3 text-xs">
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">عنوان الواجب</label>
@@ -926,10 +1021,11 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ onBackToLo
                 إلغاء
               </button>
               <button
-                onClick={handleSaveHomework}
-                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold"
+                onClick={() => void handleSaveHomework()}
+                disabled={contentSaving !== null}
+                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50"
               >
-                حفظ ونشر الواجب
+                {contentSaving === 'homework' ? 'جارٍ الحفظ...' : 'حفظ كمسودة'}
               </button>
             </div>
           </div>
@@ -946,6 +1042,12 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ onBackToLo
                 ✕
               </button>
             </div>
+
+            {resourceSaveError && (
+              <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-bold text-rose-700">
+                {resourceSaveError}
+              </div>
+            )}
 
             <div className="space-y-3 text-xs">
               <div>
@@ -1014,7 +1116,7 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ onBackToLo
 
               <div>
                 <label className="block font-semibold text-slate-700 mb-1 text-emerald-700">
-                  رابط المصادر المنشورة للطلاب (يظهر بجدول الطالب)
+                  رابط مصدر مقترح للطلاب (يظهر فقط بعد الاعتماد)
                 </label>
                 <input
                   type="url"
@@ -1034,10 +1136,11 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ onBackToLo
                 إلغاء
               </button>
               <button
-                onClick={handleSaveResource}
-                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold"
+                onClick={() => void handleSaveResource()}
+                disabled={contentSaving !== null}
+                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50"
               >
-                حفظ المصادر
+                {contentSaving === 'resource' ? 'جارٍ الحفظ...' : 'حفظ كمسودة'}
               </button>
             </div>
           </div>
