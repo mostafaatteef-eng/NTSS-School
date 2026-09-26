@@ -5727,10 +5727,21 @@ class StorageService {
   }> {
     const result = await this.postEmployeeManagementAction('getEmployees');
     if (!result.success) return result;
+    const employees = Array.isArray(result.data) ? result.data as Employee[] : [];
+
+    // Cache is UX-only and is refreshed strictly after authoritative backend success.
+    // This keeps other read-only/reporting surfaces synchronized without granting local write authority.
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify(employees));
+      }
+    } catch {}
+    this.notifyChange();
+
     return {
       success: true,
       message: result.message,
-      employees: Array.isArray(result.data) ? result.data : [],
+      employees,
     };
   }
 
