@@ -158,7 +158,11 @@ function doPost(e) {
 
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
-    ensureProductionStaffSheetsExist(ss);
+
+    // Request handling is a hot path. Schema creation/migration belongs to
+    // explicit provisioning/deployment routines, never to every POST request.
+    // Running it here made login, session validation, and syncData repeatedly
+    // scan/repair all canonical sheets before doing the requested work.
 
     // Parse Request Body
     var postData = {};
