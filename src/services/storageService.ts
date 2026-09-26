@@ -4869,7 +4869,29 @@ class StorageService {
 
   public async pushPostDirect(action: string, payload: any, timeoutMs = 2000): Promise<{ success: boolean; message?: string; [key: string]: any }> {
     if (isPostgresBackendEnabled()) {
-      return { success: false, code: 'LEGACY_GAS_MUTATION_BLOCKED', message: 'هذه العملية لم تُنقل بعد إلى PostgreSQL وتم إيقاف إرسال جلسة Neon إلى Google Apps Script.' };
+      const currentUser = this.getCurrentUser();
+      const schoolId = this.getActiveSchoolId();
+      if (!currentUser?.sessionToken) return { success: false, code: 'AUTH_REQUIRED', message: 'يجب تسجيل الدخول بجلسة معتمدة.' };
+      const path = action === 'saveDailyStudentAttendanceBatch'
+        ? '/student-attendance/batch'
+        : action === 'saveDailyStaffAttendanceBatch'
+          ? '/employee-attendance/batch'
+          : '';
+      if (!path) return { success: false, code: 'LEGACY_GAS_MUTATION_BLOCKED', message: 'هذه العملية لم تُنقل بعد إلى PostgreSQL وتم منع إرسال جلسة Neon إلى Google Apps Script.' };
+      try {
+        const pg = await postgresApiRequest<any>(path, currentUser.sessionToken, {
+          method: 'POST',
+          body: JSON.stringify({ ...(payload || {}), schoolId }),
+        }, timeoutMs);
+        const res = pg.body || {};
+        if (!pg.ok || res.status !== 'success') {
+          if (pg.status === 401) this.setCurrentUser(null);
+          return { success: false, code: res.code || `HTTP_${pg.status}`, message: res.message || 'فشل حفظ البيانات في PostgreSQL.' };
+        }
+        return { ...res, success: true, message: res.message || 'تم الحفظ في PostgreSQL بنجاح.' };
+      } catch (err: any) {
+        return { success: false, code: 'NETWORK_ERROR', message: `خطأ اتصال: ${err?.message || 'فشل الاتصال بخادم PostgreSQL'}` };
+      }
     }
     const settings = this.getSettings();
     const scriptUrl = settings.googleAppsScriptUrl || DEFAULT_BACKEND_URL;
@@ -6106,6 +6128,33 @@ class StorageService {
       return { success: false, code: 'AUTH_REQUIRED', message: 'يجب تسجيل الدخول بجلسة عمل معتمدة.' };
     }
 
+    if (isPostgresBackendEnabled()) {
+      const schoolId = this.getActiveSchoolId();
+      if (!schoolId) return { success: false, code: 'SCHOOL_CONTEXT_REQUIRED', message: 'يرجى اختيار المدرسة أولاً.' };
+      try {
+        const pg = await postgresApiRequest<any>('/students/manage', user.sessionToken, {
+          method: 'POST',
+          body: JSON.stringify({ action, schoolId, data }),
+        });
+        const res = pg.body || {};
+        if (!pg.ok || res.status !== 'success') {
+          if (pg.status === 401) this.setCurrentUser(null);
+          return { success: false, code: res.code || `HTTP_${pg.status}`, message: res.message || 'تعذر تنفيذ العملية على بيانات الطلاب.' };
+        }
+        const normalize = (row: any): Student => ({
+          ...(row?.payload && typeof row.payload === 'object' ? row.payload : {}),
+          id: row.id, schoolId: row.school_id || schoolId, studentCode: row.student_code || '',
+          name: row.full_name || '', fullName: row.full_name || '', grade: row.grade || '',
+          classroom: row.classroom || '', section: row.section || '', status: row.status || 'نشط',
+          createdAt: row.created_at, updatedAt: row.updated_at,
+        } as Student);
+        const normalizedData = Array.isArray(res.data) ? res.data.map(normalize) : res.data ? normalize(res.data) : undefined;
+        return { success: true, message: res.message || 'تم تنفيذ العملية بنجاح.', data: normalizedData, student: res.student ? normalize(res.student) : (res.data && !Array.isArray(res.data) ? normalize(res.data) : undefined) };
+      } catch {
+        return { success: false, code: 'NETWORK_ERROR', message: 'تعذر الاتصال بخادم PostgreSQL لإدارة بيانات الطلاب.' };
+      }
+    }
+
     const scriptUrl = this.getBackendUrl();
     const online = typeof navigator === 'undefined' || navigator.onLine !== false;
     if (!scriptUrl || scriptUrl.length < 15 || !online) {
@@ -6294,6 +6343,32 @@ class StorageService {
     const user = this.getCurrentUser();
     if (!user?.sessionToken) {
       return { success: false, code: 'AUTH_REQUIRED', message: 'يجب تسجيل الدخول بجلسة عمل معتمدة.' };
+    }
+
+    if (isPostgresBackendEnabled()) {
+      const schoolId = this.getActiveSchoolId();
+      if (!schoolId) return { success: false, code: 'SCHOOL_CONTEXT_REQUIRED', message: 'يرجى اختيار المدرسة أولاً.' };
+      try {
+        const pg = await postgresApiRequest<any>('/employees/manage', user.sessionToken, {
+          method: 'POST',
+          body: JSON.stringify({ action, schoolId, data }),
+        });
+        const res = pg.body || {};
+        if (!pg.ok || res.status !== 'success') {
+          if (pg.status === 401) this.setCurrentUser(null);
+          return { success: false, code: res.code || `HTTP_${pg.status}`, message: res.message || 'تعذر تنفيذ العملية على بيانات العاملين.' };
+        }
+        const normalize = (row: any): Employee => ({
+          ...(row?.payload && typeof row.payload === 'object' ? row.payload : {}),
+          id: row.id, employeeId: row.id, schoolId: row.school_id || schoolId, employeeCode: row.employee_code || '',
+          name: row.full_name || '', fullName: row.full_name || '', department: row.department || '',
+          jobTitle: row.job_title || '', status: row.status || 'Active', createdAt: row.created_at, updatedAt: row.updated_at,
+        } as Employee);
+        const normalizedData = Array.isArray(res.data) ? res.data.map(normalize) : res.data ? normalize(res.data) : undefined;
+        return { success: true, message: res.message || 'تم تنفيذ العملية بنجاح.', data: normalizedData, employee: res.employee ? normalize(res.employee) : (res.data && !Array.isArray(res.data) ? normalize(res.data) : undefined) };
+      } catch {
+        return { success: false, code: 'NETWORK_ERROR', message: 'تعذر الاتصال بخادم PostgreSQL لإدارة بيانات العاملين.' };
+      }
     }
 
     const scriptUrl = this.getBackendUrl();
