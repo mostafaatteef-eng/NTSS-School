@@ -49,6 +49,11 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ currentUse
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [mustChangePassword, setMustChangePassword] = useState(false);
+  const [pendingTeacher, setPendingTeacher] = useState<Employee | null>(null);
+  const [newTeacherPassword, setNewTeacherPassword] = useState('');
+  const [confirmTeacherPassword, setConfirmTeacherPassword] = useState('');
+  const [passwordChangeError, setPasswordChangeError] = useState<string | null>(null);
 
   // Data states
   const [weeklySchedule, setWeeklySchedule] = useState<ScheduleItem[]>([]);
@@ -74,59 +79,72 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ currentUse
   const [resPresUrl, setResPresUrl] = useState('');
   const [resStudentUrl, setResStudentUrl] = useState('');
 
-  const isSupervisor = currentUser?.role === 'Admin' ||
-    currentUser?.role === 'SchoolDirector' ||
-    currentUser?.role === 'TeacherAffairs';
-
-  // Session-first authentication
+  // Teacher portal access is session-authoritative. Stored session metadata is
+  // never sufficient by itself; the token is revalidated by the backend.
   useEffect(() => {
-    // 1. Check existing active Teacher Session (authoritative token)
-    const session = storageService.getTeacherSession();
-    if (session && session.teacherSessionToken) {
-      setSessionToken(session.teacherSessionToken);
-      const teachers = timetableService.getTeachingStaff();
-      const match = teachers.find(t => t.id === session.employeeId) || {
-        id: session.employeeId,
-        name: session.teacherName,
-        teacherCode: session.teacherCode,
-        department: session.department || 'هيئة التدريس',
-        jobTitle: 'معلم',
-        status: 'Active',
-        isTeachingStaff: true,
-      } as Employee;
-      selectTeacher(match);
+    let cancelled = false;
+
+    const restoreTeacherSession = async () => {
+      const session = storageService.getTeacherSession();
+      if (!session?.teacherSessionToken) {
+        setSessionToken(null);
+        setActiveTeacher(null);
+        return;
+      }
+
+      const validation = await storageService.validateTeacherPortalSession();
+      if (cancelled) return;
+
+      if (!validation.success || !validation.employee) {
+        setSessionToken(null);
+        setActiveTeacher(null);
+        if (validation.code !== 'SERVICE_UNAVAILABLE') {
+          setLoginError(validation.message || 'انتهت جلسة المعلم. يرجى تسجيل الدخول مجدداً.');
+        }
+        return;
+      }
+
+      setSessionToken(storageService.getTeacherSessionToken());
+      setPendingTeacher(validation.employee);
+
+      if (validation.mustChangePassword) {
+        setMustChangePassword(true);
+        setActiveTeacher(null);
+        return;
+      }
+
+      setMustChangePassword(false);
+      selectTeacher(validation.employee, validation.data);
+    };
+
+    void restoreTeacherSession();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const selectTeacher = (teacher: Employee, portalData?: any) => {
+    setActiveTeacher(teacher);
+
+    if (portalData) {
+      setWeeklySchedule(Array.isArray(portalData.schedule) ? portalData.schedule : []);
+      setHomeworkList(Array.isArray(portalData.homework) ? portalData.homework : []);
+      setResources(Array.isArray(portalData.resources) ? portalData.resources : []);
+      setExams(Array.isArray(portalData.examDuties) ? portalData.examDuties : []);
+      setLoadStats(null);
       return;
     }
 
-    // 2. Supervisor preview fallback if logged in as Admin or TeacherAffairs in ERP
-    if (isSupervisor && currentUser) {
-      const teachers = timetableService.getTeachingStaff();
-      if (teachers.length > 0 && !activeTeacher) {
-        selectTeacher(teachers[0]);
-      }
-    }
-  }, [currentUser]);
-
-  const selectTeacher = (teacher: Employee) => {
-    setActiveTeacher(teacher);
-
-    // Load teacher specific data
+    // Fallback is used only after an authoritative teacher session has already
+    // been validated. It is not an authentication or authorization source.
     const schedule = timetableService.getTeacherWeeklySchedule(teacher.id);
     setWeeklySchedule(schedule);
-
-    const stats = timetableService.calculateTeacherLoad(teacher.id);
-    setLoadStats(stats);
-
-    const hw = storageService.getHomeworks().filter(h => h.teacherId === teacher.id || h.teacherName === teacher.name);
-    setHomeworkList(hw);
-
-    const res = timetableService.getTeacherLessonResources({ teacherId: teacher.id });
-    setResources(res);
-
-    const allExams = timetableService.getExamSchedules().filter(
+    setLoadStats(timetableService.calculateTeacherLoad(teacher.id));
+    setHomeworkList(storageService.getHomeworks().filter(h => h.teacherId === teacher.id || h.teacherName === teacher.name));
+    setResources(timetableService.getTeacherLessonResources({ teacherId: teacher.id }));
+    setExams(timetableService.getExamSchedules().filter(
       e => e.status === 'PUBLISHED' || (e.status as any) === 'Published'
-    );
-    setExams(allExams);
+    ));
   };
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -156,10 +174,67 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ currentUse
 
       setSessionToken(res.teacherSessionToken);
       if (res.employee) {
-        selectTeacher(res.employee);
+        setPendingTeacher(res.employee);
       }
+
+      if (res.mustChangePassword) {
+        setMustChangePassword(true);
+        setActiveTeacher(null);
+        setPassword('');
+        return;
+      }
+
+      const validation = await storageService.validateTeacherPortalSession();
+      if (!validation.success || !validation.employee) {
+        setSessionToken(null);
+        setActiveTeacher(null);
+        setLoginError(validation.message || 'تعذر التحقق من جلسة المعلم بعد تسجيل الدخول.');
+        return;
+      }
+
+      setMustChangePassword(false);
+      selectTeacher(validation.employee, validation.data);
     } catch {
       setLoginError('حدث خطأ أثناء الاتصال بالخادم');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleForcedPasswordChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordChangeError(null);
+
+    if (newTeacherPassword.length < 8) {
+      setPasswordChangeError('كلمة المرور الجديدة يجب ألا تقل عن 8 أحرف.');
+      return;
+    }
+    if (newTeacherPassword !== confirmTeacherPassword) {
+      setPasswordChangeError('كلمتا المرور غير متطابقتين.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const changed = await storageService.changeTeacherPassword(newTeacherPassword);
+      if (!changed.success || !changed.teacherSessionToken) {
+        setPasswordChangeError(changed.message || 'تعذر تغيير كلمة المرور.');
+        return;
+      }
+
+      const validation = await storageService.validateTeacherPortalSession();
+      if (!validation.success || !validation.employee) {
+        setPasswordChangeError(validation.message || 'تم تغيير كلمة المرور ولكن تعذر التحقق من الجلسة الجديدة.');
+        return;
+      }
+
+      setSessionToken(changed.teacherSessionToken);
+      setMustChangePassword(false);
+      setNewTeacherPassword('');
+      setConfirmTeacherPassword('');
+      setPassword('');
+      setPendingTeacher(validation.employee);
+      selectTeacher(validation.employee, validation.data);
     } finally {
       setIsSubmitting(false);
     }
@@ -169,6 +244,10 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ currentUse
     storageService.logoutTeacher();
     setSessionToken(null);
     setActiveTeacher(null);
+    setPendingTeacher(null);
+    setMustChangePassword(false);
+    setNewTeacherPassword('');
+    setConfirmTeacherPassword('');
     if (onBackToLogin) {
       onBackToLogin();
     }
@@ -234,6 +313,70 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ currentUse
     setResPresUrl('');
     setResStudentUrl('');
   };
+
+  if (mustChangePassword && sessionToken && pendingTeacher) {
+    return (
+      <div className="max-w-md mx-auto my-12 bg-white rounded-3xl p-8 border border-slate-200 shadow-xl space-y-6" dir="rtl">
+        <div className="text-center space-y-2">
+          <div className="w-14 h-14 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center mx-auto shadow-sm">
+            <Lock className="w-8 h-8" />
+          </div>
+          <h2 className="text-xl font-bold text-slate-800">تغيير كلمة المرور مطلوب</h2>
+          <p className="text-xs text-slate-500 leading-relaxed">
+            تم تسجيل الدخول بكلمة مرور مؤقتة. يجب تعيين كلمة مرور جديدة قبل فتح بوابة المعلم.
+          </p>
+        </div>
+
+        {passwordChangeError && (
+          <div className="bg-rose-50 border border-rose-200 p-3 rounded-xl text-xs font-bold text-rose-800 flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+            <div className="leading-relaxed">{passwordChangeError}</div>
+          </div>
+        )}
+
+        <form onSubmit={handleForcedPasswordChange} className="space-y-4 text-xs">
+          <div>
+            <label className="block font-semibold text-slate-700 mb-1">كلمة المرور الجديدة</label>
+            <input
+              type="password"
+              autoComplete="new-password"
+              required
+              minLength={8}
+              value={newTeacherPassword}
+              onChange={e => setNewTeacherPassword(e.target.value)}
+              className="w-full rounded-xl border border-slate-200 px-3 py-2.5 outline-none focus:border-indigo-500"
+            />
+          </div>
+          <div>
+            <label className="block font-semibold text-slate-700 mb-1">تأكيد كلمة المرور الجديدة</label>
+            <input
+              type="password"
+              autoComplete="new-password"
+              required
+              minLength={8}
+              value={confirmTeacherPassword}
+              onChange={e => setConfirmTeacherPassword(e.target.value)}
+              className="w-full rounded-xl border border-slate-200 px-3 py-2.5 outline-none focus:border-indigo-500"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className="w-full rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50"
+          >
+            {isSubmitting ? 'جارٍ تغيير كلمة المرور...' : 'تعيين كلمة المرور والدخول'}
+          </button>
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-bold text-slate-600"
+          >
+            تسجيل الخروج
+          </button>
+        </form>
+      </div>
+    );
+  }
 
   // LOGIN SCREEN if no teacher is authenticated
   if (!activeTeacher) {
