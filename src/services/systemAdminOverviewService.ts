@@ -11,6 +11,7 @@
 
 import { SystemOverviewResponse, User } from '../types';
 import { storageService } from './storageService';
+import { isPostgresBackendEnabled, postgresApiRequest } from './backend/postgresRuntime';
 
 export interface SystemOverviewOperationResult {
   success: boolean;
@@ -77,6 +78,45 @@ export class SystemAdminOverviewService {
       return check.error!;
     }
     const user = check.user;
+
+    if (isPostgresBackendEnabled()) {
+      try {
+        const pg = await postgresApiRequest<any>('/system-overview', user.sessionToken || '');
+        const res = pg.body;
+        if (!pg.ok || res?.status !== 'success' || !res?.data?.summary || !Array.isArray(res?.data?.schools)) {
+          return {
+            success: false,
+            code: res?.code || `HTTP_${pg.status}`,
+            message: res?.message || 'تعذر تحميل مؤشرات البيانات التشغيلية.',
+          };
+        }
+        const source = res.data;
+        return {
+          success: true,
+          message: 'تم استرجاع النظرة العامة للمنظومة بنجاح.',
+          data: {
+            summary: {
+              studentsTotal: Number(source.summary.studentsTotal) || 0,
+              employeesTotal: Number(source.summary.employeesTotal) || 0,
+              schoolsIncluded: Number(source.summary.schoolsIncluded) || 0,
+              schoolsUnavailable: Number(source.summary.schoolsUnavailable) || 0,
+            },
+            schools: source.schools.map((s: any) => ({
+              schoolId: String(s.schoolId || s.id || '').trim().toUpperCase(),
+              schoolCode: String(s.schoolCode || s.code || '').trim().toUpperCase(),
+              schoolName: String(s.schoolName || s.name || '').trim(),
+              status: String(s.status || '').trim().toLowerCase() === 'inactive' ? 'Inactive' : 'Active',
+              dataStatus: s.dataStatus || 'AVAILABLE',
+              studentsCount: typeof s.studentsCount === 'number' ? s.studentsCount : null,
+              employeesCount: typeof s.employeesCount === 'number' ? s.employeesCount : null,
+            })),
+            generatedAt: source.generatedAt || new Date().toISOString(),
+          },
+        };
+      } catch {
+        return { success: false, code: 'NETWORK_ERROR', message: 'تعذر تحميل مؤشرات البيانات التشغيلية.' };
+      }
+    }
 
     const scriptUrl = storageService.getBackendUrl();
     const isOnline = typeof navigator === 'undefined' || navigator.onLine !== false;
