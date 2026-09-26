@@ -24,9 +24,10 @@ import { getCairoCurrentDate } from '../../utils/egyptianTime';
 
 interface MyRequestsViewProps {
   currentUser: User | null;
+  authMode?: 'staff' | 'teacher';
 }
 
-export const MyRequestsView: React.FC<MyRequestsViewProps> = ({ currentUser }) => {
+export const MyRequestsView: React.FC<MyRequestsViewProps> = ({ currentUser, authMode = 'staff' }) => {
   const [activeTab, setActiveTab] = useState<'leaves' | 'permissions'>('leaves');
 
   // Leaves state
@@ -57,31 +58,62 @@ export const MyRequestsView: React.FC<MyRequestsViewProps> = ({ currentUser }) =
   // View Details Modal
   const [viewingLeave, setViewingLeave] = useState<LeaveRecord | null>(null);
   const [viewingPerm, setViewingPerm] = useState<EmployeePermissionRecord | null>(null);
+  const [teacherProfile, setTeacherProfile] = useState<{
+    employeeId: string;
+    employeeName: string;
+    department: string;
+    teacherCode?: string;
+  } | null>(null);
+  const [requestsLoading, setRequestsLoading] = useState(false);
+  const [requestsError, setRequestsError] = useState('');
+  const [requestSubmitting, setRequestSubmitting] = useState<'leave' | 'permission' | null>(null);
 
-  // Employee details from session
+  // Teacher mode is authorized exclusively by TeacherSession.
+  // Staff mode retains the existing ERP self-service path until its own hardening phase.
   const ownEmpId = currentUser?.employeeId || currentUser?.id || '';
   const ownEmployee: Employee | undefined = useMemo(() => {
+    if (authMode === 'teacher') return undefined;
     return storageService.getEmployees().find(e => e.id === ownEmpId || e.employeeNumber === ownEmpId);
-  }, [ownEmpId]);
+  }, [authMode, ownEmpId]);
 
-  // Load requests
-  const loadData = () => {
+  const loadData = async () => {
     if (!currentUser) return;
+
+    if (authMode === 'teacher') {
+      setRequestsLoading(true);
+      setRequestsError('');
+      const result = await storageService.getTeacherSelfRequestsAuthoritative();
+      setRequestsLoading(false);
+
+      if (!result.success) {
+        setLeaves([]);
+        setPermissions([]);
+        setTeacherProfile(null);
+        setRequestsError(result.message || 'تعذر تحميل طلباتك من الخادم.');
+        return;
+      }
+
+      setTeacherProfile(result.profile || null);
+      setLeaves(result.leaves || []);
+      setPermissions(result.permissions || []);
+      return;
+    }
+
     const targetEmpId = currentUser.employeeId || currentUser.id;
     const allLeaves = storageService.getLeaves();
     setLeaves(allLeaves.filter(l => l.employeeId === targetEmpId));
-
-    const allPerms = HRPayrollService.getPermissions({ employeeId: targetEmpId });
-    setPermissions(allPerms);
+    setPermissions(HRPayrollService.getPermissions({ employeeId: targetEmpId }));
   };
 
   useEffect(() => {
-    loadData();
+    void loadData();
+    if (authMode === 'teacher') return;
+
     const unsub = storageService.subscribe(() => {
-      loadData();
+      void loadData();
     });
     return () => unsub();
-  }, [currentUser]);
+  }, [currentUser, authMode]);
 
   // Dynamic leave types
   const dynamicLeaveTypes = useMemo(() => {
@@ -129,7 +161,7 @@ export const MyRequestsView: React.FC<MyRequestsViewProps> = ({ currentUser }) =
   };
 
   // Submit Leave
-  const handleSubmitLeave = (e: React.FormEvent) => {
+  const handleSubmitLeave = async (e: React.FormEvent) => {
     e.preventDefault();
     setLeaveError('');
     setLeaveSuccess('');
@@ -144,12 +176,39 @@ export const MyRequestsView: React.FC<MyRequestsViewProps> = ({ currentUser }) =
       return;
     }
 
-    // Notice: Frontend does NOT send employeeId or schoolId as authority.
-    // Backend extracts them strictly from session.
+    if (authMode === 'teacher') {
+      setRequestSubmitting('leave');
+      const result = await storageService.createTeacherLeaveRequestAuthoritative({
+        leaveType,
+        startDate: leaveStartDate,
+        endDate: leaveEndDate,
+        reason: leaveReason,
+        notes: leaveNotes,
+        attachment: leaveAttachment,
+      });
+      setRequestSubmitting(null);
+
+      if (!result.success) {
+        setLeaveError(result.message || 'تعذر إرسال طلب الإجازة');
+        return;
+      }
+
+      setLeaveSuccess(result.message || 'تم إرسال طلب الإجازة بنجاح، وهو الآن قيد المراجعة والاعتماد.');
+      setLeaveReason('');
+      setLeaveNotes('');
+      setLeaveAttachment('');
+      await loadData();
+      setTimeout(() => {
+        setIsLeaveModalOpen(false);
+        setLeaveSuccess('');
+      }, 700);
+      return;
+    }
+
     const res = storageService.saveLeave(
       {
         id: `LEV-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-        employeeId: ownEmpId, // Backend overrides with caller session
+        employeeId: ownEmpId,
         employeeName: ownEmployee?.name || currentUser?.fullName || 'الموظف',
         department: ownEmployee?.department || 'هيئة التدريس',
         leaveType,
@@ -174,7 +233,7 @@ export const MyRequestsView: React.FC<MyRequestsViewProps> = ({ currentUser }) =
         setIsLeaveModalOpen(false);
         setLeaveSuccess('');
       }, 1200);
-      loadData();
+      void loadData();
     } else {
       setLeaveError(res.message || 'تعذر إرسال الطلب');
     }
@@ -194,7 +253,7 @@ export const MyRequestsView: React.FC<MyRequestsViewProps> = ({ currentUser }) =
   };
 
   // Submit Permission
-  const handleSubmitPerm = (e: React.FormEvent) => {
+  const handleSubmitPerm = async (e: React.FormEvent) => {
     e.preventDefault();
     setPermError('');
     setPermSuccess('');
@@ -210,10 +269,40 @@ export const MyRequestsView: React.FC<MyRequestsViewProps> = ({ currentUser }) =
       return;
     }
 
+    if (authMode === 'teacher') {
+      setRequestSubmitting('permission');
+      const result = await storageService.createTeacherPermissionRequestAuthoritative({
+        date: permDate,
+        permissionType: permType,
+        startTime: permStartTime,
+        endTime: permEndTime,
+        reason: permReason,
+        notes: permNotes,
+        attachment: permAttachment,
+      });
+      setRequestSubmitting(null);
+
+      if (!result.success) {
+        setPermError(result.message || 'تعذر إرسال طلب الإذن');
+        return;
+      }
+
+      setPermSuccess(result.message || 'تم إرسال طلب الإذن بنجاح وهو الآن قيد المراجعة.');
+      setPermReason('');
+      setPermNotes('');
+      setPermAttachment('');
+      await loadData();
+      setTimeout(() => {
+        setIsPermModalOpen(false);
+        setPermSuccess('');
+      }, 700);
+      return;
+    }
+
     const res = HRPayrollService.savePermission(
       {
         id: `PERM-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-        employeeId: ownEmpId, // Backend enforces session
+        employeeId: ownEmpId,
         date: permDate,
         permissionType: permType,
         startTime: permStartTime,
@@ -235,7 +324,7 @@ export const MyRequestsView: React.FC<MyRequestsViewProps> = ({ currentUser }) =
         setIsPermModalOpen(false);
         setPermSuccess('');
       }, 1200);
-      loadData();
+      void loadData();
     } else {
       setPermError(res.message || 'تعذر إرسال طلب الإذن');
     }
@@ -290,18 +379,36 @@ export const MyRequestsView: React.FC<MyRequestsViewProps> = ({ currentUser }) =
         {/* User Identity Card */}
         <div className="bg-slate-50 border border-slate-200 p-3.5 rounded-xl flex items-center gap-3">
           <div className="w-10 h-10 rounded-full bg-indigo-100 text-indigo-700 font-black flex items-center justify-center text-sm border border-indigo-200">
-            {currentUser?.fullName?.charAt(0) || 'م'}
+            {(teacherProfile?.employeeName || currentUser?.fullName)?.charAt(0) || 'م'}
           </div>
           <div>
-            <div className="font-bold text-xs text-slate-900">{currentUser?.fullName}</div>
+            <div className="font-bold text-xs text-slate-900">{teacherProfile?.employeeName || currentUser?.fullName}</div>
             <div className="text-[11px] text-slate-500 flex items-center gap-2">
-              <span>الكود: {ownEmployee?.employeeNumber || currentUser?.employeeId || currentUser?.id}</span>
+              <span>الكود: {teacherProfile?.teacherCode || teacherProfile?.employeeId || ownEmployee?.employeeNumber || currentUser?.employeeId || currentUser?.id}</span>
               <span>•</span>
-              <span>{ownEmployee?.department || 'هيئة التدريس'}</span>
+              <span>{teacherProfile?.department || ownEmployee?.department || 'هيئة التدريس'}</span>
             </div>
           </div>
         </div>
       </div>
+
+      {authMode === 'teacher' && requestsError && (
+        <div className="flex items-center justify-between gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-xs font-bold text-rose-800">
+          <span className="flex items-center gap-2">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            {requestsError}
+          </span>
+          <button type="button" onClick={() => void loadData()} className="underline">
+            إعادة المحاولة
+          </button>
+        </div>
+      )}
+
+      {authMode === 'teacher' && requestsLoading && (
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-center text-xs font-bold text-slate-500">
+          جارٍ تحميل طلباتك من الخادم المعتمد...
+        </div>
+      )}
 
       {/* Tabs & Action buttons */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-3 border-b border-slate-200 pb-3">
@@ -635,10 +742,11 @@ export const MyRequestsView: React.FC<MyRequestsViewProps> = ({ currentUser }) =
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs transition flex items-center gap-1.5"
+                  disabled={requestSubmitting !== null}
+                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs transition flex items-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <Send className="w-4 h-4" />
-                  <span>إرسال الطلب</span>
+                  <span>{requestSubmitting === 'leave' ? 'جارٍ الإرسال...' : 'إرسال الطلب'}</span>
                 </button>
               </div>
             </form>
@@ -786,10 +894,11 @@ export const MyRequestsView: React.FC<MyRequestsViewProps> = ({ currentUser }) =
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs transition flex items-center gap-1.5"
+                  disabled={requestSubmitting !== null}
+                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs transition flex items-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <Send className="w-4 h-4" />
-                  <span>إرسال طلب الإذن</span>
+                  <span>{requestSubmitting === 'permission' ? 'جارٍ الإرسال...' : 'إرسال طلب الإذن'}</span>
                 </button>
               </div>
             </form>
