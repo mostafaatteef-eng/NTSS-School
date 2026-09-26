@@ -90,10 +90,18 @@ export default {
       if (!user) return json({ status: 'error', code: 'UNAUTHORIZED' }, 401, corsOrigin);
 
       if (request.method === 'POST' && path === '/validate-session') {
+        const access = await pool.query("SELECT usa.school_id FROM user_school_access usa JOIN schools s ON s.id=usa.school_id WHERE usa.user_id=$1 AND s.status='ACTIVE' ORDER BY usa.school_id", [user.user_id]);
+        const allowedSchoolIds = access.rows.map((x: any) => x.school_id);
+        const activeSchoolId = user.active_school_id && allowedSchoolIds.includes(user.active_school_id) ? user.active_school_id : (user.school_id && allowedSchoolIds.includes(user.school_id) ? user.school_id : '');
         return json({ status: 'success', valid: true, expiresAt: user.expires_at, user: {
           id: user.user_id, email: user.email, fullName: user.full_name, role: user.role, accessScope: user.access_scope,
-          schoolId: user.school_id || '', activeSchoolId: user.active_school_id || '', employeeId: user.employee_id || ''
+          schoolId: user.school_id || '', activeSchoolId, allowedSchoolIds, employeeId: user.employee_id || ''
         }}, 200, corsOrigin);
+      }
+
+      if (request.method === 'POST' && path === '/logout') {
+        await pool.query("UPDATE sessions SET status='REVOKED',revoked_at=now() WHERE id=$1 AND user_id=$2 AND status='ACTIVE'", [user.session_id, user.user_id]);
+        return json({ status: 'success', message: 'تم إنهاء الجلسة.' }, 200, corsOrigin);
       }
 
       if (request.method === 'GET' && path === '/schools') {
