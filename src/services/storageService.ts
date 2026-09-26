@@ -5736,6 +5736,187 @@ class StorageService {
     return safe;
   }
 
+  private sanitizeStudentManagementInput(input: Partial<Student>): Record<string, unknown> {
+    return {
+      studentCode: input.studentCode ? String(input.studentCode).trim() : undefined,
+      name: String(input.name || '').trim(),
+      nationalId: input.nationalId ? String(input.nationalId).trim() : undefined,
+      gender: input.gender ? String(input.gender).trim() : undefined,
+      religion: input.religion ? String(input.religion).trim() : undefined,
+      studentStatus: input.studentStatus ? String(input.studentStatus).trim() : undefined,
+      birthDate: input.birthDate ? String(input.birthDate).trim() : undefined,
+      stage: input.stage ? String(input.stage).trim() : undefined,
+      stageId: input.stageId ? String(input.stageId).trim() : undefined,
+      grade: String(input.grade || '').trim(),
+      gradeId: input.gradeId ? String(input.gradeId).trim() : undefined,
+      gradeName: input.gradeName ? String(input.gradeName).trim() : undefined,
+      classroom: String(input.classroom || '').trim(),
+      classroomId: input.classroomId ? String(input.classroomId).trim() : undefined,
+      classroomNumber: input.classroomNumber ? String(input.classroomNumber).trim() : undefined,
+      section: input.section ? String(input.section).trim() : undefined,
+      academicYear: input.academicYear ? String(input.academicYear).trim() : undefined,
+      academicYearId: input.academicYearId ? String(input.academicYearId).trim() : undefined,
+      enrollmentDate: input.enrollmentDate ? String(input.enrollmentDate).trim() : undefined,
+      phone: input.phone ? String(input.phone).trim() : undefined,
+      parentId: input.parentId ? String(input.parentId).trim() : undefined,
+      parentName: input.parentName ? String(input.parentName).trim() : undefined,
+      relationship: input.relationship ? String(input.relationship).trim() : undefined,
+      parentPhone: input.parentPhone ? String(input.parentPhone).trim() : undefined,
+      parentEmail: input.parentEmail ? String(input.parentEmail).trim().toLowerCase() : undefined,
+      address: input.address ? String(input.address).trim() : undefined,
+      initialBehaviorScore: input.initialBehaviorScore !== undefined ? Number(input.initialBehaviorScore) : undefined,
+      notes: input.notes ? String(input.notes).trim() : undefined,
+    };
+  }
+
+  private cacheCanonicalStudentEnrollment(enrollment?: StudentEnrollment): void {
+    if (!enrollment?.id) return;
+    const list = this.getStudentEnrollments();
+    const idx = list.findIndex(
+      item =>
+        item.id === enrollment.id ||
+        (item.studentId === enrollment.studentId && item.academicYearId === enrollment.academicYearId)
+    );
+    if (idx >= 0) list[idx] = enrollment;
+    else list.push(enrollment);
+
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(STORAGE_KEYS.STUDENT_ENROLLMENTS, JSON.stringify(list));
+      }
+    } catch {}
+  }
+
+  private async postStudentManagementAction(
+    action: string,
+    data?: Record<string, unknown>
+  ): Promise<{
+    success: boolean;
+    code?: string;
+    message?: string;
+    data?: any;
+    student?: Student;
+    enrollment?: StudentEnrollment;
+  }> {
+    const user = this.getCurrentUser();
+    if (!user?.sessionToken) {
+      return { success: false, code: 'AUTH_REQUIRED', message: 'يجب تسجيل الدخول بجلسة عمل معتمدة.' };
+    }
+
+    const scriptUrl = this.getBackendUrl();
+    const online = typeof navigator === 'undefined' || navigator.onLine !== false;
+    if (!scriptUrl || scriptUrl.length < 15 || !online) {
+      return { success: false, code: 'SERVICE_UNAVAILABLE', message: 'إدارة بيانات الطلاب تتطلب الاتصال بالخادم المعتمد.' };
+    }
+
+    try {
+      const response = await fetch(scriptUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action,
+          sessionToken: user.sessionToken,
+          ...(data !== undefined ? { data } : {}),
+        }),
+      });
+
+      let res: any = null;
+      try { res = await response.json(); } catch {}
+      const code = String(res?.code || '');
+
+      if (!response.ok || res?.status === 'error') {
+        if (response.status === 401 || ['SESSION_EXPIRED','INVALID_SESSION','SESSION_REVOKED','UNAUTHORIZED','AUTH_REQUIRED'].includes(code)) {
+          this.setCurrentUser(null);
+        }
+        return {
+          success: false,
+          code: code || 'STUDENT_MANAGEMENT_ACTION_FAILED',
+          message: res?.message || 'تعذر تنفيذ العملية على بيانات الطلاب.',
+        };
+      }
+
+      const enrollment = res?.enrollment as StudentEnrollment | undefined;
+      if (enrollment) this.cacheCanonicalStudentEnrollment(enrollment);
+
+      return {
+        success: true,
+        message: res?.message || 'تم تنفيذ العملية بنجاح.',
+        data: res?.data,
+        student: res?.student as Student | undefined,
+        enrollment,
+      };
+    } catch {
+      return {
+        success: false,
+        code: 'NETWORK_ERROR',
+        message: 'تعذر الاتصال بالخادم لإدارة بيانات الطلاب.',
+      };
+    }
+  }
+
+  public async getStudentManagementDataAuthoritative(): Promise<{
+    success: boolean;
+    code?: string;
+    message?: string;
+    students?: Student[];
+  }> {
+    const result = await this.postStudentManagementAction('getStudents');
+    if (!result.success) return result;
+
+    const students = Array.isArray(result.data) ? result.data as Student[] : [];
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify(students));
+      }
+    } catch {}
+    this.notifyChange();
+
+    return {
+      success: true,
+      message: result.message,
+      students,
+    };
+  }
+
+  public async createManagedStudentAuthoritative(
+    input: Partial<Student>,
+    enrollmentContext?: { academicYearId?: string; academicYearName?: string; enrollmentDate?: string }
+  ) {
+    const safe = this.sanitizeStudentManagementInput(input);
+    return this.postStudentManagementAction('createManagedStudent', {
+      ...safe,
+      enrollmentContext: {
+        academicYearId: String(enrollmentContext?.academicYearId || input.academicYearId || '').trim(),
+        academicYearName: String(enrollmentContext?.academicYearName || input.academicYear || '').trim(),
+        enrollmentDate: String(enrollmentContext?.enrollmentDate || input.enrollmentDate || '').trim(),
+      },
+    });
+  }
+
+  public async updateManagedStudentAuthoritative(
+    id: string,
+    input: Partial<Student>,
+    enrollmentContext?: { academicYearId?: string; academicYearName?: string; enrollmentDate?: string }
+  ) {
+    const safe = this.sanitizeStudentManagementInput(input);
+    return this.postStudentManagementAction('updateManagedStudent', {
+      id: String(id || '').trim(),
+      ...safe,
+      enrollmentContext: {
+        academicYearId: String(enrollmentContext?.academicYearId || input.academicYearId || '').trim(),
+        academicYearName: String(enrollmentContext?.academicYearName || input.academicYear || '').trim(),
+        enrollmentDate: String(enrollmentContext?.enrollmentDate || input.enrollmentDate || '').trim(),
+      },
+    });
+  }
+
+  public async setManagedStudentStatusAuthoritative(id: string, status: 'نشط' | 'غير نشط') {
+    return this.postStudentManagementAction('setManagedStudentStatus', {
+      id: String(id || '').trim(),
+      status,
+    });
+  }
+
   private async postEmployeeManagementAction(
     action: string,
     data?: Record<string, unknown> | Array<Record<string, unknown>>
