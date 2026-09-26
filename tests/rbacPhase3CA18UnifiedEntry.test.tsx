@@ -30,6 +30,13 @@ describe('PHASE 3C-A18 — Unified Multi-Portal Entry & School-Aware Public Sche
     vi.restoreAllMocks();
   });
 
+  const setInputValue = (input: HTMLInputElement, value: string) => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+    setter?.call(input, value);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  };
+
   it('entry page exposes four clear portals before showing administrative credentials', async () => {
     await act(async () => {
       root.render(<LoginView onLoginSuccess={() => {}} onOpenTeacherPortal={() => {}} onOpenPublicSchedule={() => {}} />);
@@ -101,10 +108,8 @@ describe('PHASE 3C-A18 — Unified Multi-Portal Entry & School-Aware Public Sche
     const email = container.querySelector('#input-email') as HTMLInputElement;
     const password = container.querySelector('#input-password') as HTMLInputElement;
     await act(async () => {
-      email.value = 'school.admin@example.edu';
-      email.dispatchEvent(new Event('input', { bubbles: true }));
-      password.value = 'password-value';
-      password.dispatchEvent(new Event('input', { bubbles: true }));
+      setInputValue(email, 'school.admin@example.edu');
+      setInputValue(password, 'password-value');
       (container.querySelector('form') as HTMLFormElement).dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
       await Promise.resolve();
     });
@@ -137,10 +142,8 @@ describe('PHASE 3C-A18 — Unified Multi-Portal Entry & School-Aware Public Sche
     const email = container.querySelector('#input-email') as HTMLInputElement;
     const password = container.querySelector('#input-password') as HTMLInputElement;
     await act(async () => {
-      email.value = 'system.admin@example.edu';
-      email.dispatchEvent(new Event('input', { bubbles: true }));
-      password.value = 'password-value';
-      password.dispatchEvent(new Event('input', { bubbles: true }));
+      setInputValue(email, 'system.admin@example.edu');
+      setInputValue(password, 'password-value');
       (container.querySelector('form') as HTMLFormElement).dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
       await Promise.resolve();
     });
