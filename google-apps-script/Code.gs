@@ -1329,10 +1329,75 @@ function doPost(e) {
         delete cleanEmp.allowances;
         delete cleanEmp.netSalary;
         delete cleanEmp.salary;
+        delete cleanEmp.password;
+        delete cleanEmp.passwordHash;
+        delete cleanEmp.passwordSalt;
+        delete cleanEmp.passwordAlgorithm;
+        delete cleanEmp.passwordIterations;
         cleanEmp.employeeType = cleanEmp.employeeType || (cleanEmp.isTeacher || cleanEmp.teacherCode ? 'Teacher' : 'Administrative');
         cleanEmp.specialization = cleanEmp.specialization || cleanEmp.department || 'عام';
         return cleanEmp;
       });
+      return createJsonResponse(output, 200);
+    }
+
+    if (action === 'createManagedEmployee') {
+      var createEmpResult = createManagedEmployeeRecord(schoolSs, payload || {}, effectiveSchoolId, authenticatedUsername, authenticatedRole, requestId);
+      if (!createEmpResult.success) {
+        return createJsonResponse({
+          status: 'error',
+          code: createEmpResult.code || 'EMPLOYEE_CREATE_FAILED',
+          message: createEmpResult.message,
+          requestId: requestId
+        }, createEmpResult.httpStatus || 400);
+      }
+      output.message = createEmpResult.message;
+      output.employee = createEmpResult.employee;
+      return createJsonResponse(output, 200);
+    }
+
+    if (action === 'updateManagedEmployee') {
+      var updateEmpResult = updateManagedEmployeeRecord(schoolSs, payload || {}, effectiveSchoolId, authenticatedUsername, authenticatedRole, requestId);
+      if (!updateEmpResult.success) {
+        return createJsonResponse({
+          status: 'error',
+          code: updateEmpResult.code || 'EMPLOYEE_UPDATE_FAILED',
+          message: updateEmpResult.message,
+          requestId: requestId
+        }, updateEmpResult.httpStatus || 400);
+      }
+      output.message = updateEmpResult.message;
+      output.employee = updateEmpResult.employee;
+      return createJsonResponse(output, 200);
+    }
+
+    if (action === 'setManagedEmployeeStatus') {
+      var statusEmpResult = setManagedEmployeeStatusRecord(schoolSs, payload || {}, effectiveSchoolId, authenticatedUsername, authenticatedRole, requestId);
+      if (!statusEmpResult.success) {
+        return createJsonResponse({
+          status: 'error',
+          code: statusEmpResult.code || 'EMPLOYEE_STATUS_FAILED',
+          message: statusEmpResult.message,
+          requestId: requestId
+        }, statusEmpResult.httpStatus || 400);
+      }
+      output.message = statusEmpResult.message;
+      output.employee = statusEmpResult.employee;
+      return createJsonResponse(output, 200);
+    }
+
+    if (action === 'importManagedEmployees') {
+      var importEmpResult = importManagedEmployeeRecords(schoolSs, Array.isArray(payload) ? payload : [], effectiveSchoolId, authenticatedUsername, authenticatedRole, requestId);
+      if (!importEmpResult.success) {
+        return createJsonResponse({
+          status: 'error',
+          code: importEmpResult.code || 'EMPLOYEE_IMPORT_FAILED',
+          message: importEmpResult.message,
+          requestId: requestId
+        }, importEmpResult.httpStatus || 400);
+      }
+      output.message = importEmpResult.message;
+      output.stats = importEmpResult.stats;
       return createJsonResponse(output, 200);
     }
 
@@ -3620,6 +3685,10 @@ var ACTION_PERMISSION_MAP = {
   saveEmployee: 'employees.create',
   bulkSaveEmployees: 'employees.import',
   deleteEmployee: 'employees.delete',
+  createManagedEmployee: 'employees.create',
+  updateManagedEmployee: 'employees.edit',
+  setManagedEmployeeStatus: 'employees.edit',
+  importManagedEmployees: 'employees.import',
 
   // Staff Attendance
   getAttendance: 'teacherAttendance.view',
@@ -4394,6 +4463,265 @@ function authorize(session, action, resourceContext, masterSs, requestId) {
 // -------------------------------------------------------------
 // TIMETABLE, RESERVE, SUPERVISION & PORTAL LOGIC
 // -------------------------------------------------------------
+
+/**
+ * Authoritative employee management helpers.
+ * School binding, login number allocation, audit fields and sensitive-field stripping are server-owned.
+ */
+function findEmployeeByManagedIdentity(records, id, nationalId) {
+  var cleanId = String(id || '').trim().toLowerCase();
+  var cleanNationalId = String(nationalId || '').trim();
+
+  for (var i = 0; i < records.length; i++) {
+    var recordId = String(records[i].id || '').trim().toLowerCase();
+    var recordNationalId = String(records[i].nationalId || '').trim();
+    if ((cleanId && recordId === cleanId) || (cleanNationalId && recordNationalId === cleanNationalId)) {
+      return records[i];
+    }
+  }
+  return null;
+}
+
+function validateManagedEmployeeUniqueness(records, candidate, existingId) {
+  var candidateNationalId = String(candidate.nationalId || '').trim();
+  var candidateTeacherCode = String(candidate.teacherCode || '').trim().toLowerCase();
+  var currentId = String(existingId || '').trim().toLowerCase();
+
+  for (var i = 0; i < records.length; i++) {
+    var rowId = String(records[i].id || '').trim().toLowerCase();
+    if (currentId && rowId === currentId) continue;
+
+    if (candidateNationalId && String(records[i].nationalId || '').trim() === candidateNationalId) {
+      return { valid: false, code: 'EMPLOYEE_NATIONAL_ID_CONFLICT', message: 'الرقم القومي مستخدم بالفعل لموظف آخر.' };
+    }
+    if (candidateTeacherCode && String(records[i].teacherCode || '').trim().toLowerCase() === candidateTeacherCode) {
+      return { valid: false, code: 'TEACHER_CODE_CONFLICT', message: 'كود المعلم مستخدم بالفعل لمعلم آخر.' };
+    }
+  }
+  return { valid: true };
+}
+
+function buildManagedEmployeeRecord(ss, payload, effectiveSchoolId, existing) {
+  payload = payload || {};
+  existing = existing || null;
+
+  var name = String(payload.name || payload.fullName || (existing && existing.name) || '').trim();
+  if (!name) {
+    return { success: false, code: 'INVALID_PAYLOAD', message: 'اسم الموظف حقل مطلوب.' };
+  }
+
+  var id = existing
+    ? String(existing.id || '').trim()
+    : String(payload.id || '').trim().toUpperCase();
+  if (!id) {
+    id = 'EMP' + Utilities.getUuid().substring(0, 8).toUpperCase();
+  }
+
+  var employeeType = String(payload.employeeType || (existing && existing.employeeType) || '').trim() === 'Teacher'
+    ? 'Teacher'
+    : 'Administrative';
+  var status = String(payload.status || (existing && existing.status) || 'Active').trim();
+  if (['Active', 'Inactive', 'Suspended'].indexOf(status) === -1) status = 'Active';
+
+  var loginNumber = existing && existing.loginNumber ? existing.loginNumber : getNextLoginNumber(ss);
+  var teacherCode = employeeType === 'Teacher'
+    ? String(payload.teacherCode || (existing && existing.teacherCode) || id).trim().toUpperCase()
+    : '';
+
+  var daysOff = Array.isArray(payload.daysOff)
+    ? payload.daysOff.map(function(day) { return String(day || '').trim(); }).filter(Boolean)
+    : (existing && Array.isArray(existing.daysOff) ? existing.daysOff : []);
+
+  var record = Object.assign({}, existing || {}, {
+    id: id,
+    employeeId: id,
+    name: name,
+    fullName: name,
+    employeeType: employeeType,
+    jobTitle: String(payload.jobTitle || (existing && existing.jobTitle) || (employeeType === 'Teacher' ? 'معلم' : 'إداري')).trim(),
+    specialization: String(payload.specialization || (existing && existing.specialization) || (employeeType === 'Teacher' ? 'تعليم عام' : 'إدارة عامة')).trim(),
+    teacherCode: teacherCode,
+    teacherId: employeeType === 'Teacher' ? id : '',
+    nationalId: String(payload.nationalId !== undefined ? payload.nationalId : ((existing && existing.nationalId) || '')).trim(),
+    hireDate: String(payload.hireDate || (existing && existing.hireDate) || '').trim(),
+    workingHours: Number(payload.workingHours !== undefined ? payload.workingHours : ((existing && existing.workingHours) || 0)) || 0,
+    workStartTime: String(payload.workStartTime || (existing && existing.workStartTime) || '').trim(),
+    workEndTime: String(payload.workEndTime || (existing && existing.workEndTime) || '').trim(),
+    daysOff: daysOff,
+    status: status,
+    phone: String(payload.phone !== undefined ? payload.phone : ((existing && existing.phone) || '')).trim(),
+    email: String(payload.email !== undefined ? payload.email : ((existing && existing.email) || '')).trim().toLowerCase(),
+    isTeacher: employeeType === 'Teacher',
+    isTeachingStaff: employeeType === 'Teacher',
+    loginNumber: loginNumber,
+    schoolId: String(effectiveSchoolId || '').trim().toUpperCase(),
+    updatedAt: getCairoISOString()
+  });
+
+  if (!existing) record.createdAt = getCairoISOString();
+
+  delete record.basicSalary;
+  delete record.allowances;
+  delete record.netSalary;
+  delete record.salary;
+  delete record.password;
+  delete record.passwordHash;
+  delete record.passwordSalt;
+  delete record.passwordAlgorithm;
+  delete record.passwordIterations;
+  delete record.pin;
+
+  return { success: true, record: record };
+}
+
+function sanitizeManagedEmployeeResponse(record) {
+  var clean = Object.assign({}, record || {});
+  delete clean.basicSalary;
+  delete clean.allowances;
+  delete clean.netSalary;
+  delete clean.salary;
+  delete clean.password;
+  delete clean.passwordHash;
+  delete clean.passwordSalt;
+  delete clean.passwordAlgorithm;
+  delete clean.passwordIterations;
+  delete clean.pin;
+  return clean;
+}
+
+function createManagedEmployeeRecord(ss, payload, effectiveSchoolId, actor, actorRole, requestId) {
+  var employees = getSheetData(ss, SHEETS.EMPLOYEES);
+  var requestedId = String(payload.id || '').trim().toUpperCase();
+  var requestedNationalId = String(payload.nationalId || '').trim();
+
+  if (findEmployeeByManagedIdentity(employees, requestedId, requestedNationalId)) {
+    return {
+      success: false,
+      code: 'EMPLOYEE_ALREADY_EXISTS',
+      message: 'يوجد موظف بنفس الكود أو الرقم القومي. استخدم التعديل بدل إنشاء سجل جديد.',
+      httpStatus: 409
+    };
+  }
+
+  var built = buildManagedEmployeeRecord(ss, payload, effectiveSchoolId, null);
+  if (!built.success) return built;
+
+  var unique = validateManagedEmployeeUniqueness(employees, built.record, '');
+  if (!unique.valid) return { success: false, code: unique.code, message: unique.message, httpStatus: 409 };
+
+  upsertRecord(ss, SHEETS.EMPLOYEES, 'id', built.record);
+  recordAuthoritativeAudit(ss, requestId, actor, actorRole, 'EMPLOYEE_CREATED', 'EMPLOYEES', built.record.id, 'إنشاء سجل موظف/معلم');
+
+  return {
+    success: true,
+    message: 'تم إنشاء سجل الموظف بنجاح.',
+    employee: sanitizeManagedEmployeeResponse(built.record)
+  };
+}
+
+function updateManagedEmployeeRecord(ss, payload, effectiveSchoolId, actor, actorRole, requestId) {
+  var employees = getSheetData(ss, SHEETS.EMPLOYEES);
+  var targetId = String(payload.id || '').trim();
+  var existing = findEmployeeByManagedIdentity(employees, targetId, '');
+  if (!existing || String(existing.id || '').trim() !== targetId) {
+    return { success: false, code: 'RESOURCE_NOT_FOUND', message: 'سجل الموظف غير موجود.', httpStatus: 404 };
+  }
+
+  var built = buildManagedEmployeeRecord(ss, payload, effectiveSchoolId, existing);
+  if (!built.success) return built;
+
+  var unique = validateManagedEmployeeUniqueness(employees, built.record, existing.id);
+  if (!unique.valid) return { success: false, code: unique.code, message: unique.message, httpStatus: 409 };
+
+  upsertRecord(ss, SHEETS.EMPLOYEES, 'id', built.record);
+  recordAuthoritativeAudit(ss, requestId, actor, actorRole, 'EMPLOYEE_UPDATED', 'EMPLOYEES', built.record.id, 'تعديل بيانات موظف/معلم');
+
+  return {
+    success: true,
+    message: 'تم تحديث بيانات الموظف بنجاح.',
+    employee: sanitizeManagedEmployeeResponse(built.record)
+  };
+}
+
+function setManagedEmployeeStatusRecord(ss, payload, effectiveSchoolId, actor, actorRole, requestId) {
+  var employees = getSheetData(ss, SHEETS.EMPLOYEES);
+  var targetId = String(payload.id || '').trim();
+  var existing = findEmployeeByManagedIdentity(employees, targetId, '');
+  if (!existing || String(existing.id || '').trim() !== targetId) {
+    return { success: false, code: 'RESOURCE_NOT_FOUND', message: 'سجل الموظف غير موجود.', httpStatus: 404 };
+  }
+
+  var nextStatus = String(payload.status || '').trim();
+  if (['Active', 'Inactive', 'Suspended'].indexOf(nextStatus) === -1) {
+    return { success: false, code: 'INVALID_STATUS', message: 'حالة الموظف غير صالحة.' };
+  }
+
+  existing.status = nextStatus;
+  existing.schoolId = String(effectiveSchoolId || '').trim().toUpperCase();
+  existing.updatedAt = getCairoISOString();
+  upsertRecord(ss, SHEETS.EMPLOYEES, 'id', existing);
+  recordAuthoritativeAudit(ss, requestId, actor, actorRole, 'EMPLOYEE_STATUS_CHANGED', 'EMPLOYEES', existing.id, JSON.stringify({ status: nextStatus }));
+
+  return {
+    success: true,
+    message: 'تم تحديث حالة الموظف بنجاح.',
+    employee: sanitizeManagedEmployeeResponse(existing)
+  };
+}
+
+function importManagedEmployeeRecords(ss, payload, effectiveSchoolId, actor, actorRole, requestId) {
+  if (!Array.isArray(payload) || payload.length === 0) {
+    return { success: false, code: 'INVALID_PAYLOAD', message: 'لا توجد سجلات صالحة للاستيراد.' };
+  }
+
+  var added = 0;
+  var updated = 0;
+  var skipped = 0;
+  var errors = [];
+  var employees = getSheetData(ss, SHEETS.EMPLOYEES);
+
+  for (var i = 0; i < payload.length; i++) {
+    var raw = payload[i] || {};
+    var match = findEmployeeByManagedIdentity(employees, raw.id, raw.nationalId);
+    var built = buildManagedEmployeeRecord(ss, raw, effectiveSchoolId, match);
+
+    if (!built.success) {
+      skipped++;
+      errors.push({ row: i + 1, code: built.code || 'INVALID_PAYLOAD', message: built.message || 'سجل غير صالح' });
+      continue;
+    }
+
+    var unique = validateManagedEmployeeUniqueness(employees, built.record, match ? match.id : '');
+    if (!unique.valid) {
+      skipped++;
+      errors.push({ row: i + 1, code: unique.code, message: unique.message });
+      continue;
+    }
+
+    upsertRecord(ss, SHEETS.EMPLOYEES, 'id', built.record);
+
+    var replaced = false;
+    for (var j = 0; j < employees.length; j++) {
+      if (String(employees[j].id || '').trim() === String(built.record.id || '').trim()) {
+        employees[j] = built.record;
+        replaced = true;
+        break;
+      }
+    }
+    if (!replaced) employees.push(built.record);
+
+    if (match) updated++;
+    else added++;
+  }
+
+  recordAuthoritativeAudit(ss, requestId, actor, actorRole, 'EMPLOYEES_IMPORTED', 'EMPLOYEES', String(payload.length), JSON.stringify({ added: added, updated: updated, skipped: skipped }));
+
+  return {
+    success: true,
+    message: 'تم استيراد بيانات العاملين: ' + added + ' جديد، ' + updated + ' تحديث، ' + skipped + ' متجاوز.',
+    stats: { added: added, updated: updated, skipped: skipped, errors: errors }
+  };
+}
 
 /**
  * Authoritative leave/permission management helpers.
