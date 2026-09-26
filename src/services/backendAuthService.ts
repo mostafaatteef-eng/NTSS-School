@@ -550,31 +550,33 @@ export function authorize(
   let effectiveSchoolId = session.schoolId;
 
   if (scope === 'GLOBAL') {
-    // SystemAdmin: targetSchoolId must be inside session.allowedSchoolIds
+    // SystemAdmin: targetSchoolId must be inside session.allowedSchoolIds if targeted
     const targetSchoolId = resourceContext?.schoolId || session.activeSchoolId || session.schoolId;
-    const allowed = (session.allowedSchoolIds || []).map(id => id.trim().toUpperCase());
-    if (!allowed.includes(targetSchoolId.trim().toUpperCase())) {
-      const audit = recordSecurityAuditEvent({
-        requestId: reqId,
-        actorUserId: session.userId,
-        actorRole: String(role),
-        actorSchoolId: session.schoolId,
-        targetSchoolId,
-        action: permission,
-        code: 'ACCESS_DENIED_SCHOOL_SCOPE',
-        reason: 'المدرسة المطلوبة تقع خارج نطاق المدارس المصرح بها لهذا الحساب',
-        resourceId: resourceContext?.resourceId,
-      });
-      return {
-        allowed: false,
-        code: 'ACCESS_DENIED_SCHOOL_SCOPE',
-        reason: 'المدرسة المطلوبة تقع خارج نطاق المدارس المصرح بها لهذا الحساب',
-        actorUserId: session.userId,
-        actorRole: String(role),
-        auditEvent: audit,
-      };
+    if (targetSchoolId) {
+      const allowed = (session.allowedSchoolIds || []).map(id => id.trim().toUpperCase());
+      if (!allowed.includes(targetSchoolId.trim().toUpperCase())) {
+        const audit = recordSecurityAuditEvent({
+          requestId: reqId,
+          actorUserId: session.userId,
+          actorRole: String(role),
+          actorSchoolId: session.schoolId,
+          targetSchoolId,
+          action: permission,
+          code: 'ACCESS_DENIED_SCHOOL_SCOPE',
+          reason: 'المدرسة المطلوبة تقع خارج نطاق المدارس المصرح بها لهذا الحساب',
+          resourceId: resourceContext?.resourceId,
+        });
+        return {
+          allowed: false,
+          code: 'ACCESS_DENIED_SCHOOL_SCOPE',
+          reason: 'المدرسة المطلوبة تقع خارج نطاق المدارس المصرح بها لهذا الحساب',
+          actorUserId: session.userId,
+          actorRole: String(role),
+          auditEvent: audit,
+        };
+      }
     }
-    effectiveSchoolId = targetSchoolId;
+    effectiveSchoolId = targetSchoolId || 'GLOBAL';
   } else if (scope === 'SCHOOL') {
     // School-bound roles: session.schoolId is authoritative.
     // If request contains a mismatched schoolId, REJECT with SCHOOL_CONTEXT_MISMATCH.
@@ -1254,29 +1256,113 @@ export interface BackendUserRecord {
   username: string;
   fullName: string;
   role: string;
+  accessScope?: AccessScope;
   schoolId?: string;
   allowedSchoolIds?: string[];
   employeeId?: string;
   status: string;
+  department?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  lastLogin?: string;
+  loginNumber?: number | string;
+  password?: string;
+  passwordHash?: string;
+  passwordSalt?: string;
+  passwordAlgorithm?: string;
+  passwordIterations?: number;
+  activationTokenHash?: string;
+}
+
+/**
+ * Normalizes staff roles to canonical staff roles.
+ * Returns null for invalid, non-staff, or unknown roles.
+ */
+export function normalizeUserRole(role: string): string | null {
+  const r = String(role || '').trim();
+  if (!r) return null;
+  if (r === 'Parent' || r === 'Student') return null;
+  if (r === 'SystemAdmin') return 'SystemAdmin';
+  if (r === 'SchoolAdmin') return 'SchoolAdmin';
+  if (r === 'Admin') return 'SchoolAdmin';
+  if (r === 'SchoolDirector' || r === 'Supervisor') return 'SchoolDirector';
+  if (r === 'StudentAffairs') return 'StudentAffairs';
+  if (r === 'TeacherAffairs' || r === 'HR' || r === 'Employee') return 'TeacherAffairs';
+  if (r === 'SocialSpecialist' || r === 'BehaviorOfficer') return 'SocialSpecialist';
+  if (r === 'TrainingOfficer') return 'TrainingOfficer';
+  if (r === 'QualityOfficer' || r === 'Viewer') return 'QualityOfficer';
+  if (r === 'Teacher') return 'Teacher';
+  if (r === 'AdministrativeEmployee') return 'AdministrativeEmployee';
+  return null;
+}
+
+/**
+ * Derives authoritative accessScope strictly from canonical role.
+ */
+export function deriveUserAccessScope(normalizedRole: string): AccessScope {
+  if (normalizedRole === 'SystemAdmin') return 'GLOBAL';
+  if (normalizedRole === 'Teacher') return 'SELF';
+  return 'SCHOOL';
+}
+
+/**
+ * Normalizes email address.
+ */
+export function normalizeEmail(email: string | undefined): string {
+  return String(email || '').trim().toLowerCase();
+}
+
+/**
+ * Validates email format according to standard pattern.
+ */
+export function isValidEmailFormat(email: string): boolean {
+  if (!email || typeof email !== 'string') return false;
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(email);
+}
+
+/**
+ * Returns safe User DTO. Purges internal secrets, passwords, hashes, salts, and tokens.
+ */
+export function sanitizeUserDTO(u: BackendUserRecord): BackendUserRecord {
+  const roleStr = String(u.role || '').trim();
+  const derivedScope = deriveUserAccessScope(roleStr);
+  return {
+    id: String(u.id || '').trim(),
+    username: String(u.username || '').trim(),
+    email: u.email ? normalizeEmail(u.email) : undefined,
+    fullName: String(u.fullName || '').trim(),
+    role: roleStr,
+    accessScope: (u.accessScope as AccessScope) || derivedScope,
+    schoolId: String(u.schoolId || '').trim().toUpperCase() || undefined,
+    allowedSchoolIds: u.allowedSchoolIds ? u.allowedSchoolIds.map(s => String(s).trim().toUpperCase()) : undefined,
+    employeeId: String(u.employeeId || '').trim() || undefined,
+    status: String(u.status || 'Active').trim(),
+    department: String(u.department || '').trim() || undefined,
+    createdAt: u.createdAt || '',
+    updatedAt: u.updatedAt || '',
+    lastLogin: u.lastLogin || '',
+    loginNumber: u.loginNumber || '',
+  };
 }
 
 let masterUsersStore: BackendUserRecord[] = [
-  { id: 'usr-sysadmin-1', email: 'sysadmin@ntss.edu.eg', username: 'sysadmin', fullName: 'مدير النظام العام', role: 'SystemAdmin', allowedSchoolIds: ['SCH-BADR', 'SCH-ALNOOR'], status: 'Active' },
-  { id: 'usr-admin-badr', email: 'admin_badr@ntss.edu.eg', username: 'admin_badr', fullName: 'مدير مدرسة بدر', role: 'SchoolAdmin', schoolId: 'SCH-BADR', status: 'Active' },
-  { id: 'usr-admin-noor', email: 'admin_noor@ntss.edu.eg', username: 'admin_noor', fullName: 'مدير مدرسة النور', role: 'SchoolAdmin', schoolId: 'SCH-ALNOOR', status: 'Active' },
-  { id: 'usr-director-badr', email: 'director_badr@ntss.edu.eg', username: 'director_badr', fullName: 'ناظر مدرسة بدر', role: 'SchoolDirector', schoolId: 'SCH-BADR', status: 'Active' },
-  { id: 'usr-teacher-badr', email: 'teacher_badr@ntss.edu.eg', username: 'teacher_badr', fullName: 'معلم بدر', role: 'Teacher', schoolId: 'SCH-BADR', status: 'Active' },
-  { id: 'usr-teacher-noor', email: 'teacher_noor@ntss.edu.eg', username: 'teacher_noor', fullName: 'معلم النور', role: 'Teacher', schoolId: 'SCH-ALNOOR', status: 'Active' },
+  { id: 'usr-sysadmin-1', email: 'sysadmin@ntss.edu.eg', username: 'sysadmin', fullName: 'مدير النظام العام', role: 'SystemAdmin', accessScope: 'GLOBAL', allowedSchoolIds: ['SCH-BADR', 'SCH-ALNOOR'], status: 'Active' },
+  { id: 'usr-admin-badr', email: 'admin_badr@ntss.edu.eg', username: 'admin_badr', fullName: 'مدير مدرسة بدر', role: 'SchoolAdmin', accessScope: 'SCHOOL', schoolId: 'SCH-BADR', allowedSchoolIds: ['SCH-BADR'], status: 'Active' },
+  { id: 'usr-admin-noor', email: 'admin_noor@ntss.edu.eg', username: 'admin_noor', fullName: 'مدير مدرسة النور', role: 'SchoolAdmin', accessScope: 'SCHOOL', schoolId: 'SCH-ALNOOR', allowedSchoolIds: ['SCH-ALNOOR'], status: 'Active' },
+  { id: 'usr-director-badr', email: 'director_badr@ntss.edu.eg', username: 'director_badr', fullName: 'ناظر مدرسة بدر', role: 'SchoolDirector', accessScope: 'SCHOOL', schoolId: 'SCH-BADR', allowedSchoolIds: ['SCH-BADR'], status: 'Active' },
+  { id: 'usr-teacher-badr', email: 'teacher_badr@ntss.edu.eg', username: 'teacher_badr', fullName: 'معلم بدر', role: 'Teacher', accessScope: 'SELF', schoolId: 'SCH-BADR', allowedSchoolIds: ['SCH-BADR'], status: 'Active' },
+  { id: 'usr-teacher-noor', email: 'teacher_noor@ntss.edu.eg', username: 'teacher_noor', fullName: 'معلم النور', role: 'Teacher', accessScope: 'SELF', schoolId: 'SCH-ALNOOR', allowedSchoolIds: ['SCH-ALNOOR'], status: 'Active' },
 ];
 
 export function resetMasterUsersStore() {
   masterUsersStore = [
-    { id: 'usr-sysadmin-1', email: 'sysadmin@ntss.edu.eg', username: 'sysadmin', fullName: 'مدير النظام العام', role: 'SystemAdmin', allowedSchoolIds: ['SCH-BADR', 'SCH-ALNOOR'], status: 'Active' },
-    { id: 'usr-admin-badr', email: 'admin_badr@ntss.edu.eg', username: 'admin_badr', fullName: 'مدير مدرسة بدر', role: 'SchoolAdmin', schoolId: 'SCH-BADR', status: 'Active' },
-    { id: 'usr-admin-noor', email: 'admin_noor@ntss.edu.eg', username: 'admin_noor', fullName: 'مدير مدرسة النور', role: 'SchoolAdmin', schoolId: 'SCH-ALNOOR', status: 'Active' },
-    { id: 'usr-director-badr', email: 'director_badr@ntss.edu.eg', username: 'director_badr', fullName: 'ناظر مدرسة بدر', role: 'SchoolDirector', schoolId: 'SCH-BADR', status: 'Active' },
-    { id: 'usr-teacher-badr', email: 'teacher_badr@ntss.edu.eg', username: 'teacher_badr', fullName: 'معلم بدر', role: 'Teacher', schoolId: 'SCH-BADR', status: 'Active' },
-    { id: 'usr-teacher-noor', email: 'teacher_noor@ntss.edu.eg', username: 'teacher_noor', fullName: 'معلم النور', role: 'Teacher', schoolId: 'SCH-ALNOOR', status: 'Active' },
+    { id: 'usr-sysadmin-1', email: 'sysadmin@ntss.edu.eg', username: 'sysadmin', fullName: 'مدير النظام العام', role: 'SystemAdmin', accessScope: 'GLOBAL', allowedSchoolIds: ['SCH-BADR', 'SCH-ALNOOR'], status: 'Active' },
+    { id: 'usr-admin-badr', email: 'admin_badr@ntss.edu.eg', username: 'admin_badr', fullName: 'مدير مدرسة بدر', role: 'SchoolAdmin', accessScope: 'SCHOOL', schoolId: 'SCH-BADR', allowedSchoolIds: ['SCH-BADR'], status: 'Active' },
+    { id: 'usr-admin-noor', email: 'admin_noor@ntss.edu.eg', username: 'admin_noor', fullName: 'مدير مدرسة النور', role: 'SchoolAdmin', accessScope: 'SCHOOL', schoolId: 'SCH-ALNOOR', allowedSchoolIds: ['SCH-ALNOOR'], status: 'Active' },
+    { id: 'usr-director-badr', email: 'director_badr@ntss.edu.eg', username: 'director_badr', fullName: 'ناظر مدرسة بدر', role: 'SchoolDirector', accessScope: 'SCHOOL', schoolId: 'SCH-BADR', allowedSchoolIds: ['SCH-BADR'], status: 'Active' },
+    { id: 'usr-teacher-badr', email: 'teacher_badr@ntss.edu.eg', username: 'teacher_badr', fullName: 'معلم بدر', role: 'Teacher', accessScope: 'SELF', schoolId: 'SCH-BADR', allowedSchoolIds: ['SCH-BADR'], status: 'Active' },
+    { id: 'usr-teacher-noor', email: 'teacher_noor@ntss.edu.eg', username: 'teacher_noor', fullName: 'معلم النور', role: 'Teacher', accessScope: 'SELF', schoolId: 'SCH-ALNOOR', allowedSchoolIds: ['SCH-ALNOOR'], status: 'Active' },
   ];
 }
 
@@ -1298,7 +1384,8 @@ export function getUsersListSecure(session: ServerSession): { success: boolean; 
       return uSchool === sessionSchool;
     }
     if (role === 'SystemAdmin') {
-      if (!uSchool) return true;
+      if (u.role === 'SystemAdmin') return true;
+      if (!uSchool) return false;
       return allowed.includes(uSchool);
     }
     if (role === 'Admin') {
@@ -1307,14 +1394,18 @@ export function getUsersListSecure(session: ServerSession): { success: boolean; 
     return false;
   });
 
-  return { success: true, data: filtered.map(u => ({ ...u })) };
+  return { success: true, data: filtered.map(sanitizeUserDTO) };
 }
 
 export function saveUserSecure(
   session: ServerSession,
   payload: Partial<BackendUserRecord>
 ): { success: boolean; user?: BackendUserRecord; code?: string; message?: string } {
-  const existingUser = masterUsersStore.find(u => (payload.id && u.id === payload.id) || (payload.username && u.username === payload.username));
+  const targetId = payload.id ? String(payload.id).trim() : '';
+  const targetUsername = payload.username ? String(payload.username).trim().toLowerCase() : '';
+  const existingUser = masterUsersStore.find(
+    u => (targetId && u.id === targetId) || (targetUsername && u.username.toLowerCase() === targetUsername)
+  );
 
   // Dynamic authorization check: new user -> users.create; edit existing user -> users.edit
   const requiredPerm = existingUser ? 'users.edit' : 'users.create';
@@ -1323,8 +1414,20 @@ export function saveUserSecure(
     return { success: false, code: auth.code, message: auth.reason };
   }
 
+  // Validate target role
+  const targetRoleRaw = String(payload.role || (existingUser ? existingUser.role : '')).trim();
+  const targetRole = normalizeUserRole(targetRoleRaw);
+  if (!targetRole) {
+    return {
+      success: false,
+      code: 'INVALID_ROLE',
+      message: `الدور المحدد غير صالح: ${targetRoleRaw}`,
+    };
+  }
+  payload.role = targetRole;
+
   // If role is changed on an existing user, additionally require users.manageRoles
-  if (existingUser && payload.role && payload.role !== existingUser.role) {
+  if (existingUser && targetRole !== existingUser.role) {
     const roleAuth = authorize(session, 'users.manageRoles');
     if (!roleAuth.allowed) {
       return {
@@ -1335,42 +1438,206 @@ export function saveUserSecure(
     }
   }
 
-  const role = session.role;
-  const sessionSchool = String(session.schoolId || '').trim().toUpperCase();
-
-  if (role === 'SchoolAdmin') {
-    if (payload.role === 'SystemAdmin') {
-      return { success: false, code: 'ROLE_ESCALATION_DENIED', message: 'لا يمكن لمدير المدرسة إنشاء أو ترقية مستخدم إلى مدير نظام عام (SystemAdmin)' };
-    }
-    if (existingUser) {
-      if (existingUser.role === 'SystemAdmin') {
-        return { success: false, code: 'FORBIDDEN', message: 'غير مصرح بتعديل حساب مدير نظام عام' };
+  // Self-protection on edit
+  if (existingUser) {
+    const isSelf = existingUser.id === session.userId ||
+      (session.username && existingUser.username.toLowerCase() === session.username.toLowerCase());
+    if (isSelf) {
+      if (existingUser.role === 'SystemAdmin' && targetRole !== 'SystemAdmin') {
+        return {
+          success: false,
+          code: 'SELF_DEMOTION_DENIED',
+          message: 'لا يمكن لمدير النظام تجريد نفسه من صلاحية مدير النظام',
+        };
       }
-      if (existingUser.schoolId && String(existingUser.schoolId).trim().toUpperCase() !== sessionSchool) {
-        return { success: false, code: 'CROSS_SCHOOL_ACCESS_DENIED', message: 'غير مصرح بتعديل مستخدم ينتمي لمدرسة أخرى' };
+      if (payload.status && String(payload.status).toLowerCase() !== 'active') {
+        return {
+          success: false,
+          code: 'SELF_DISABLE_DENIED',
+          message: 'لا يمكن تعطيل الحساب الحالي المستخدم في الجلسة',
+        };
       }
-    }
-    // Force user schoolId to match session.schoolId
-    payload.schoolId = session.schoolId;
-  } else if (role === 'SystemAdmin') {
-    const allowed = (session.allowedSchoolIds || []).map(s => s.trim().toUpperCase());
-    if (payload.schoolId && !allowed.includes(payload.schoolId.trim().toUpperCase())) {
-      return { success: false, code: 'ACCESS_DENIED_SCHOOL_SCOPE', message: 'المدرسة المحددة للمستخدم خارج نطاق المدارس المصرح بها' };
-    }
-    if (existingUser && existingUser.schoolId && !allowed.includes(existingUser.schoolId.trim().toUpperCase())) {
-      return { success: false, code: 'ACCESS_DENIED_SCHOOL_SCOPE', message: 'المستخدم ينتمي لمدرسة خارج نطاق الصلاحيات المصرح لك بها' };
     }
   }
 
+  // Role boundaries & School scoping
+  const actorRole = session.role;
+  const sessionSchool = String(session.schoolId || '').trim().toUpperCase();
+
+  if (actorRole === 'SchoolAdmin') {
+    if (existingUser) {
+      if (existingUser.role === 'SystemAdmin') {
+        return {
+          success: false,
+          code: 'FORBIDDEN',
+          message: 'غير مصرح بتعديل حساب مدير نظام عام',
+        };
+      }
+      if (existingUser.schoolId && String(existingUser.schoolId).trim().toUpperCase() !== sessionSchool) {
+        return {
+          success: false,
+          code: 'CROSS_SCHOOL_ACCESS_DENIED',
+          message: 'غير مصرح بتعديل مستخدم ينتمي لمدرسة أخرى',
+        };
+      }
+    }
+    if (targetRole === 'SystemAdmin') {
+      return {
+        success: false,
+        code: 'ROLE_ESCALATION_DENIED',
+        message: 'لا يمكن لمدير المدرسة إنشاء أو ترقية مستخدم إلى مدير نظام عام (SystemAdmin)',
+      };
+    }
+    payload.schoolId = session.schoolId;
+    payload.allowedSchoolIds = session.schoolId ? [session.schoolId] : [];
+  } else if (actorRole === 'SystemAdmin') {
+    const actorAllowed = (session.allowedSchoolIds || []).map(s => s.trim().toUpperCase());
+
+    if (targetRole === 'SystemAdmin') {
+      payload.schoolId = '';
+      payload.employeeId = '';
+      const parsedAllowed = (payload.allowedSchoolIds || []).map(s => String(s).trim().toUpperCase()).filter(Boolean);
+      const registry = getMasterSchoolRegistry();
+      const validSchoolIds = registry.length > 0 
+        ? registry.map(s => s.schoolId.toUpperCase()) 
+        : ['SCH-BADR', 'SCH-ALNOOR', 'SCH-DAMIETTA'];
+
+      for (const chkId of parsedAllowed) {
+        if (!validSchoolIds.includes(chkId)) {
+          return {
+            success: false,
+            code: 'INVALID_SCHOOL_ID',
+            message: `المدرسة المحددة غير مسجلة في النظام: ${chkId}`,
+          };
+        }
+        if (!actorAllowed.includes(chkId)) {
+          return {
+            success: false,
+            code: 'ACCESS_DENIED_SCHOOL_SCOPE',
+            message: `لا يمكن منح صلاحية لمدارس خارج نطاق صلاحيات مدير النظام الحالي: ${chkId}`,
+          };
+        }
+      }
+      payload.allowedSchoolIds = Array.from(new Set(parsedAllowed));
+    } else {
+      // School-scoped user
+      const targetSchId = String(payload.schoolId !== undefined ? payload.schoolId : (existingUser ? existingUser.schoolId : '')).trim().toUpperCase();
+      if (!targetSchId) {
+        return {
+          success: false,
+          code: 'SCHOOL_REQUIRED',
+          message: 'يجب تحديد المدرسة للمستخدم',
+        };
+      }
+      const registry = getMasterSchoolRegistry();
+      const validSchoolIds = registry.length > 0 
+        ? registry.map(s => s.schoolId.toUpperCase()) 
+        : ['SCH-BADR', 'SCH-ALNOOR', 'SCH-DAMIETTA'];
+
+      if (!validSchoolIds.includes(targetSchId)) {
+        return {
+          success: false,
+          code: 'INVALID_SCHOOL_ID',
+          message: `المدرسة المحددة غير مسجلة في النظام: ${targetSchId}`,
+        };
+      }
+      if (!actorAllowed.includes(targetSchId)) {
+        return {
+          success: false,
+          code: 'ACCESS_DENIED_SCHOOL_SCOPE',
+          message: 'المدرسة المحددة للمستخدم خارج نطاق المدارس المصرح لك بها',
+        };
+      }
+      if (existingUser && existingUser.schoolId && !actorAllowed.includes(String(existingUser.schoolId).trim().toUpperCase())) {
+        return {
+          success: false,
+          code: 'ACCESS_DENIED_SCHOOL_SCOPE',
+          message: 'المستخدم ينتمي لمدرسة خارج نطاق الصلاحيات المصرح لك بها',
+        };
+      }
+      payload.schoolId = targetSchId;
+      payload.allowedSchoolIds = [targetSchId];
+    }
+  }
+
+  // School transfer immutability on existing user
+  if (existingUser && existingUser.schoolId) {
+    const existSch = String(existingUser.schoolId).trim().toUpperCase();
+    const reqSch = payload.schoolId !== undefined ? String(payload.schoolId || '').trim().toUpperCase() : '';
+    if (reqSch && reqSch !== existSch) {
+      return {
+        success: false,
+        code: 'USER_SCHOOL_IMMUTABLE',
+        message: 'لا يمكن نقل المستخدم بين المدارس مباشرة',
+      };
+    }
+  }
+
+  // Email validation & immutability
+  const rawEmail = payload.email !== undefined ? normalizeEmail(payload.email) : '';
+  const isAdministrativeUser = (targetRole !== 'Teacher');
+  if (!existingUser) {
+    if (isAdministrativeUser && !rawEmail) {
+      return {
+        success: false,
+        code: 'EMAIL_REQUIRED',
+        message: 'البريد الإلكتروني مطلوب لإنشاء مستخدم جديد',
+      };
+    }
+    if (rawEmail) {
+      if (!isValidEmailFormat(rawEmail)) {
+        return {
+          success: false,
+          code: 'INVALID_EMAIL',
+          message: 'صيغة البريد الإلكتروني غير صالحة',
+        };
+      }
+      const duplicate = masterUsersStore.find(
+        u => u.email && normalizeEmail(u.email) === rawEmail
+      );
+      if (duplicate) {
+        return {
+          success: false,
+          code: 'DUPLICATE_ACCOUNT_EMAIL',
+          message: 'البريد الإلكتروني مستخدم بالفعل لحساب آخر',
+        };
+      }
+    }
+    payload.email = rawEmail;
+  } else {
+    const existingEmail = normalizeEmail(existingUser.email);
+    if (existingEmail && rawEmail && rawEmail !== existingEmail) {
+      return {
+        success: false,
+        code: 'USER_EMAIL_IMMUTABLE',
+        message: 'لا يمكن تعديل البريد الإلكتروني للحساب بعد إنشائه',
+      };
+    }
+    payload.email = existingEmail || rawEmail;
+  }
+
+  // Derive accessScope from role
+  const derivedScope = deriveUserAccessScope(targetRole);
+  payload.accessScope = derivedScope;
+
   const record: BackendUserRecord = {
-    id: payload.id || `USR_${Date.now()}`,
-    username: String(payload.username || '').trim().toLowerCase(),
-    fullName: payload.fullName || '',
-    role: payload.role || 'Teacher',
-    schoolId: payload.schoolId,
-    allowedSchoolIds: payload.allowedSchoolIds,
-    status: payload.status || 'Active',
+    id: existingUser ? existingUser.id : (payload.id || `USR_${Date.now()}`),
+    username: String(payload.username || (existingUser ? existingUser.username : '')).trim().toLowerCase(),
+    fullName: payload.fullName !== undefined ? payload.fullName : (existingUser ? existingUser.fullName : ''),
+    role: targetRole,
+    accessScope: derivedScope,
+    schoolId: payload.schoolId !== undefined ? payload.schoolId : (existingUser ? existingUser.schoolId : undefined),
+    allowedSchoolIds: payload.allowedSchoolIds !== undefined ? payload.allowedSchoolIds : (existingUser ? existingUser.allowedSchoolIds : undefined),
+    employeeId: payload.employeeId !== undefined ? payload.employeeId : (existingUser ? existingUser.employeeId : undefined),
+    status: payload.status || (existingUser ? existingUser.status : 'Active'),
+    department: payload.department !== undefined ? payload.department : (existingUser ? existingUser.department : undefined),
+    email: payload.email || (existingUser ? existingUser.email : undefined),
+    createdAt: existingUser ? existingUser.createdAt : new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    lastLogin: existingUser ? existingUser.lastLogin : undefined,
   };
+
+  const sanitized = sanitizeUserDTO(record);
 
   const idx = masterUsersStore.findIndex(u => u.id === record.id);
   if (idx >= 0) {
@@ -1379,7 +1646,30 @@ export function saveUserSecure(
     masterUsersStore.push(record);
   }
 
-  return { success: true, user: record, message: 'تم حفظ حساب المستخدم بنجاح' };
+  // Audit event logging
+  let auditAction = 'USER_CREATED';
+  if (existingUser) {
+    if (targetRole !== existingUser.role) {
+      auditAction = 'USER_ROLE_CHANGED';
+    } else if (record.status !== existingUser.status) {
+      auditAction = 'USER_STATUS_CHANGED';
+    } else {
+      auditAction = 'USER_UPDATED';
+    }
+  }
+
+  recordSecurityAuditEvent({
+    requestId: `REQ_${Date.now()}`,
+    actorUserId: session.userId || 'UNKNOWN_ACTOR',
+    actorRole: session.role || 'UNKNOWN_ROLE',
+    actorSchoolId: session.schoolId || 'GLOBAL',
+    targetSchoolId: record.schoolId || 'GLOBAL',
+    action: auditAction,
+    resourceId: record.id,
+    reason: `حفظ حساب مستخدم: ${targetRole}`,
+  });
+
+  return { success: true, user: sanitized, message: 'تم حفظ حساب المستخدم بنجاح' };
 }
 
 export function deleteUserSecure(
@@ -1394,6 +1684,11 @@ export function deleteUserSecure(
   const target = masterUsersStore.find(u => u.id === targetUserId);
   if (!target) {
     return { success: false, code: 'USER_NOT_FOUND', message: 'المستخدم غير موجود' };
+  }
+
+  // Self-protection
+  if (target.id === session.userId || (session.username && target.username.toLowerCase() === session.username.toLowerCase())) {
+    return { success: false, code: 'SELF_DELETION_DENIED', message: 'لا يمكن حذف الحساب الحالي المستخدم في الجلسة' };
   }
 
   const role = session.role;
@@ -1417,6 +1712,18 @@ export function deleteUserSecure(
   if (idx >= 0) {
     masterUsersStore.splice(idx, 1);
   }
+
+  recordSecurityAuditEvent({
+    requestId: `REQ_${Date.now()}`,
+    actorUserId: session.userId || 'UNKNOWN_ACTOR',
+    actorRole: session.role || 'UNKNOWN_ROLE',
+    actorSchoolId: session.schoolId || 'GLOBAL',
+    targetSchoolId: target.schoolId || 'GLOBAL',
+    action: 'USER_DELETED',
+    resourceId: target.id,
+    reason: 'حذف حساب مستخدم',
+  });
+
   return { success: true, message: 'تم حذف حساب المستخدم بنجاح' };
 }
 
@@ -1451,6 +1758,17 @@ export function resetUserPasswordSecure(
     }
   }
 
+  recordSecurityAuditEvent({
+    requestId: `REQ_${Date.now()}`,
+    actorUserId: session.userId || 'UNKNOWN_ACTOR',
+    actorRole: session.role || 'UNKNOWN_ROLE',
+    actorSchoolId: session.schoolId || 'GLOBAL',
+    targetSchoolId: target.schoolId || 'GLOBAL',
+    action: 'USER_PASSWORD_RESET',
+    resourceId: target.id,
+    reason: 'إعادة تعيين كلمة مرور مستخدم',
+  });
+
   return { success: true, message: 'تم إعادة تعيين كلمة المرور بنجاح' };
 }
 
@@ -1467,6 +1785,16 @@ export function toggleUserStatusSecure(
   const target = masterUsersStore.find(u => u.id === targetUserId);
   if (!target) {
     return { success: false, code: 'USER_NOT_FOUND', message: 'المستخدم غير موجود' };
+  }
+
+  const currentStatus = target.status || 'Active';
+  const nextStatus = newStatus || (currentStatus === 'Active' ? 'Suspended' : 'Active');
+
+  // Self-protection
+  if (target.id === session.userId || (session.username && target.username.toLowerCase() === session.username.toLowerCase())) {
+    if (nextStatus !== 'Active') {
+      return { success: false, code: 'SELF_DISABLE_DENIED', message: 'لا يمكن تعطيل الحساب الحالي المستخدم في الجلسة' };
+    }
   }
 
   const role = session.role;
@@ -1486,7 +1814,19 @@ export function toggleUserStatusSecure(
     }
   }
 
-  target.status = newStatus || (target.status === 'Active' ? 'Suspended' : 'Active');
+  target.status = nextStatus;
+
+  recordSecurityAuditEvent({
+    requestId: `REQ_${Date.now()}`,
+    actorUserId: session.userId || 'UNKNOWN_ACTOR',
+    actorRole: session.role || 'UNKNOWN_ROLE',
+    actorSchoolId: session.schoolId || 'GLOBAL',
+    targetSchoolId: target.schoolId || 'GLOBAL',
+    action: 'USER_STATUS_CHANGED',
+    resourceId: target.id,
+    reason: `تعديل حالة حساب المستخدم إلى ${nextStatus}`,
+  });
+
   return { success: true, status: target.status, message: `تم تحديث حالة الحساب إلى ${target.status}` };
 }
 
@@ -1520,6 +1860,17 @@ export function revokeUserSessionsSecure(
       return { success: false, code: 'ACCESS_DENIED_SCHOOL_SCOPE', message: 'المستخدم يتبع مدرسة خارج نطاق المدارس المصرح بها' };
     }
   }
+
+  recordSecurityAuditEvent({
+    requestId: `REQ_${Date.now()}`,
+    actorUserId: session.userId || 'UNKNOWN_ACTOR',
+    actorRole: session.role || 'UNKNOWN_ROLE',
+    actorSchoolId: session.schoolId || 'GLOBAL',
+    targetSchoolId: target.schoolId || 'GLOBAL',
+    action: 'USER_SESSIONS_REVOKED',
+    resourceId: target.id,
+    reason: 'إلغاء جميع جلسات المستخدم',
+  });
 
   return { success: true, message: 'تم إلغاء جميع جلسات العمل النشطة للمستخدم بنجاح' };
 }

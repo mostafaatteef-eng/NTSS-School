@@ -2011,18 +2011,24 @@ function doPost(e) {
     }
 
     // U. User Management (Strictly scoped via Central USERS sheet & School Isolation)
-    if (action === 'getUsers') {
+    if (action === 'getUsers' || action === 'adminGetUsers') {
       output.data = getSanitizedUsersList(ss, activeSession);
       return createJsonResponse(output, 200);
     }
 
     if (action === 'saveUser' && payload) {
-      var targetRole = String(payload.role || '').trim();
+      var targetRoleRaw = String(payload.role || '').trim();
       var existingUsers = getSheetData(ss, SHEETS.USERS);
       var existingUser = null;
+      var targetId = payload.id ? String(payload.id).trim() : '';
+      var targetUsername = payload.username ? String(payload.username).trim().toLowerCase() : '';
+
       for (var eu = 0; eu < existingUsers.length; eu++) {
-        if (existingUsers[eu].id === payload.id || (payload.username && String(existingUsers[eu].username).trim().toLowerCase() === String(payload.username).trim().toLowerCase())) {
+        var euId = String(existingUsers[eu].id || '').trim();
+        var euUser = String(existingUsers[eu].username || '').trim().toLowerCase();
+        if ((targetId && euId === targetId) || (targetUsername && euUser === targetUsername)) {
           existingUser = existingUsers[eu];
+          targetId = euId;
           break;
         }
       }
@@ -2038,8 +2044,20 @@ function doPost(e) {
         }, 403);
       }
 
+      // Validate target role (derive from canonical roles)
+      var targetRole = normalizeUserRoleGas(targetRoleRaw || (existingUser ? existingUser.role : ''));
+      if (!targetRole) {
+        return createJsonResponse({
+          status: 'error',
+          code: 'INVALID_ROLE',
+          message: 'الدور المحدد غير صالح: ' + targetRoleRaw,
+          requestId: requestId
+        }, 400);
+      }
+      payload.role = targetRole;
+
       // If role is changed on an existing user, additionally require users.manageRoles
-      if (existingUser && targetRole && targetRole !== existingUser.role) {
+      if (existingUser && targetRole !== existingUser.role) {
         if (!hasEffectivePermissionGas(activeSession, 'users.manageRoles')) {
           return createJsonResponse({
             status: 'error',
@@ -2050,15 +2068,32 @@ function doPost(e) {
         }
       }
 
-      if (authenticatedRole === 'SchoolAdmin') {
-        if (targetRole === 'SystemAdmin') {
-          return createJsonResponse({
-            status: 'error',
-            code: 'ROLE_ESCALATION_DENIED',
-            message: 'لا يمكن لمدير المدرسة إنشاء أو ترقية مستخدم إلى مدير نظام عام (SystemAdmin)',
-            requestId: requestId
-          }, 403);
+      // Self-protection on edit
+      if (existingUser) {
+        var isSelf = (existingUser.id === activeSession.userId || 
+                      String(existingUser.username || '').toLowerCase() === String(activeSession.username || '').toLowerCase());
+        if (isSelf) {
+          if (existingUser.role === 'SystemAdmin' && targetRole !== 'SystemAdmin') {
+            return createJsonResponse({
+              status: 'error',
+              code: 'SELF_DEMOTION_DENIED',
+              message: 'لا يمكن لمدير النظام تجريد نفسه من صلاحية مدير النظام',
+              requestId: requestId
+            }, 403);
+          }
+          if (payload.status && String(payload.status).toLowerCase() !== 'active') {
+            return createJsonResponse({
+              status: 'error',
+              code: 'SELF_DISABLE_DENIED',
+              message: 'لا يمكن تعطيل الحساب الحالي المستخدم في الجلسة',
+              requestId: requestId
+            }, 403);
+          }
         }
+      }
+
+      // Role boundaries & School scoping
+      if (authenticatedRole === 'SchoolAdmin') {
         if (existingUser) {
           if (existingUser.role === 'SystemAdmin') {
             return createJsonResponse({
@@ -2077,30 +2112,176 @@ function doPost(e) {
             }, 403);
           }
         }
-        // Force newUser.schoolId to match effectiveSchoolId
-        payload.schoolId = effectiveSchoolId;
-      } else if (authenticatedRole === 'SystemAdmin') {
-        var allowedList = (activeSession.allowedSchoolIds || []).map(function(id) { return String(id).trim().toUpperCase(); });
-        if (payload.schoolId && allowedList.indexOf(String(payload.schoolId).trim().toUpperCase()) === -1) {
+        if (targetRole === 'SystemAdmin') {
           return createJsonResponse({
             status: 'error',
-            code: 'ACCESS_DENIED_SCHOOL_SCOPE',
-            message: 'المدرسة المحددة للمستخدم خارج نطاق المدارس المصرح لك بها',
+            code: 'ROLE_ESCALATION_DENIED',
+            message: 'لا يمكن لمدير المدرسة إنشاء أو ترقية مستخدم إلى مدير نظام عام (SystemAdmin)',
             requestId: requestId
           }, 403);
         }
-        if (existingUser && existingUser.schoolId && allowedList.indexOf(String(existingUser.schoolId).trim().toUpperCase()) === -1) {
-          return createJsonResponse({
-            status: 'error',
-            code: 'ACCESS_DENIED_SCHOOL_SCOPE',
-            message: 'المستخدم ينتمي لمدرسة خارج نطاق الصلاحيات المصرح لك بها',
-            requestId: requestId
-          }, 403);
+        // Force school to actor's school
+        payload.schoolId = effectiveSchoolId;
+        payload.allowedSchoolIds = [effectiveSchoolId];
+      } else if (authenticatedRole === 'SystemAdmin') {
+        var actorAllowedList = (activeSession.allowedSchoolIds || []).map(function(id) { return String(id).trim().toUpperCase(); });
+
+        if (targetRole === 'SystemAdmin') {
+          payload.schoolId = '';
+          payload.employeeId = '';
+          var parsedAllowed = parseAllowedSchoolIdsGas(payload.allowedSchoolIds);
+          var mSchools = getSheetData(ss, SHEETS.MASTER_SCHOOLS);
+          var mIds = mSchools.map(function(s) { return String(s.schoolId || '').trim().toUpperCase(); });
+
+          for (var paI = 0; paI < parsedAllowed.length; paI++) {
+            var chkId = parsedAllowed[paI];
+            if (mIds.indexOf(chkId) === -1) {
+              return createJsonResponse({
+                status: 'error',
+                code: 'INVALID_SCHOOL_ID',
+                message: 'المدرسة المحددة غير مسجلة في النظام: ' + chkId,
+                requestId: requestId
+              }, 400);
+            }
+            if (actorAllowedList.indexOf(chkId) === -1) {
+              return createJsonResponse({
+                status: 'error',
+                code: 'ACCESS_DENIED_SCHOOL_SCOPE',
+                message: 'لا يمكن منح صلاحية لمدارس خارج نطاق صلاحيات مدير النظام الحالي: ' + chkId,
+                requestId: requestId
+              }, 403);
+            }
+          }
+          payload.allowedSchoolIds = parsedAllowed;
+        } else {
+          // School-scoped user
+          var targetSchId = String(payload.schoolId !== undefined ? payload.schoolId : (existingUser ? existingUser.schoolId : '')).trim().toUpperCase();
+          if (!targetSchId) {
+            return createJsonResponse({
+              status: 'error',
+              code: 'SCHOOL_REQUIRED',
+              message: 'يجب تحديد المدرسة للمستخدم',
+              requestId: requestId
+            }, 400);
+          }
+          var allMSchools = getSheetData(ss, SHEETS.MASTER_SCHOOLS);
+          var allMIds = allMSchools.map(function(s) { return String(s.schoolId || '').trim().toUpperCase(); });
+          if (allMIds.indexOf(targetSchId) === -1) {
+            return createJsonResponse({
+              status: 'error',
+              code: 'INVALID_SCHOOL_ID',
+              message: 'المدرسة المحددة غير مسجلة في النظام: ' + targetSchId,
+              requestId: requestId
+            }, 400);
+          }
+          if (actorAllowedList.indexOf(targetSchId) === -1) {
+            return createJsonResponse({
+              status: 'error',
+              code: 'ACCESS_DENIED_SCHOOL_SCOPE',
+              message: 'المدرسة المحددة للمستخدم خارج نطاق المدارس المصرح لك بها',
+              requestId: requestId
+            }, 403);
+          }
+          if (existingUser && existingUser.schoolId && actorAllowedList.indexOf(String(existingUser.schoolId).trim().toUpperCase()) === -1) {
+            return createJsonResponse({
+              status: 'error',
+              code: 'ACCESS_DENIED_SCHOOL_SCOPE',
+              message: 'المستخدم ينتمي لمدرسة خارج نطاق الصلاحيات المصرح لك بها',
+              requestId: requestId
+            }, 403);
+          }
+          payload.schoolId = targetSchId;
+          payload.allowedSchoolIds = [targetSchId];
         }
       }
 
+      // School transfer immutability on existing user
+      if (existingUser && existingUser.schoolId) {
+        var existSch = String(existingUser.schoolId).trim().toUpperCase();
+        var reqSch = payload.schoolId !== undefined ? String(payload.schoolId || '').trim().toUpperCase() : '';
+        if (reqSch && reqSch !== existSch) {
+          return createJsonResponse({
+            status: 'error',
+            code: 'USER_SCHOOL_IMMUTABLE',
+            message: 'لا يمكن نقل المستخدم بين المدارس مباشرة',
+            requestId: requestId
+          }, 400);
+        }
+      }
+
+      // Email validation & immutability
+      var rawEmail = payload.email !== undefined ? normalizeEmail(payload.email) : '';
+      var isAdministrativeUser = (targetRole !== 'Teacher');
+      if (!existingUser) {
+        if (isAdministrativeUser && !rawEmail) {
+          return createJsonResponse({
+            status: 'error',
+            code: 'EMAIL_REQUIRED',
+            message: 'البريد الإلكتروني مطلوب لإنشاء مستخدم جديد',
+            requestId: requestId
+          }, 400);
+        }
+        if (rawEmail) {
+          if (!isValidEmailFormat(rawEmail)) {
+            return createJsonResponse({
+              status: 'error',
+              code: 'INVALID_EMAIL',
+              message: 'صيغة البريد الإلكتروني غير صالحة',
+              requestId: requestId
+            }, 400);
+          }
+          for (var emIdx = 0; emIdx < existingUsers.length; emIdx++) {
+            var emCheck = normalizeEmail(existingUsers[emIdx].email);
+            if (emCheck && emCheck === rawEmail) {
+              return createJsonResponse({
+                status: 'error',
+                code: 'DUPLICATE_ACCOUNT_EMAIL',
+                message: 'البريد الإلكتروني مستخدم بالفعل لحساب آخر',
+                requestId: requestId
+              }, 400);
+            }
+          }
+        }
+        payload.email = rawEmail;
+      } else {
+        var existingEmail = normalizeEmail(existingUser.email);
+        if (existingEmail && rawEmail && rawEmail !== existingEmail) {
+          return createJsonResponse({
+            status: 'error',
+            code: 'USER_EMAIL_IMMUTABLE',
+            message: 'لا يمكن تعديل البريد الإلكتروني للحساب بعد إنشائه',
+            requestId: requestId
+          }, 400);
+        }
+        payload.email = existingEmail || rawEmail;
+      }
+
+      // Derive accessScope from role
+      var derivedScope = deriveUserAccessScopeGas(targetRole);
+      payload.accessScope = derivedScope;
+
+      // Check if status is transitioning to inactive/suspended
+      var oldStatus = existingUser ? String(existingUser.status || 'Active') : 'Active';
+      var newStatus = String(payload.status || (existingUser ? existingUser.status : 'Active'));
+      if (existingUser && oldStatus === 'Active' && newStatus !== 'Active') {
+        revokeAllUserSessions(ss, existingUser.id);
+      }
+
       var savedUser = saveUserSecure(ss, payload, authenticatedUsername, requestId);
-      recordAuthoritativeAudit(ss, requestId, authenticatedUsername, authenticatedRole, 'SAVE', 'USERS', payload.username || '', 'حفظ حساب مستخدم');
+
+      var auditEvent = 'USER_CREATED';
+      if (existingUser) {
+        if (targetRole !== existingUser.role) {
+          auditEvent = 'USER_ROLE_CHANGED';
+        } else if (newStatus !== oldStatus) {
+          auditEvent = 'USER_STATUS_CHANGED';
+        } else {
+          auditEvent = 'USER_UPDATED';
+        }
+      }
+
+      recordAuthoritativeAudit(ss, requestId, authenticatedUsername, authenticatedRole, auditEvent, 'USERS', savedUser.id || payload.username || '', 'حفظ حساب مستخدم: ' + targetRole);
+
       output.message = 'تم حفظ حساب المستخدم بنجاح';
       output.user = savedUser;
       return createJsonResponse(output, 200);
@@ -2116,8 +2297,19 @@ function doPost(e) {
           requestId: requestId
         }, 403);
       }
+      var targetUser = checkTarget.targetUser;
+      if (targetUser && (targetUser.id === activeSession.userId || 
+          String(targetUser.username || '').toLowerCase() === String(activeSession.username || '').toLowerCase())) {
+        return createJsonResponse({
+          status: 'error',
+          code: 'SELF_DELETION_DENIED',
+          message: 'لا يمكن حذف الحساب الحالي المستخدم في الجلسة',
+          requestId: requestId
+        }, 403);
+      }
+      revokeAllUserSessions(ss, payload.id);
       deleteRecord(ss, SHEETS.USERS, 'id', payload.id);
-      recordAuthoritativeAudit(ss, requestId, authenticatedUsername, authenticatedRole, 'DELETE', 'USERS', payload.id, 'حذف حساب مستخدم');
+      recordAuthoritativeAudit(ss, requestId, authenticatedUsername, authenticatedRole, 'USER_DELETED', 'USERS', payload.id, 'حذف حساب مستخدم');
       output.message = 'تم حذف حساب المستخدم بنجاح';
       return createJsonResponse(output, 200);
     }
@@ -2141,7 +2333,8 @@ function doPost(e) {
           requestId: requestId
         }, 400);
       }
-      recordAuthoritativeAudit(ss, requestId, authenticatedUsername, authenticatedRole, 'RESET_PASSWORD', 'USERS', payload.userId, 'إعادة تعيين كلمة مرور مستخدم');
+      revokeAllUserSessions(ss, payload.userId);
+      recordAuthoritativeAudit(ss, requestId, authenticatedUsername, authenticatedRole, 'USER_PASSWORD_RESET', 'USERS', payload.userId, 'إعادة تعيين كلمة مرور مستخدم');
       output.message = resetRes.message;
       return createJsonResponse(output, 200);
     }
@@ -2183,7 +2376,7 @@ function doPost(e) {
         }, 403);
       }
       revokeAllUserSessions(ss, payload.userId);
-      recordAuthoritativeAudit(ss, requestId, authenticatedUsername, authenticatedRole, 'REVOKE_SESSIONS', 'USERS', payload.userId, 'إلغاء جميع جلسات المستخدم');
+      recordAuthoritativeAudit(ss, requestId, authenticatedUsername, authenticatedRole, 'USER_SESSIONS_REVOKED', 'USERS', payload.userId, 'إلغاء جميع جلسات المستخدم');
       output.message = 'تم إلغاء جميع جلسات العمل النشطة للمستخدم بنجاح';
       return createJsonResponse(output, 200);
     }
@@ -2198,8 +2391,22 @@ function doPost(e) {
           requestId: requestId
         }, 403);
       }
+      var targetUser = checkTarget.targetUser;
+      if (targetUser && (targetUser.id === activeSession.userId || 
+          String(targetUser.username || '').toLowerCase() === String(activeSession.username || '').toLowerCase())) {
+        var currentStatus = targetUser.status || 'Active';
+        var nextStatus = payload.status || (currentStatus === 'Active' ? 'Suspended' : 'Active');
+        if (nextStatus !== 'Active') {
+          return createJsonResponse({
+            status: 'error',
+            code: 'SELF_DISABLE_DENIED',
+            message: 'لا يمكن تعطيل الحساب الحالي المستخدم في الجلسة',
+            requestId: requestId
+          }, 403);
+        }
+      }
       var statusRes = toggleUserStatusSecure(ss, payload.userId, payload.status);
-      recordAuthoritativeAudit(ss, requestId, authenticatedUsername, authenticatedRole, 'UPDATE_STATUS', 'USERS', payload.userId, 'تعديل حالة حساب المستخدم');
+      recordAuthoritativeAudit(ss, requestId, authenticatedUsername, authenticatedRole, 'USER_STATUS_CHANGED', 'USERS', payload.userId, 'تعديل حالة حساب المستخدم إلى ' + statusRes.status);
       output.message = statusRes.message;
       output.status = statusRes.status;
       return createJsonResponse(output, 200);
@@ -4623,6 +4830,62 @@ function commitTimetableImportBatch(ss, rows, batchFingerprint, authenticatedUse
 // USER MANAGEMENT & SECURITY HELPERS
 // -------------------------------------------------------------
 
+/**
+ * Normalizes staff roles to canonical staff roles.
+ * Returns null for invalid, non-staff, or unknown roles.
+ */
+function normalizeUserRoleGas(role) {
+  var r = String(role || '').trim();
+  if (!r) return null;
+  if (r === 'Parent' || r === 'Student') return null;
+  if (r === 'SystemAdmin') return 'SystemAdmin';
+  if (r === 'SchoolAdmin') return 'SchoolAdmin';
+  if (r === 'Admin') return 'SchoolAdmin';
+  if (r === 'SchoolDirector' || r === 'Supervisor') return 'SchoolDirector';
+  if (r === 'StudentAffairs') return 'StudentAffairs';
+  if (r === 'TeacherAffairs' || r === 'HR' || r === 'Employee') return 'TeacherAffairs';
+  if (r === 'SocialSpecialist' || r === 'BehaviorOfficer') return 'SocialSpecialist';
+  if (r === 'TrainingOfficer') return 'TrainingOfficer';
+  if (r === 'QualityOfficer' || r === 'Viewer') return 'QualityOfficer';
+  if (r === 'Teacher') return 'Teacher';
+  if (r === 'AdministrativeEmployee') return 'AdministrativeEmployee';
+  return null;
+}
+
+/**
+ * Derives authoritative accessScope strictly from canonical role.
+ */
+function deriveUserAccessScopeGas(normalizedRole) {
+  if (normalizedRole === 'SystemAdmin') return 'GLOBAL';
+  if (normalizedRole === 'Teacher') return 'SELF';
+  return 'SCHOOL';
+}
+
+/**
+ * Returns safe User DTO. Purges all internal secrets, passwords, hashes, salts, and tokens.
+ */
+function sanitizeUserDTO(u) {
+  if (!u) return null;
+  var roleStr = String(u.role || '').trim();
+  var derivedScope = deriveUserAccessScopeGas(roleStr);
+  return {
+    id: String(u.id || '').trim(),
+    username: String(u.username || '').trim(),
+    email: normalizeEmail(u.email),
+    fullName: String(u.fullName || '').trim(),
+    role: roleStr,
+    accessScope: String(u.accessScope || derivedScope),
+    schoolId: String(u.schoolId || '').trim().toUpperCase(),
+    allowedSchoolIds: parseAllowedSchoolIdsGas(u.allowedSchoolIds),
+    employeeId: String(u.employeeId || '').trim(),
+    status: String(u.status || 'Active').trim(),
+    department: String(u.department || '').trim(),
+    createdAt: u.createdAt || '',
+    lastLogin: u.lastLogin || '',
+    loginNumber: u.loginNumber || ''
+  };
+}
+
 function getSanitizedUsersList(ss, activeSession) {
   var users = getSheetData(ss, SHEETS.USERS);
   var role = activeSession ? activeSession.role : '';
@@ -4639,7 +4902,9 @@ function getSanitizedUsersList(ss, activeSession) {
       return uSchool === sessionSchool;
     }
     if (role === 'SystemAdmin') {
-      if (!uSchool) return true;
+      // SystemAdmin sees SystemAdmin users, and school-scoped users within allowedSchoolIds
+      if (u.role === 'SystemAdmin') return true;
+      if (!uSchool) return false;
       return allowed.indexOf(uSchool) !== -1;
     }
     if (role === 'Admin') {
@@ -4648,16 +4913,7 @@ function getSanitizedUsersList(ss, activeSession) {
     return false;
   });
 
-  return filtered.map(function(u) {
-    var copy = Object.assign({}, u);
-    delete copy.password;
-    delete copy.passwordHash;
-    delete copy.passwordSalt;
-    delete copy.passwordAlgorithm;
-    delete copy.passwordIterations;
-    delete copy.activationTokenHash;
-    return copy;
-  });
+  return filtered.map(sanitizeUserDTO);
 }
 
 /**
@@ -4669,8 +4925,11 @@ function verifyTargetUserAccess(ss, activeSession, targetUserId) {
   }
   var users = getSheetData(ss, SHEETS.USERS);
   var target = null;
+  var targetStr = String(targetUserId).trim().toLowerCase();
   for (var i = 0; i < users.length; i++) {
-    if (users[i].id === targetUserId || users[i].username === targetUserId) {
+    var uId = String(users[i].id || '').trim().toLowerCase();
+    var uName = String(users[i].username || '').trim().toLowerCase();
+    if (uId === targetStr || uName === targetStr) {
       target = users[i];
       break;
     }
@@ -4750,8 +5009,12 @@ function saveUserSecure(ss, payload, authenticatedUsername, requestId) {
 
   var existingUsers = getSheetData(ss, SHEETS.USERS);
   var existing = null;
+  var targetId = payload.id ? String(payload.id).trim() : '';
+  var targetUsername = payload.username ? String(payload.username).trim().toLowerCase() : '';
   for (var i = 0; i < existingUsers.length; i++) {
-    if (existingUsers[i].id === payload.id || existingUsers[i].username === payload.username) {
+    var euId = String(existingUsers[i].id || '').trim();
+    var euName = String(existingUsers[i].username || '').trim().toLowerCase();
+    if ((targetId && euId === targetId) || (targetUsername && euName === targetUsername)) {
       existing = existingUsers[i];
       break;
     }
@@ -4774,9 +5037,12 @@ function saveUserSecure(ss, payload, authenticatedUsername, requestId) {
     passwordInitialized = (existing.passwordInitialized === true || existing.passwordInitialized === 'true');
   }
 
+  var role = payload.role || (existing ? existing.role : 'Teacher');
+  var accessScope = payload.accessScope || (existing ? existing.accessScope : deriveUserAccessScopeGas(role));
+
   var record = {
     id: payload.id || ('USR_' + Utilities.getUuid().substring(0, 8)),
-    username: String(payload.username).trim().toLowerCase(),
+    username: String(payload.username || (existing ? existing.username : '')).trim().toLowerCase(),
     loginNumber: loginNumber,
     passwordHash: passwordHash || (existing ? existing.passwordHash : ''),
     passwordSalt: passwordHash ? salt : (existing ? existing.passwordSalt : ''),
@@ -4785,13 +5051,17 @@ function saveUserSecure(ss, payload, authenticatedUsername, requestId) {
     passwordInitialized: passwordInitialized,
     activationTokenHash: payload.activationTokenHash || (existing ? existing.activationTokenHash : ''),
     activationExpiresAt: payload.activationExpiresAt || (existing ? existing.activationExpiresAt : ''),
-    fullName: payload.fullName,
-    role: payload.role,
-    schoolId: payload.schoolId || (existing ? existing.schoolId : ''),
-    allowedSchoolIds: payload.allowedSchoolIds || (existing ? existing.allowedSchoolIds : ''),
-    status: payload.status || 'Active',
-    department: payload.department || '',
-    email: payload.email || '',
+    fullName: payload.fullName !== undefined ? payload.fullName : (existing ? existing.fullName : ''),
+    role: role,
+    accessScope: accessScope,
+    schoolId: payload.schoolId !== undefined ? payload.schoolId : (existing ? existing.schoolId : ''),
+    allowedSchoolIds: Array.isArray(payload.allowedSchoolIds)
+      ? JSON.stringify(payload.allowedSchoolIds)
+      : (payload.allowedSchoolIds !== undefined ? payload.allowedSchoolIds : (existing ? existing.allowedSchoolIds : '[]')),
+    employeeId: payload.employeeId !== undefined ? payload.employeeId : (existing ? existing.employeeId : ''),
+    status: payload.status || (existing ? existing.status : 'Active'),
+    department: payload.department !== undefined ? payload.department : (existing ? existing.department : ''),
+    email: payload.email || (existing ? existing.email : ''),
     createdAt: existing ? existing.createdAt : getCairoISOString(),
     updatedAt: getCairoISOString(),
     lastLogin: existing ? existing.lastLogin : '',
@@ -4800,11 +5070,7 @@ function saveUserSecure(ss, payload, authenticatedUsername, requestId) {
 
   upsertRecord(ss, SHEETS.USERS, 'id', record);
 
-  var sanitized = Object.assign({}, record);
-  delete sanitized.passwordHash;
-  delete sanitized.passwordSalt;
-  delete sanitized.activationTokenHash;
-  return sanitized;
+  return sanitizeUserDTO(record);
 }
 
 /**
