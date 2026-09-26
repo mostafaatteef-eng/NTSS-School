@@ -216,7 +216,7 @@ describe('PHASE 3C-A15.1: Authoritative Multi-School User Management Backend Har
       expect(res.success).toBe(true);
       expect(res.user?.role).toBe('SystemAdmin');
       expect(res.user?.accessScope).toBe('GLOBAL');
-      expect(res.user?.schoolId).toBeUndefined();
+      expect(res.user?.schoolId).toBe('');
       expect(res.user?.employeeId).toBeUndefined();
       expect(res.user?.allowedSchoolIds).toEqual(['SCH-BADR']);
     });
@@ -388,6 +388,140 @@ describe('PHASE 3C-A15.1: Authoritative Multi-School User Management Backend Har
       const logs = getSecurityAuditLogs();
       const revokeLog = logs.find(l => l.action === 'USER_SESSIONS_REVOKED');
       expect(revokeLog).toBeDefined();
+    });
+  });
+
+  describe('9. PHASE 3C-A15.1.1: User Authority Final Hardening', () => {
+    it('empty school registry + requested school -> FAIL CLOSED (no fallback)', () => {
+      // Clear school registry
+      setMasterSchoolRegistry([]);
+
+      // SystemAdmin creating a school-scoped user requesting SCH-BADR must fail closed
+      const resSchoolUser = saveUserSecure(systemAdminSession, {
+        username: 'failclosed_user',
+        email: 'failclosed@ntss.edu.eg',
+        fullName: 'مستخدم عند فراغ السجل',
+        role: 'SchoolDirector',
+        schoolId: 'SCH-BADR'
+      });
+      expect(resSchoolUser.success).toBe(false);
+      expect(resSchoolUser.code).toBe('SCHOOL_REGISTRY_UNAVAILABLE');
+
+      // SystemAdmin creating a SystemAdmin with allowedSchoolIds must fail closed
+      const resSysAdmin = saveUserSecure(systemAdminSession, {
+        username: 'failclosed_admin',
+        email: 'failclosed_admin@ntss.edu.eg',
+        fullName: 'مدير عند فراغ السجل',
+        role: 'SystemAdmin',
+        allowedSchoolIds: ['SCH-BADR']
+      });
+      expect(resSysAdmin.success).toBe(false);
+      expect(resSysAdmin.code).toBe('SCHOOL_REGISTRY_UNAVAILABLE');
+    });
+
+    it('never falls back to BADR, DAMIETTA, or ALNOOR when registry is empty', () => {
+      setMasterSchoolRegistry([]);
+
+      ['SCH-BADR', 'SCH-DAMIETTA', 'SCH-ALNOOR'].forEach(schoolId => {
+        const res = saveUserSecure(systemAdminSession, {
+          username: `user_${schoolId.toLowerCase().replace(/[^a-z0-9]/g, '')}`,
+          email: `${schoolId.toLowerCase().replace(/[^a-z0-9]/g, '')}@ntss.edu.eg`,
+          fullName: 'فحص عدم وجود بديل تلقائي',
+          role: 'StudentAffairs',
+          schoolId: schoolId
+        });
+        expect(res.success).toBe(false);
+        expect(res.code).toBe('SCHOOL_REGISTRY_UNAVAILABLE');
+      });
+    });
+
+    it('malicious persisted accessScope=GLOBAL on SchoolAdmin -> safe DTO returns SCHOOL', () => {
+      const maliciousSchoolAdmin: BackendUserRecord = {
+        id: 'usr-malicious-sa',
+        username: 'malicious_sa',
+        fullName: 'مدير مدرسة متلاعب',
+        role: 'SchoolAdmin',
+        accessScope: 'GLOBAL' as any,
+        schoolId: 'SCH-BADR',
+        allowedSchoolIds: ['SCH-BADR', 'SCH-ALNOOR'],
+        status: 'Active'
+      };
+
+      const dto = sanitizeUserDTO(maliciousSchoolAdmin);
+      expect(dto.role).toBe('SchoolAdmin');
+      expect(dto.accessScope).toBe('SCHOOL');
+      expect(dto.schoolId).toBe('SCH-BADR');
+      expect(dto.allowedSchoolIds).toEqual(['SCH-BADR']);
+    });
+
+    it('malicious persisted accessScope=SCHOOL on SystemAdmin -> safe DTO returns GLOBAL', () => {
+      const maliciousSysAdmin: BackendUserRecord = {
+        id: 'usr-malicious-sys',
+        username: 'malicious_sys',
+        fullName: 'مدير نظام متلاعب بنطاقه',
+        role: 'SystemAdmin',
+        accessScope: 'SCHOOL' as any,
+        schoolId: 'SCH-BADR',
+        allowedSchoolIds: ['SCH-BADR', 'SCH-ALNOOR'],
+        status: 'Active'
+      };
+
+      const dto = sanitizeUserDTO(maliciousSysAdmin);
+      expect(dto.role).toBe('SystemAdmin');
+      expect(dto.accessScope).toBe('GLOBAL');
+      expect(dto.schoolId).toBe('');
+      expect(dto.allowedSchoolIds).toEqual(['SCH-BADR', 'SCH-ALNOOR']);
+    });
+
+    it('SchoolAdmin stored allowedSchoolIds containing another school -> safe DTO only [own school]', () => {
+      const storedSA: BackendUserRecord = {
+        id: 'usr-sa-extra-schools',
+        username: 'sa_extra',
+        fullName: 'مدير مدرسة بمدارس زائدة في السجل',
+        role: 'SchoolAdmin',
+        accessScope: 'SCHOOL',
+        schoolId: 'SCH-BADR',
+        allowedSchoolIds: ['SCH-BADR', 'SCH-ALNOOR', 'SCH-DAMIETTA', 'SCH-MALICIOUS'],
+        status: 'Active'
+      };
+
+      const dto = sanitizeUserDTO(storedSA);
+      expect(dto.accessScope).toBe('SCHOOL');
+      expect(dto.schoolId).toBe('SCH-BADR');
+      expect(dto.allowedSchoolIds).toEqual(['SCH-BADR']);
+    });
+
+    it('Teacher stored extra allowedSchoolIds -> safe DTO only [own school]', () => {
+      const storedTeacher: BackendUserRecord = {
+        id: 'usr-teacher-extra-schools',
+        username: 'teacher_extra',
+        fullName: 'معلم بمدارس غير مصرحة',
+        role: 'Teacher',
+        accessScope: 'SELF',
+        schoolId: 'SCH-BADR',
+        allowedSchoolIds: ['SCH-BADR', 'SCH-DAMIETTA'],
+        status: 'Active'
+      };
+
+      const dto = sanitizeUserDTO(storedTeacher);
+      expect(dto.accessScope).toBe('SELF');
+      expect(dto.schoolId).toBe('SCH-BADR');
+      expect(dto.allowedSchoolIds).toEqual(['SCH-BADR']);
+    });
+
+    it('SystemAdmin safe DTO schoolId is blank (empty string)', () => {
+      const sysAdminRecord: BackendUserRecord = {
+        id: 'usr-sys-blank-check',
+        username: 'sys_blank',
+        fullName: 'مدير عام',
+        role: 'SystemAdmin',
+        schoolId: 'SCH-BADR',
+        allowedSchoolIds: ['SCH-BADR'],
+        status: 'Active'
+      };
+
+      const dto = sanitizeUserDTO(sysAdminRecord);
+      expect(dto.schoolId).toBe('');
     });
   });
 });

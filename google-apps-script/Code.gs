@@ -4867,17 +4867,34 @@ function deriveUserAccessScopeGas(normalizedRole) {
 function sanitizeUserDTO(u) {
   if (!u) return null;
   var roleStr = String(u.role || '').trim();
-  var derivedScope = deriveUserAccessScopeGas(roleStr);
+  var normRole = normalizeUserRoleGas(roleStr);
+  var derivedScope = deriveUserAccessScopeGas(normRole || roleStr);
+
+  var safeSchoolId = '';
+  var safeAllowedSchoolIds = [];
+  var safeEmployeeId = '';
+
+  if (derivedScope === 'GLOBAL') {
+    safeSchoolId = '';
+    safeAllowedSchoolIds = parseAllowedSchoolIdsGas(u.allowedSchoolIds);
+    safeEmployeeId = '';
+  } else {
+    var storedSchool = String(u.schoolId || '').trim().toUpperCase();
+    safeSchoolId = storedSchool;
+    safeAllowedSchoolIds = storedSchool ? [storedSchool] : [];
+    safeEmployeeId = String(u.employeeId || '').trim();
+  }
+
   return {
     id: String(u.id || '').trim(),
     username: String(u.username || '').trim(),
     email: normalizeEmail(u.email),
     fullName: String(u.fullName || '').trim(),
-    role: roleStr,
-    accessScope: String(u.accessScope || derivedScope),
-    schoolId: String(u.schoolId || '').trim().toUpperCase(),
-    allowedSchoolIds: parseAllowedSchoolIdsGas(u.allowedSchoolIds),
-    employeeId: String(u.employeeId || '').trim(),
+    role: normRole || roleStr,
+    accessScope: derivedScope,
+    schoolId: safeSchoolId,
+    allowedSchoolIds: safeAllowedSchoolIds,
+    employeeId: safeEmployeeId,
     status: String(u.status || 'Active').trim(),
     department: String(u.department || '').trim(),
     createdAt: u.createdAt || '',

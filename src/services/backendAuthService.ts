@@ -1326,17 +1326,33 @@ export function isValidEmailFormat(email: string): boolean {
  */
 export function sanitizeUserDTO(u: BackendUserRecord): BackendUserRecord {
   const roleStr = String(u.role || '').trim();
-  const derivedScope = deriveUserAccessScope(roleStr);
+  const normRole = normalizeUserRole(roleStr);
+  const derivedScope = deriveUserAccessScope(normRole || roleStr);
+
+  let safeSchoolId = '';
+  let safeAllowedSchoolIds: string[] = [];
+
+  if (derivedScope === 'GLOBAL') {
+    safeSchoolId = '';
+    safeAllowedSchoolIds = u.allowedSchoolIds
+      ? Array.from(new Set(u.allowedSchoolIds.map(s => String(s).trim().toUpperCase()).filter(Boolean)))
+      : [];
+  } else {
+    const storedSchool = String(u.schoolId || '').trim().toUpperCase();
+    safeSchoolId = storedSchool;
+    safeAllowedSchoolIds = storedSchool ? [storedSchool] : [];
+  }
+
   return {
     id: String(u.id || '').trim(),
     username: String(u.username || '').trim(),
     email: u.email ? normalizeEmail(u.email) : undefined,
     fullName: String(u.fullName || '').trim(),
-    role: roleStr,
-    accessScope: (u.accessScope as AccessScope) || derivedScope,
-    schoolId: String(u.schoolId || '').trim().toUpperCase() || undefined,
-    allowedSchoolIds: u.allowedSchoolIds ? u.allowedSchoolIds.map(s => String(s).trim().toUpperCase()) : undefined,
-    employeeId: String(u.employeeId || '').trim() || undefined,
+    role: normRole || roleStr,
+    accessScope: derivedScope,
+    schoolId: safeSchoolId,
+    allowedSchoolIds: safeAllowedSchoolIds,
+    employeeId: derivedScope === 'GLOBAL' ? undefined : (String(u.employeeId || '').trim() || undefined),
     status: String(u.status || 'Active').trim(),
     department: String(u.department || '').trim() || undefined,
     createdAt: u.createdAt || '',
@@ -1498,24 +1514,31 @@ export function saveUserSecure(
       payload.employeeId = '';
       const parsedAllowed = (payload.allowedSchoolIds || []).map(s => String(s).trim().toUpperCase()).filter(Boolean);
       const registry = getMasterSchoolRegistry();
-      const validSchoolIds = registry.length > 0 
-        ? registry.map(s => s.schoolId.toUpperCase()) 
-        : ['SCH-BADR', 'SCH-ALNOOR', 'SCH-DAMIETTA'];
 
-      for (const chkId of parsedAllowed) {
-        if (!validSchoolIds.includes(chkId)) {
+      if (parsedAllowed.length > 0) {
+        if (!registry || registry.length === 0) {
           return {
             success: false,
-            code: 'INVALID_SCHOOL_ID',
-            message: `المدرسة المحددة غير مسجلة في النظام: ${chkId}`,
+            code: 'SCHOOL_REGISTRY_UNAVAILABLE',
+            message: 'سجل المدارس الرئيسي غير متوفر أو فارغ، تعذر التحقق من المدارس المصرح بها',
           };
         }
-        if (!actorAllowed.includes(chkId)) {
-          return {
-            success: false,
-            code: 'ACCESS_DENIED_SCHOOL_SCOPE',
-            message: `لا يمكن منح صلاحية لمدارس خارج نطاق صلاحيات مدير النظام الحالي: ${chkId}`,
-          };
+        const validSchoolIds = registry.map(s => s.schoolId.toUpperCase());
+        for (const chkId of parsedAllowed) {
+          if (!validSchoolIds.includes(chkId)) {
+            return {
+              success: false,
+              code: 'INVALID_SCHOOL_ID',
+              message: `المدرسة المحددة غير مسجلة في النظام: ${chkId}`,
+            };
+          }
+          if (!actorAllowed.includes(chkId)) {
+            return {
+              success: false,
+              code: 'ACCESS_DENIED_SCHOOL_SCOPE',
+              message: `لا يمكن منح صلاحية لمدارس خارج نطاق صلاحيات مدير النظام الحالي: ${chkId}`,
+            };
+          }
         }
       }
       payload.allowedSchoolIds = Array.from(new Set(parsedAllowed));
@@ -1530,9 +1553,14 @@ export function saveUserSecure(
         };
       }
       const registry = getMasterSchoolRegistry();
-      const validSchoolIds = registry.length > 0 
-        ? registry.map(s => s.schoolId.toUpperCase()) 
-        : ['SCH-BADR', 'SCH-ALNOOR', 'SCH-DAMIETTA'];
+      if (!registry || registry.length === 0) {
+        return {
+          success: false,
+          code: 'SCHOOL_REGISTRY_UNAVAILABLE',
+          message: 'سجل المدارس الرئيسي غير متوفر أو فارغ، تعذر التحقق من المدرسة',
+        };
+      }
+      const validSchoolIds = registry.map(s => s.schoolId.toUpperCase());
 
       if (!validSchoolIds.includes(targetSchId)) {
         return {
