@@ -9,48 +9,116 @@ describe('NTSS Daily Attendance System - Students & Staff', () => {
   });
 
   describe('Daily Student Attendance', () => {
-    it('saves daily student attendance batch and synchronizes records', async () => {
-      const student: Student = {
-        id: 'STU-1001',
-        studentCode: '2026-1001',
-        name: 'أحمد محمود',
-        stage: 'ابتدائي',
-        grade: 'الصف الأول',
-        classroom: '1/1',
-        gender: 'ذكر',
-        status: 'نشط',
-      };
-      storageService.saveStudent(student);
+    const makeStudentRecord = (): StudentAttendanceRecord => ({
+      id: 'CLIENT-STATT-20260917-STU-1001',
+      studentId: 'STU-1001',
+      studentName: 'اسم من المتصفح',
+      stage: 'مرحلة من المتصفح',
+      grade: 'صف من المتصفح',
+      classroom: 'فصل من المتصفح',
+      date: '2026-09-17',
+      dayName: 'يوم من المتصفح',
+      status: 'حاضر',
+      lateMinutes: 0,
+      recordedBy: 'عميل غير موثوق',
+      recordedAt: new Date().toISOString(),
+    });
 
-      const records: StudentAttendanceRecord[] = [
-        {
-          id: 'STATT_20260917_STU-1001',
-          studentId: 'STU-1001',
-          studentName: 'أحمد محمود',
-          stage: 'ابتدائي',
-          grade: 'الصف الأول',
-          classroom: '1/1',
-          date: '2026-09-17',
-          dayName: 'الخميس',
-          status: 'حاضر',
-          lateMinutes: 0,
-          recordedBy: 'مشرف الحضور',
-          recordedAt: new Date().toISOString(),
-        },
-      ];
+    it('does NOT update student attendance cache when backend batch save fails', async () => {
+      vi.spyOn(storageService, 'pushPostDirect').mockResolvedValueOnce({
+        success: false,
+        message: 'Student attendance backend rejected',
+      });
 
       const res = await storageService.saveDailyStudentAttendanceBatchToBackend({
         date: '2026-09-17',
         gradeId: 'الصف الأول',
         classroomId: '1/1',
-        records,
+        records: [makeStudentRecord()],
+      });
+
+      expect(res.success).toBe(false);
+      expect(res.message).toBe('Student attendance backend rejected');
+      expect(res.cacheUpdated).toBe(false);
+      expect(storageService.getStudentAttendance()).toEqual([]);
+    });
+
+    it('hydrates student attendance cache only from canonical backend records', async () => {
+      const backendSpy = vi.spyOn(storageService, 'pushPostDirect').mockResolvedValueOnce({
+        success: true,
+        message: 'تم حفظ حضور الطلاب',
+        savedCount: 1,
+        records: [
+          {
+            id: 'STATT_20260917_STU-1001',
+            studentId: 'STU-1001',
+            studentCode: '2026-1001',
+            studentName: 'أحمد محمود - معتمد',
+            stage: 'ابتدائي',
+            grade: 'الصف الأول',
+            classroom: '1/1',
+            date: '2026-09-17',
+            dayName: 'الخميس',
+            status: 'حاضر',
+            lateMinutes: 0,
+            recordedBy: 'server-user',
+            recordedAt: '2026-09-17T08:00:00.000Z',
+          },
+        ],
+      });
+
+      const res = await storageService.saveDailyStudentAttendanceBatchToBackend({
+        date: '2026-09-17',
+        gradeId: 'الصف الأول',
+        classroomId: '1/1',
+        records: [makeStudentRecord()],
       });
 
       expect(res.success).toBe(true);
+      expect(res.cacheUpdated).toBe(true);
+
       const saved = storageService.getStudentAttendance();
-      expect(saved.length).toBe(1);
-      expect(saved[0].studentId).toBe('STU-1001');
-      expect(saved[0].status).toBe('حاضر');
+      expect(saved).toHaveLength(1);
+      expect(saved[0].id).toBe('STATT_20260917_STU-1001');
+      expect(saved[0].studentName).toBe('أحمد محمود - معتمد');
+      expect(saved[0].grade).toBe('الصف الأول');
+      expect(saved[0].classroom).toBe('1/1');
+      expect(saved[0].recordedBy).toBe('server-user');
+
+      const [, payload] = backendSpy.mock.calls[0];
+      expect(payload.records).toEqual([
+        {
+          studentId: 'STU-1001',
+          date: '2026-09-17',
+          status: 'حاضر',
+          lateMinutes: 0,
+          notes: '',
+        },
+      ]);
+      expect(payload.records[0].studentName).toBeUndefined();
+      expect(payload.records[0].grade).toBeUndefined();
+      expect(payload.records[0].classroom).toBeUndefined();
+      expect(payload.records[0].id).toBeUndefined();
+      expect(payload.records[0].recordedBy).toBeUndefined();
+    });
+
+    it('does not hydrate client payload when backend omits canonical student records', async () => {
+      vi.spyOn(storageService, 'pushPostDirect').mockResolvedValueOnce({
+        success: true,
+        message: 'تم الحفظ في الخادم',
+        savedCount: 1,
+      });
+
+      const res = await storageService.saveDailyStudentAttendanceBatchToBackend({
+        date: '2026-09-17',
+        gradeId: 'الصف الأول',
+        classroomId: '1/1',
+        records: [makeStudentRecord()],
+      });
+
+      expect(res.success).toBe(true);
+      expect(res.cacheUpdated).toBe(false);
+      expect(storageService.getStudentAttendance()).toEqual([]);
     });
   });
 
