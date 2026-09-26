@@ -56,21 +56,25 @@ export default {
       'access-control-allow-origin': corsOrigin, 'access-control-allow-headers': 'content-type, authorization', 'access-control-allow-methods': 'GET,POST,OPTIONS'
     }});
 
+    console.log(JSON.stringify({ marker: 'NTSS_REQ', method: request.method, origin, corsOrigin, url: request.url }));
     const url = new URL(request.url);
     const path = url.pathname.replace(/^\/api(?=\/|$)/, '') || '/';
 
     try {
       if (request.method === 'GET' && path === '/health') {
         await pool.query('SELECT 1');
-        return json({ status: 'success', serviceAvailable: true, backend: 'neon-function', version: '1.0.0' }, 200, corsOrigin);
+        console.log(JSON.stringify({ marker: 'NTSS_HEALTH_OK', corsOrigin }));
+        return json({ status: 'success', serviceAvailable: true, backend: 'neon-function', version: '1.0.1' }, 200, corsOrigin);
       }
 
       if (request.method === 'POST' && path === '/login') {
+        console.log(JSON.stringify({ marker: 'NTSS_LOGIN_BEGIN', origin, corsOrigin }));
         const body: any = await request.json();
         const email = String(body.email || '').trim().toLowerCase();
         const password = String(body.password || '');
         const query = await pool.query('SELECT * FROM users WHERE lower(email)=lower($1) LIMIT 1', [email]);
         const user = query.rows[0];
+        console.log(JSON.stringify({ marker: 'NTSS_LOGIN_USER_LOOKUP', found: !!user }));
         if (!user || !user.is_active || user.status !== 'Active') return json({ status: 'error', code: 'INVALID_CREDENTIALS' }, 401, corsOrigin);
 
         let digest = crypto.createHmac('sha256', String(user.password_salt || '')).update(password + String(user.password_salt || '')).digest();
@@ -86,6 +90,7 @@ export default {
         const expiresAt = new Date(Date.now() + 86400000);
         await pool.query('INSERT INTO sessions(id,user_id,token_hash,active_school_id,expires_at) VALUES($1,$2,$3,$4,$5)', [sessionId, user.id, tokenHash(token), user.school_id || null, expiresAt]);
         const access = await pool.query('SELECT school_id FROM user_school_access WHERE user_id=$1', [user.id]);
+        console.log(JSON.stringify({ marker: 'NTSS_LOGIN_SUCCESS', userId: user.id, corsOrigin }));
         return json({ status: 'success', sessionToken: token, expiresAt: expiresAt.toISOString(), user: {
           id: user.id, email: user.email, fullName: user.full_name, role: user.role, accessScope: user.access_scope,
           schoolId: user.school_id || '', activeSchoolId: user.school_id || '', allowedSchoolIds: access.rows.map((x: any) => x.school_id), employeeId: user.employee_id || ''
@@ -588,7 +593,7 @@ export default {
 
       return json({ status: 'error', code: 'NOT_FOUND' }, 404, corsOrigin);
     } catch (error) {
-      console.error(error);
+      console.error(JSON.stringify({ marker: 'NTSS_API_ERROR', message: String((error as any)?.message || error), stack: String((error as any)?.stack || '') }));
       return json({ status: 'error', code: 'INTERNAL_ERROR' }, 500, corsOrigin);
     }
   }
