@@ -103,6 +103,48 @@ export default {
         return json({ status: 'success', data: query.rows }, 200, corsOrigin);
       }
 
+      if (request.method === 'POST' && path === '/schools/create') {
+        if (user.role !== 'SystemAdmin' || user.access_scope !== 'GLOBAL') return json({ status: 'error', code: 'FORBIDDEN' }, 403, corsOrigin);
+        const body: any = await request.json();
+        const schoolId = String(body.schoolId || '').trim().toUpperCase();
+        const code = String(body.schoolCode || '').trim().toUpperCase();
+        const name = String(body.schoolName || '').trim();
+        if (!schoolId || !code || !name) return json({ status: 'error', code: 'INVALID_SCHOOL' }, 400, corsOrigin);
+        try {
+          const created = await pool.query(
+            "INSERT INTO schools(id,code,name,status) VALUES($1,$2,$3,'ACTIVE') RETURNING id,code,name,status,created_at,updated_at",
+            [schoolId, code, name]
+          );
+          await pool.query('INSERT INTO user_school_access(user_id,school_id) VALUES($1,$2) ON CONFLICT DO NOTHING', [user.user_id, schoolId]);
+          return json({ status: 'success', data: created.rows[0] }, 201, corsOrigin);
+        } catch (error: any) {
+          if (String(error?.code || '') === '23505') return json({ status: 'error', code: 'SCHOOL_EXISTS' }, 409, corsOrigin);
+          throw error;
+        }
+      }
+
+      if (request.method === 'POST' && path === '/schools/update') {
+        if (user.role !== 'SystemAdmin' || user.access_scope !== 'GLOBAL') return json({ status: 'error', code: 'FORBIDDEN' }, 403, corsOrigin);
+        const body: any = await request.json();
+        const schoolId = String(body.schoolId || '').trim().toUpperCase();
+        const code = body.schoolCode === undefined ? null : String(body.schoolCode || '').trim().toUpperCase();
+        const name = body.schoolName === undefined ? null : String(body.schoolName || '').trim();
+        const status = body.status === undefined ? null : (String(body.status).toUpperCase() === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE');
+        if (!schoolId || code === '' || name === '') return json({ status: 'error', code: 'INVALID_SCHOOL' }, 400, corsOrigin);
+        try {
+          const updated = await pool.query(
+            `UPDATE schools SET code=COALESCE($2,code),name=COALESCE($3,name),status=COALESCE($4,status),updated_at=now()
+             WHERE id=$1 RETURNING id,code,name,status,created_at,updated_at`,
+            [schoolId, code, name, status]
+          );
+          if (!updated.rowCount) return json({ status: 'error', code: 'SCHOOL_NOT_FOUND' }, 404, corsOrigin);
+          return json({ status: 'success', data: updated.rows[0] }, 200, corsOrigin);
+        } catch (error: any) {
+          if (String(error?.code || '') === '23505') return json({ status: 'error', code: 'SCHOOL_CODE_EXISTS' }, 409, corsOrigin);
+          throw error;
+        }
+      }
+
       if (request.method === 'GET' && path === '/system-overview') {
         if (user.role !== 'SystemAdmin' || user.access_scope !== 'GLOBAL') {
           return json({ status: 'error', code: 'FORBIDDEN' }, 403, corsOrigin);
