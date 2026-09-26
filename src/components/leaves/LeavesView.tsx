@@ -24,8 +24,8 @@ import {
 import { Employee, EmployeePermissionRecord, LeaveRecord, LeaveStatus, LeaveType, SystemSettings, User } from '../../types';
 import { storageService } from '../../services/storageService';
 import { ExportService } from '../../services/exportService';
-import { HRPayrollService } from '../../services/hrService';
 import { MasterDataService } from '../../services/masterDataService';
+import { hasPermission } from '../../utils/permissions';
 
 interface LeavesViewProps {
   employees: Employee[];
@@ -36,8 +36,6 @@ interface LeavesViewProps {
 
 export const LeavesView: React.FC<LeavesViewProps> = ({
   employees,
-  leaves,
-  settings,
   currentUser,
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<'leaves' | 'permissions'>('leaves');
@@ -54,8 +52,14 @@ export const LeavesView: React.FC<LeavesViewProps> = ({
   const [leaveReason, setLeaveReason] = useState('');
   const [leaveErrorMessage, setLeaveErrorMessage] = useState('');
 
+  // Authoritative management data
+  const [leaves, setLeaves] = useState<LeaveRecord[]>([]);
+  const [permissions, setPermissions] = useState<EmployeePermissionRecord[]>([]);
+  const [managementLoading, setManagementLoading] = useState(true);
+  const [managementError, setManagementError] = useState('');
+  const [managementAction, setManagementAction] = useState<string | null>(null);
+
   // Permission Form State
-  const [permissions, setPermissions] = useState<EmployeePermissionRecord[]>(() => HRPayrollService.getPermissions());
   const [isPermModalOpen, setIsPermModalOpen] = useState(false);
   const [permEmpId, setPermEmpId] = useState(employees[0]?.id || '');
   const [permDate, setPermDate] = useState(new Date().toISOString().split('T')[0]);
@@ -66,7 +70,11 @@ export const LeavesView: React.FC<LeavesViewProps> = ({
   const [permReason, setPermReason] = useState('');
   const [permErrorMessage, setPermErrorMessage] = useState('');
 
-  const canApprove = currentUser?.role === 'Admin' || currentUser?.role === 'HR';
+  const canCreate = hasPermission(currentUser, 'leaves.create');
+  const canApprove = hasPermission(currentUser, 'leaves.manage.approve');
+  const canReject = hasPermission(currentUser, 'leaves.manage.reject');
+  const canDelete = hasPermission(currentUser, 'leaves.delete');
+  const canManageActions = canApprove || canReject || canDelete;
 
   // Dynamic Leave Types from Master Data & Settings
   const dynamicLeaveTypes = useMemo(() => {
@@ -79,10 +87,27 @@ export const LeavesView: React.FC<LeavesViewProps> = ({
 
   const permissionTypes = ['إذن خروج مؤقت', 'إذن تأخير صباحي', 'مهمة عمل رسمية', 'إذن انصراف مبكر'];
 
-  // Refresh permissions on update
-  const refreshPermissions = () => {
-    setPermissions(HRPayrollService.getPermissions());
+  const loadManagementData = async () => {
+    setManagementLoading(true);
+    setManagementError('');
+    const result = await storageService.getLeaveManagementDataAuthoritative();
+    setManagementLoading(false);
+
+    if (!result.success) {
+      setLeaves([]);
+      setPermissions([]);
+      setManagementError(result.message || 'تعذر تحميل بيانات الإجازات والأذونات من الخادم.');
+      return false;
+    }
+
+    setLeaves(result.leaves || []);
+    setPermissions(result.permissions || []);
+    return true;
   };
+
+  useEffect(() => {
+    void loadManagementData();
+  }, [currentUser?.sessionToken, currentUser?.activeSchoolId, currentUser?.schoolId]);
 
   const calculateDaysCount = (start: string, end: string) => {
     if (!start || !end) return 1;
@@ -155,107 +180,139 @@ export const LeavesView: React.FC<LeavesViewProps> = ({
     setIsPermModalOpen(true);
   };
 
-  const handleSaveLeave = (e: React.FormEvent) => {
+  const handleSaveLeave = async (e: React.FormEvent) => {
     e.preventDefault();
-    const emp = employees.find(x => x.id === leaveEmpId);
-    if (!emp) {
+    setLeaveErrorMessage('');
+
+    if (!leaveEmpId) {
       setLeaveErrorMessage('الموظف غير محدد');
       return;
     }
-
     if (endDate < startDate) {
       setLeaveErrorMessage('تاريخ نهاية الإجازة لا يمكن أن يكون قبل تاريخ البداية');
       return;
     }
 
-    const newLeave: LeaveRecord = {
-      id: `LV-${new Date().getFullYear()}-${String(leaves.length + 1).padStart(3, '0')}`,
-      employeeId: emp.id,
-      employeeName: emp.name,
-      department: emp.department,
+    setManagementAction('create-leave');
+    const result = await storageService.createManagedLeaveAuthoritative({
+      employeeId: leaveEmpId,
       leaveType,
       startDate,
       endDate,
-      daysCount,
-      status: canApprove ? 'مقبولة' : 'معلقة',
       reason: leaveReason,
-      approvedBy: canApprove ? currentUser?.fullName : undefined,
-      createdAt: new Date().toISOString().split('T')[0],
-    };
+    });
+    setManagementAction(null);
 
-    const res = storageService.saveLeave(newLeave);
-    if (res.success) {
-      setIsLeaveModalOpen(false);
-    } else {
-      setLeaveErrorMessage(res.message || 'حدث خطأ أثناء حفظ الإجازة');
+    if (!result.success) {
+      setLeaveErrorMessage(result.message || 'حدث خطأ أثناء حفظ الإجازة');
+      return;
     }
+
+    setIsLeaveModalOpen(false);
+    await loadManagementData();
   };
 
-  const handleSavePermission = (e: React.FormEvent) => {
+  const handleSavePermission = async (e: React.FormEvent) => {
     e.preventDefault();
-    const emp = employees.find(x => x.id === permEmpId);
-    if (!emp) {
+    setPermErrorMessage('');
+
+    if (!permEmpId) {
       setPermErrorMessage('الموظف غير محدد');
       return;
     }
 
-    const res = HRPayrollService.savePermission(
-      {
-        employeeId: emp.id,
-        employeeName: emp.name,
-        department: emp.department,
-        date: permDate,
-        permissionType: permType,
-        startTime: permStartTime,
-        endTime: permEndTime,
-        durationHours: Number(permDurationHours) || 2,
-        reason: permReason,
-        status: canApprove ? 'مقبولة' : 'معلقة',
-        approvedBy: canApprove ? currentUser?.fullName : undefined,
-      },
-      currentUser
-    );
-
-    if (res.success) {
-      refreshPermissions();
-      setIsPermModalOpen(false);
-    } else {
-      setPermErrorMessage(res.message || 'حدث خطأ أثناء حفظ الإذن');
-    }
-  };
-
-  const handleApprovePerm = (permId: string) => {
-    HRPayrollService.approvePermission(permId, currentUser);
-    refreshPermissions();
-  };
-
-  const handleRejectPerm = (permId: string) => {
-    const reason = window.prompt('يرجى كتابة سبب رفض الإذن:');
-    if (reason !== null) {
-      HRPayrollService.rejectPermission(permId, reason || 'لم يتم استيفاء شروط الإذن', currentUser);
-      refreshPermissions();
-    }
-  };
-
-  const handleDeletePerm = (permId: string) => {
-    if (window.confirm('هل أنت متأكد من حذف سجل الإذن؟')) {
-      HRPayrollService.deletePermission(permId);
-      refreshPermissions();
-    }
-  };
-
-  const handleUpdateLeaveStatus = (leave: LeaveRecord, newStatus: LeaveStatus) => {
-    storageService.saveLeave({
-      ...leave,
-      status: newStatus,
-      approvedBy: newStatus === 'مقبولة' ? currentUser?.fullName : undefined,
+    setManagementAction('create-permission');
+    const result = await storageService.createManagedPermissionAuthoritative({
+      employeeId: permEmpId,
+      date: permDate,
+      permissionType: permType,
+      startTime: permStartTime,
+      endTime: permEndTime,
+      reason: permReason,
     });
+    setManagementAction(null);
+
+    if (!result.success) {
+      setPermErrorMessage(result.message || 'حدث خطأ أثناء حفظ الإذن');
+      return;
+    }
+
+    setIsPermModalOpen(false);
+    await loadManagementData();
   };
 
-  const handleDeleteLeave = (leaveId: string) => {
-    if (window.confirm('هل أنت متأكد من حذف هذا السجل؟')) {
-      storageService.deleteLeave(leaveId);
+  const handleApprovePerm = async (permId: string) => {
+    setManagementAction(`approve-perm:${permId}`);
+    const result = await storageService.setManagedPermissionStatusAuthoritative(permId, 'مقبولة');
+    setManagementAction(null);
+    if (!result.success) {
+      setManagementError(result.message || 'تعذر اعتماد الإذن.');
+      return;
     }
+    await loadManagementData();
+  };
+
+  const handleRejectPerm = async (permId: string) => {
+    const reason = window.prompt('يرجى كتابة سبب رفض الإذن:');
+    if (reason === null) return;
+
+    setManagementAction(`reject-perm:${permId}`);
+    const result = await storageService.setManagedPermissionStatusAuthoritative(
+      permId,
+      'مرفوضة',
+      reason || 'لم يتم استيفاء شروط الإذن'
+    );
+    setManagementAction(null);
+    if (!result.success) {
+      setManagementError(result.message || 'تعذر رفض الإذن.');
+      return;
+    }
+    await loadManagementData();
+  };
+
+  const handleDeletePerm = async (permId: string) => {
+    if (!window.confirm('هل أنت متأكد من حذف سجل الإذن؟')) return;
+
+    setManagementAction(`delete-perm:${permId}`);
+    const result = await storageService.deleteManagedPermissionAuthoritative(permId);
+    setManagementAction(null);
+    if (!result.success) {
+      setManagementError(result.message || 'تعذر حذف الإذن.');
+      return;
+    }
+    await loadManagementData();
+  };
+
+  const handleUpdateLeaveStatus = async (leave: LeaveRecord, newStatus: LeaveStatus) => {
+    const status = newStatus === 'مقبولة' ? 'مقبولة' : 'مرفوضة';
+    let reason = '';
+    if (status === 'مرفوضة') {
+      const enteredReason = window.prompt('يرجى كتابة سبب رفض الإجازة:');
+      if (enteredReason === null) return;
+      reason = enteredReason || 'لم يتم استيفاء شروط الإجازة';
+    }
+
+    setManagementAction(`${status === 'مقبولة' ? 'approve' : 'reject'}-leave:${leave.id}`);
+    const result = await storageService.setManagedLeaveStatusAuthoritative(leave.id, status, reason);
+    setManagementAction(null);
+    if (!result.success) {
+      setManagementError(result.message || 'تعذر تحديث حالة الإجازة.');
+      return;
+    }
+    await loadManagementData();
+  };
+
+  const handleDeleteLeave = async (leaveId: string) => {
+    if (!window.confirm('هل أنت متأكد من حذف هذا السجل؟')) return;
+
+    setManagementAction(`delete-leave:${leaveId}`);
+    const result = await storageService.deleteManagedLeaveAuthoritative(leaveId);
+    setManagementAction(null);
+    if (!result.success) {
+      setManagementError(result.message || 'تعذر حذف الإجازة.');
+      return;
+    }
+    await loadManagementData();
   };
 
   const getStatusBadge = (status: string) => {
@@ -306,7 +363,7 @@ export const LeavesView: React.FC<LeavesViewProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {activeSubTab === 'leaves' ? (
+          {canCreate && (activeSubTab === 'leaves' ? (
             <button
               onClick={handleOpenLeaveModal}
               className="text-xs font-bold bg-[#008e8b] hover:bg-teal-700 text-white px-4 py-2.5 rounded-2xl shadow-sm transition-colors flex items-center gap-1.5"
@@ -322,7 +379,7 @@ export const LeavesView: React.FC<LeavesViewProps> = ({
               <Plus className="w-4 h-4" />
               <span>تقديم طلب إذن / تصريح</span>
             </button>
-          )}
+          ))}
 
           <button
             onClick={() => ExportService.exportLeavesToExcel(leaves)}
@@ -333,6 +390,24 @@ export const LeavesView: React.FC<LeavesViewProps> = ({
           </button>
         </div>
       </div>
+
+      {managementError && (
+        <div className="flex items-center justify-between gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-xs font-bold text-rose-800">
+          <span className="flex items-center gap-2">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            {managementError}
+          </span>
+          <button type="button" onClick={() => void loadManagementData()} className="underline">
+            إعادة المحاولة
+          </button>
+        </div>
+      )}
+
+      {managementLoading && (
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-center text-xs font-bold text-slate-500">
+          جارٍ تحميل بيانات الإجازات والأذونات من الخادم المعتمد...
+        </div>
+      )}
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -425,13 +500,13 @@ export const LeavesView: React.FC<LeavesViewProps> = ({
                   <th className="py-3.5 px-4">عدد الأيام</th>
                   <th className="py-3.5 px-4">السبب / الملاحظات</th>
                   <th className="py-3.5 px-4">الحالة</th>
-                  {canApprove && <th className="py-3.5 px-4 text-center">إجراءات الاعتماد</th>}
+                  {canManageActions && <th className="py-3.5 px-4 text-center">إجراءات الاعتماد</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium">
                 {filteredLeaves.length === 0 ? (
                   <tr>
-                    <td colSpan={canApprove ? 8 : 7} className="py-12 text-center text-slate-400">
+                    <td colSpan={canManageActions ? 8 : 7} className="py-12 text-center text-slate-400">
                       لا توجد سجلات إجازات تطابق البحث
                     </td>
                   </tr>
@@ -454,34 +529,39 @@ export const LeavesView: React.FC<LeavesViewProps> = ({
                       <td className="py-3.5 px-4 font-bold text-slate-800">{leave.daysCount} يوم</td>
                       <td className="py-3.5 px-4 text-slate-600 max-w-xs truncate">{leave.reason || '-'}</td>
                       <td className="py-3.5 px-4">{getStatusBadge(leave.status)}</td>
-                      {canApprove && (
+                      {canManageActions && (
                         <td className="py-3.5 px-4 text-center">
                           <div className="flex items-center justify-center gap-1.5">
-                            {leave.status === 'معلقة' && (
-                              <>
-                                <button
-                                  onClick={() => handleUpdateLeaveStatus(leave, 'مقبولة')}
-                                  className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
-                                  title="قبول واعتماد"
-                                >
-                                  <Check className="w-4 h-4" />
-                                </button>
-                                <button
-                                  onClick={() => handleUpdateLeaveStatus(leave, 'مرفوضة')}
-                                  className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                                  title="رفض"
-                                >
-                                  <X className="w-4 h-4" />
-                                </button>
-                              </>
+                            {leave.status === 'معلقة' && canApprove && (
+                              <button
+                                disabled={managementAction !== null}
+                                onClick={() => void handleUpdateLeaveStatus(leave, 'مقبولة')}
+                                className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors disabled:opacity-40"
+                                title="قبول واعتماد"
+                              >
+                                <Check className="w-4 h-4" />
+                              </button>
                             )}
-                            <button
-                              onClick={() => handleDeleteLeave(leave.id)}
-                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                              title="حذف"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+                            {leave.status === 'معلقة' && canReject && (
+                              <button
+                                disabled={managementAction !== null}
+                                onClick={() => void handleUpdateLeaveStatus(leave, 'مرفوضة')}
+                                className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors disabled:opacity-40"
+                                title="رفض"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            )}
+                            {canDelete && (
+                              <button
+                                disabled={managementAction !== null}
+                                onClick={() => void handleDeleteLeave(leave.id)}
+                                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors disabled:opacity-40"
+                                title="حذف"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
                           </div>
                         </td>
                       )}
@@ -506,13 +586,13 @@ export const LeavesView: React.FC<LeavesViewProps> = ({
                   <th className="py-3.5 px-4">المدة</th>
                   <th className="py-3.5 px-4">السبب</th>
                   <th className="py-3.5 px-4">الحالة</th>
-                  {canApprove && <th className="py-3.5 px-4 text-center">إجراءات الاعتماد</th>}
+                  {canManageActions && <th className="py-3.5 px-4 text-center">إجراءات الاعتماد</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium">
                 {filteredPermissions.length === 0 ? (
                   <tr>
-                    <td colSpan={canApprove ? 9 : 8} className="py-12 text-center text-slate-400">
+                    <td colSpan={canManageActions ? 9 : 8} className="py-12 text-center text-slate-400">
                       لا توجد طلبات أذونات تطابق البحث
                     </td>
                   </tr>
@@ -536,34 +616,39 @@ export const LeavesView: React.FC<LeavesViewProps> = ({
                       <td className="py-3.5 px-4 font-bold text-slate-800">{perm.durationHours} ساعة</td>
                       <td className="py-3.5 px-4 text-slate-600 max-w-xs truncate">{perm.reason || '-'}</td>
                       <td className="py-3.5 px-4">{getStatusBadge(perm.status)}</td>
-                      {canApprove && (
+                      {canManageActions && (
                         <td className="py-3.5 px-4 text-center">
                           <div className="flex items-center justify-center gap-1.5">
-                            {perm.status === 'معلقة' && (
-                              <>
-                                <button
-                                  onClick={() => handleApprovePerm(perm.id)}
-                                  className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
-                                  title="قبول واعتماد"
-                                >
-                                  <Check className="w-4 h-4" />
-                                </button>
-                                <button
-                                  onClick={() => handleRejectPerm(perm.id)}
-                                  className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                                  title="رفض"
-                                >
-                                  <X className="w-4 h-4" />
-                                </button>
-                              </>
+                            {perm.status === 'معلقة' && canApprove && (
+                              <button
+                                disabled={managementAction !== null}
+                                onClick={() => void handleApprovePerm(perm.id)}
+                                className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors disabled:opacity-40"
+                                title="قبول واعتماد"
+                              >
+                                <Check className="w-4 h-4" />
+                              </button>
                             )}
-                            <button
-                              onClick={() => handleDeletePerm(perm.id)}
-                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                              title="حذف"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+                            {perm.status === 'معلقة' && canReject && (
+                              <button
+                                disabled={managementAction !== null}
+                                onClick={() => void handleRejectPerm(perm.id)}
+                                className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors disabled:opacity-40"
+                                title="رفض"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            )}
+                            {canDelete && (
+                              <button
+                                disabled={managementAction !== null}
+                                onClick={() => void handleDeletePerm(perm.id)}
+                                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors disabled:opacity-40"
+                                title="حذف"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
                           </div>
                         </td>
                       )}
