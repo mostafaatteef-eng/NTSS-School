@@ -38,6 +38,8 @@ jobs:
         run: npm test
 
       - name: Build application
+        env:
+          VITE_POSTGRES_API_URL: https://br-tiny-surf-b5mnc6n0-api.compute.c-7.us-east-2.aws.neon.tech
         run: npm run build
 
       - name: Setup Pages
