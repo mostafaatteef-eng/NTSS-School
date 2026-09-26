@@ -2740,3 +2740,37 @@ export interface QualityMetricOverview {
   }[];
 }
 
+// =============================================================
+// Phase 3C-A14.3.2.1: Authoritative Cross-School Overview API Types
+// =============================================================
+export type SchoolDataStatus =
+  | 'AVAILABLE'
+  | 'INACTIVE'
+  | 'NOT_ALLOWED'
+  | 'UNBOUND'
+  | 'UNAVAILABLE';
+
+export interface SchoolOverviewItem {
+  schoolId: string;
+  schoolCode: string;
+  schoolName: string;
+  status: 'Active' | 'Inactive';
+  dataStatus: SchoolDataStatus;
+  studentsCount: number | null;
+  employeesCount: number | null;
+}
+
+export interface SystemOverviewSummary {
+  studentsTotal: number;
+  employeesTotal: number;
+  schoolsIncluded: number;
+  schoolsUnavailable: number;
+}
+
+export interface SystemOverviewResponse {
+  summary: SystemOverviewSummary;
+  schools: SchoolOverviewItem[];
+  generatedAt: string;
+}
+
+

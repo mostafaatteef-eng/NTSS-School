@@ -833,6 +833,7 @@ export const ACTION_PERMISSION_MAP: Record<string, PermissionKey> = {
   adminGetSchools: 'schools.manage',
   adminCreateSchool: 'schools.manage',
   adminUpdateSchool: 'schools.manage',
+  adminGetSystemOverview: 'schools.manage',
 
   // Settings & Audit
   getSettings: 'settings.view',

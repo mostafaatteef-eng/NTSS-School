@@ -678,15 +678,129 @@ function doPost(e) {
     }
 
     // School Management for SystemAdmin (Master Spreadsheet only)
-    if (action === 'adminGetSchools' || action === 'adminCreateSchool' || action === 'adminUpdateSchool') {
+    if (action === 'adminGetSchools' || action === 'adminCreateSchool' || action === 'adminUpdateSchool' || action === 'adminGetSystemOverview') {
       var schoolAdminAuth = authorize(activeSession, action, null, ss, requestId);
       if (!schoolAdminAuth.allowed || authenticatedRole !== 'SystemAdmin') {
         return createJsonResponse({
           status: 'error',
-          code: schoolAdminAuth.code || 'FORBIDDEN_SYSTEM_ADMIN_ONLY',
+          code: authenticatedRole !== 'SystemAdmin' ? 'FORBIDDEN_SYSTEM_ADMIN_ONLY' : (schoolAdminAuth.code || 'FORBIDDEN_SYSTEM_ADMIN_ONLY'),
           message: 'صلاحية مرفوضة: هذا الإجراء مخصص حصرياً لمدير النظام الشامل (SystemAdmin).',
           requestId: requestId
         }, 403);
+      }
+
+      if (action === 'adminGetSystemOverview') {
+        var allMasterSchools = getSheetData(ss, SHEETS.MASTER_SCHOOLS);
+        var allowedIds = Array.isArray(activeSession.allowedSchoolIds)
+          ? activeSession.allowedSchoolIds.map(function(id) { return String(id || '').trim().toUpperCase(); })
+          : [];
+
+        var summary = {
+          studentsTotal: 0,
+          employeesTotal: 0,
+          schoolsIncluded: 0,
+          schoolsUnavailable: 0
+        };
+
+        var schoolOverviewList = [];
+
+        for (var scIdx = 0; scIdx < allMasterSchools.length; scIdx++) {
+          var sc = allMasterSchools[scIdx];
+          var sId = String(sc.schoolId || '').trim().toUpperCase();
+          var sCode = String(sc.schoolCode || '').trim().toUpperCase();
+          var sName = String(sc.schoolName || '').trim();
+          var sStatus = String(sc.status || '').trim().toLowerCase() === 'inactive' ? 'Inactive' : 'Active';
+          var boundSpreadsheetId = String(sc.spreadsheetId || '').trim();
+
+          var item = {
+            schoolId: sId,
+            schoolCode: sCode,
+            schoolName: sName,
+            status: sStatus,
+            dataStatus: 'UNAVAILABLE',
+            studentsCount: null,
+            employeesCount: null
+          };
+
+          // 1. Inactive school
+          if (sStatus === 'Inactive') {
+            item.dataStatus = 'INACTIVE';
+            schoolOverviewList.push(item);
+            continue;
+          }
+
+          // 2. School outside allowedSchoolIds
+          if (allowedIds.indexOf(sId) === -1) {
+            item.dataStatus = 'NOT_ALLOWED';
+            schoolOverviewList.push(item);
+            continue;
+          }
+
+          // 3. Unbound school
+          if (!boundSpreadsheetId) {
+            item.dataStatus = 'UNBOUND';
+            schoolOverviewList.push(item);
+            continue;
+          }
+
+          // 4. Try opening spreadsheet
+          var targetSs = null;
+          try {
+            targetSs = getSchoolSpreadsheet(sId, ss);
+          } catch (e) {
+            targetSs = null;
+          }
+
+          if (!targetSs) {
+            item.dataStatus = 'UNAVAILABLE';
+            summary.schoolsUnavailable++;
+            schoolOverviewList.push(item);
+            continue;
+          }
+
+          // 5. Read and count real structured records (ignore blank rows)
+          try {
+            var rawStudents = getSheetData(targetSs, SHEETS.STUDENTS);
+            var validStdCount = 0;
+            for (var stI = 0; stI < rawStudents.length; stI++) {
+              var rowStd = rawStudents[stI];
+              if (rowStd && String(rowStd.id || '').trim() !== '') {
+                validStdCount++;
+              }
+            }
+
+            var rawEmployees = getSheetData(targetSs, SHEETS.EMPLOYEES);
+            var validEmpCount = 0;
+            for (var emI = 0; emI < rawEmployees.length; emI++) {
+              var rowEmp = rawEmployees[emI];
+              if (rowEmp && String(rowEmp.id || '').trim() !== '') {
+                validEmpCount++;
+              }
+            }
+
+            item.dataStatus = 'AVAILABLE';
+            item.studentsCount = validStdCount;
+            item.employeesCount = validEmpCount;
+
+            summary.studentsTotal += validStdCount;
+            summary.employeesTotal += validEmpCount;
+            summary.schoolsIncluded++;
+          } catch (readErr) {
+            item.dataStatus = 'UNAVAILABLE';
+            item.studentsCount = null;
+            item.employeesCount = null;
+            summary.schoolsUnavailable++;
+          }
+
+          schoolOverviewList.push(item);
+        }
+
+        recordAuthoritativeAudit(ss, requestId, authenticatedUsername, authenticatedRole, 'SYSTEM_OVERVIEW_VIEWED', 'MASTER_SCHOOLS', '', 'عرض نظرة عامة مركزية للمدارس');
+
+        output.summary = summary;
+        output.schools = schoolOverviewList;
+        output.generatedAt = getCairoISOString();
+        return createJsonResponse(output, 200);
       }
 
       if (action === 'adminGetSchools') {
@@ -3173,6 +3287,7 @@ var ACTION_PERMISSION_MAP = {
   adminGetSchools: 'schools.manage',
   adminCreateSchool: 'schools.manage',
   adminUpdateSchool: 'schools.manage',
+  adminGetSystemOverview: 'schools.manage',
 
   // Settings & Audit
   getSettings: 'settings.view',
@@ -3740,7 +3855,35 @@ function authorize(session, action, resourceContext, masterSs, requestId) {
   var targetSchoolId;
 
   if (scope === 'GLOBAL') {
-    // For SystemAdmin with GLOBAL scope, the authoritative school context MUST be session.activeSchoolId
+    var isMasterAction = (
+      action === 'adminGetSchools' ||
+      action === 'adminCreateSchool' ||
+      action === 'adminUpdateSchool' ||
+      action === 'adminGetSystemOverview' ||
+      action === 'getUsers' ||
+      action === 'saveUser' ||
+      action === 'deleteUser' ||
+      action === 'resetUserPassword' ||
+      action === 'issueUserActivationToken' ||
+      action === 'revokeUserSessions' ||
+      action === 'toggleUserStatus' ||
+      action === 'getSettings' ||
+      action === 'saveSettings' ||
+      action === 'getAuditLogs' ||
+      action === 'addAuditLog' ||
+      action === 'logout' ||
+      action === 'validateSession'
+    );
+
+    if (isMasterAction) {
+      return {
+        allowed: true,
+        effectiveSchoolId: String(session.activeSchoolId || '').trim().toUpperCase(),
+        accessScope: 'GLOBAL'
+      };
+    }
+
+    // For School-Scoped operational actions with GLOBAL scope, the authoritative school context MUST be session.activeSchoolId
     targetSchoolId = String(session.activeSchoolId || '').trim().toUpperCase();
     if (!targetSchoolId) {
       recordAuthoritativeAudit(ss, reqId, session.username || session.userId, role, 'ACCESS_DENIED', 'AUTH', session.userId, 'المدرسة النشطة غير محددة لجلسة مدير النظام');
