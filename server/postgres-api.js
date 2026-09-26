@@ -83,5 +83,60 @@ app.get('/api/dashboard', auth, async (req,res) => {
   res.json({status:'success',data:{studentsCount:students.rows[0].count,employeesCount:employees.rows[0].count,todayAttendanceCount:attendance.rows[0].count}});
 });
 
+
+function resolveSchoolId(req) {
+  return String(req.query?.schoolId || req.body?.schoolId || req.auth?.active_school_id || req.auth?.school_id || '').trim();
+}
+function canAccessSchool(req, schoolId) {
+  return Boolean(schoolId) && (req.auth.access_scope === 'GLOBAL' || schoolId === req.auth.school_id);
+}
+
+app.get('/api/students', auth, async (req,res) => {
+  const schoolId=resolveSchoolId(req);
+  if(!schoolId) return res.status(400).json({status:'error',code:'SCHOOL_CONTEXT_REQUIRED'});
+  if(!canAccessSchool(req,schoolId)) return res.status(403).json({status:'error',code:'FORBIDDEN'});
+  const page=Math.max(1,Number(req.query.page||1));
+  const pageSize=Math.min(100,Math.max(10,Number(req.query.pageSize||50)));
+  const offset=(page-1)*pageSize;
+  const q=String(req.query.q||'').trim();
+  const params=[schoolId,pageSize,offset];
+  let where='school_id=$1';
+  if(q){params.push('%'+q+'%');where+=' AND (full_name ILIKE $4 OR student_code ILIKE $4)';}
+  const [data,total]=await Promise.all([
+    pool.query(`SELECT id,student_code AS "studentCode",full_name AS "fullName",grade,classroom,section,status
+                FROM students WHERE ${where} ORDER BY full_name LIMIT $2 OFFSET $3`,params),
+    pool.query(`SELECT count(*)::int count FROM students WHERE ${q?'school_id=$1 AND (full_name ILIKE $2 OR student_code ILIKE $2)':'school_id=$1'}`,q?[schoolId,'%'+q+'%']:[schoolId])
+  ]);
+  res.json({status:'success',data:data.rows,pagination:{page,pageSize,total:total.rows[0].count,pages:Math.ceil(total.rows[0].count/pageSize)}});
+});
+
+app.get('/api/employees', auth, async (req,res) => {
+  const schoolId=resolveSchoolId(req);
+  if(!schoolId) return res.status(400).json({status:'error',code:'SCHOOL_CONTEXT_REQUIRED'});
+  if(!canAccessSchool(req,schoolId)) return res.status(403).json({status:'error',code:'FORBIDDEN'});
+  const page=Math.max(1,Number(req.query.page||1));
+  const pageSize=Math.min(100,Math.max(10,Number(req.query.pageSize||50)));
+  const offset=(page-1)*pageSize;
+  const [data,total]=await Promise.all([
+    pool.query('SELECT id,employee_code AS "employeeCode",full_name AS "fullName",department,job_title AS "jobTitle",status FROM employees WHERE school_id=$1 ORDER BY full_name LIMIT $2 OFFSET $3',[schoolId,pageSize,offset]),
+    pool.query('SELECT count(*)::int count FROM employees WHERE school_id=$1',[schoolId])
+  ]);
+  res.json({status:'success',data:data.rows,pagination:{page,pageSize,total:total.rows[0].count,pages:Math.ceil(total.rows[0].count/pageSize)}});
+});
+
+app.get('/api/student-attendance', auth, async (req,res) => {
+  const schoolId=resolveSchoolId(req);
+  if(!schoolId) return res.status(400).json({status:'error',code:'SCHOOL_CONTEXT_REQUIRED'});
+  if(!canAccessSchool(req,schoolId)) return res.status(403).json({status:'error',code:'FORBIDDEN'});
+  const from=String(req.query.from||new Date().toISOString().slice(0,10));
+  const to=String(req.query.to||from);
+  const {rows}=await pool.query(
+    `SELECT a.id,a.student_id AS "studentId",s.full_name AS "studentName",a.attendance_date AS "attendanceDate",a.status
+     FROM student_attendance a JOIN students s ON s.id=a.student_id
+     WHERE a.school_id=$1 AND a.attendance_date BETWEEN $2::date AND $3::date
+     ORDER BY a.attendance_date DESC,s.full_name LIMIT 500`,[schoolId,from,to]);
+  res.json({status:'success',data:rows});
+});
+
 app.use((err,_req,res,_next)=>{ console.error(err); res.status(500).json({status:'error',code:'INTERNAL_SERVER_ERROR'}); });
 app.listen(PORT,()=>console.log(`NTSS PostgreSQL API listening on :${PORT}`));
