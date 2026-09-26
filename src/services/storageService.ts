@@ -3716,16 +3716,24 @@ class StorageService {
           method: 'POST',
           body: JSON.stringify({ action: 'getAcademicYears', schoolId }),
         });
-        const [studentRows, employeeRows, studentAttendanceRows, employeeAttendanceRows, academicYearsResponse] = await Promise.all([
+        const settingsRequest = postgresApiRequest<any>('/settings/manage', currentUser.sessionToken || '', {
+          method: 'POST',
+          body: JSON.stringify({ action: 'getSettings', schoolId }),
+        });
+        const [studentRows, employeeRows, studentAttendanceRows, employeeAttendanceRows, academicYearsResponse, settingsResponse] = await Promise.all([
           fetchAll('/students'),
           fetchAll('/employees'),
           fetchAll(`/student-attendance?from=${from}&to=${to}`),
           fetchAll(`/employee-attendance?from=${from}&to=${to}`),
           academicYearsRequest,
+          settingsRequest,
         ]);
         const academicYears = academicYearsResponse.ok && academicYearsResponse.body?.status === 'success' && Array.isArray(academicYearsResponse.body?.data)
           ? academicYearsResponse.body.data
           : [];
+        const remoteSettings = settingsResponse.ok && settingsResponse.body?.status === 'success' && settingsResponse.body?.data
+          ? settingsResponse.body.data
+          : null;
         const students = studentRows.map((row: any) => ({
           ...(row.payload && typeof row.payload === 'object' ? row.payload : {}),
           id: row.id,
@@ -3779,6 +3787,10 @@ class StorageService {
         localStorage.setItem(STORAGE_KEYS.STUDENT_ATTENDANCE, JSON.stringify(studentAttendance));
         localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify(employeeAttendance));
         if (academicYears.length > 0) localStorage.setItem(STORAGE_KEYS.ACADEMIC_YEARS, JSON.stringify(academicYears));
+        if (remoteSettings) {
+          const localSettings = this.getSettings();
+          localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify({ ...localSettings, ...remoteSettings, googleAppsScriptUrl: localSettings.googleAppsScriptUrl }));
+        }
         this.setSyncStatus({
           lastSyncTime: getCairoNowISO(),
           status: 'success',
@@ -4882,6 +4894,7 @@ class StorageService {
         const routes: Record<string, string> = {
           saveAcademicYear: '/academic-years/manage',
           deleteAcademicYear: '/academic-years/manage',
+          saveSettings: '/settings/manage',
           saveStudent: '/students/manage',
           deleteStudent: '/students/manage',
           bulkSaveStudents: '/students/manage',
@@ -4895,6 +4908,7 @@ class StorageService {
         if (path) {
           try {
             let apiAction = action;
+            if (action === 'saveSettings') apiAction = 'saveSettings';
             if (action === 'saveStudent') apiAction = 'saveManagedStudent';
             if (action === 'deleteStudent') apiAction = 'deleteManagedStudent';
             if (action === 'bulkSaveStudents') apiAction = 'bulkSaveManagedStudents';
