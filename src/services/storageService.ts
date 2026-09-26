@@ -4879,17 +4879,40 @@ class StorageService {
         const currentUser = this.getCurrentUser();
         const schoolId = this.getActiveSchoolId();
         if (!currentUser?.sessionToken || !schoolId) return { success: false, message: 'POSTGRES_AUTH_OR_SCHOOL_REQUIRED' };
-        if (action === 'saveAcademicYear' || action === 'deleteAcademicYear') {
+        const routes: Record<string, string> = {
+          saveAcademicYear: '/academic-years/manage',
+          deleteAcademicYear: '/academic-years/manage',
+          saveStudent: '/students/manage',
+          deleteStudent: '/students/manage',
+          bulkSaveStudents: '/students/manage',
+          saveEmployee: '/employees/manage',
+          deleteEmployee: '/employees/manage',
+          bulkSaveEmployees: '/employees/manage',
+          saveLeave: '/leave-management',
+          deleteLeave: '/leave-management',
+        };
+        const path = routes[action];
+        if (path) {
           try {
-            const pg = await postgresApiRequest<any>('/academic-years/manage', currentUser.sessionToken, {
+            let apiAction = action;
+            if (action === 'saveStudent') apiAction = 'saveManagedStudent';
+            if (action === 'deleteStudent') apiAction = 'deleteManagedStudent';
+            if (action === 'bulkSaveStudents') apiAction = 'bulkSaveManagedStudents';
+            if (action === 'saveEmployee') apiAction = 'saveManagedEmployee';
+            if (action === 'deleteEmployee') apiAction = 'deleteManagedEmployee';
+            if (action === 'bulkSaveEmployees') apiAction = 'bulkSaveManagedEmployees';
+            if (action === 'saveLeave') apiAction = 'createManagedLeave';
+            if (action === 'deleteLeave') apiAction = 'deleteLeave';
+            const pg = await postgresApiRequest<any>(path, currentUser.sessionToken, {
               method: 'POST',
-              body: JSON.stringify({ action, schoolId, data: payload }),
+              body: JSON.stringify({ action: apiAction, schoolId, data: payload }),
             });
-            return { success: pg.ok && pg.body?.status === 'success', message: pg.body?.message || pg.body?.code || 'Academic year sync' };
+            return { success: pg.ok && pg.body?.status === 'success', message: pg.body?.message || pg.body?.code || 'PostgreSQL sync' };
           } catch {
-            return { success: false, message: 'POSTGRES_ACADEMIC_YEAR_SYNC_FAILED' };
+            return { success: false, message: 'POSTGRES_SYNC_FAILED' };
           }
         }
+        // Keep unsupported legacy mutations queued. Never leak a Neon-issued session token to GAS.
         return { success: false, message: 'LEGACY_GAS_MUTATION_BLOCKED_IN_POSTGRES_RUNTIME' };
       }
       const settings = this.getSettings();
