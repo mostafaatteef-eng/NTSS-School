@@ -1,883 +1,610 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Shield,
-  ShieldAlert,
-  ShieldCheck,
-  UserPlus,
-  KeyRound,
-  Lock,
-  Unlock,
-  RefreshCw,
-  Search,
-  CheckCircle2,
   AlertCircle,
+  CheckCircle2,
   Eye,
   EyeOff,
-  Copy,
-  Check,
-  UserX,
-  UserCheck,
   GraduationCap,
-  Sparkles,
-  Clock,
-  Printer
+  KeyRound,
+  Lock,
+  Plus,
+  RefreshCw,
+  Search,
+  ShieldCheck,
+  UserCheck,
+  UserX,
+  X,
 } from 'lucide-react';
-import { Employee, TeacherAccount } from '../../types';
-import { storageService } from '../../services/storageService';
+import { TeacherAccount, User } from '../../types';
+import { hasPermission } from '../../utils/permissions';
+import {
+  SafeTeachingEmployee,
+  teacherAccountAdminService,
+} from '../../services/teacherAccountAdminService';
 
 interface TeacherAccountsManagerProps {
-  currentUserRole?: string;
+  currentUser: User | null;
 }
 
-export const TeacherAccountsManager: React.FC<TeacherAccountsManagerProps> = ({ currentUserRole }) => {
+type CredentialSummary = {
+  teacherName: string;
+  username: string;
+  temporaryPassword: string;
+};
+
+const generateTemporaryPassword = (): string => {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789#!@$%';
+  const values = new Uint32Array(12);
+  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+    crypto.getRandomValues(values);
+  } else {
+    for (let i = 0; i < values.length; i++) values[i] = Math.floor(Math.random() * 100000);
+  }
+  return Array.from(values, (value, index) => {
+    if (index === 0) return 'A';
+    if (index === 1) return 'a';
+    if (index === 2) return '7';
+    if (index === 3) return '#';
+    return alphabet[value % alphabet.length];
+  }).join('');
+};
+
+export const TeacherAccountsManager: React.FC<TeacherAccountsManagerProps> = ({ currentUser }) => {
   const [accounts, setAccounts] = useState<TeacherAccount[]>([]);
-  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [teachingStaff, setTeachingStaff] = useState<SafeTeachingEmployee[]>([]);
+  const [effectiveSchoolId, setEffectiveSchoolId] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
-
-  // Create Modal State
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [pageError, setPageError] = useState('');
+  const [notification, setNotification] = useState('');
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
-  const [createUsername, setCreateUsername] = useState('');
-  const [createTempPassword, setCreateTempPassword] = useState('');
-  const [showCreatePassword, setShowCreatePassword] = useState(false);
+  const [username, setUsername] = useState('');
+  const [temporaryPassword, setTemporaryPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [isResetOpen, setIsResetOpen] = useState(false);
+  const [resetTarget, setResetTarget] = useState<TeacherAccount | null>(null);
+  const [resetPassword, setResetPassword] = useState('');
+  const [modalError, setModalError] = useState('');
+  const [credentialSummary, setCredentialSummary] = useState<CredentialSummary | null>(null);
 
-  // Success Created Modal
-  const [createdSummary, setCreatedSummary] = useState<{
-    teacherName: string;
-    username: string;
-    tempPassword: string;
-  } | null>(null);
+  const canManage = hasPermission(currentUser, 'teacherAccounts.manage');
+  const isSystemAdmin = currentUser?.role === 'SystemAdmin' && currentUser?.accessScope === 'GLOBAL';
 
-  // Reset Password Modal State
-  const [isResetModalOpen, setIsResetModalOpen] = useState(false);
-  const [resetTargetAccount, setResetTargetAccount] = useState<TeacherAccount | null>(null);
-  const [resetTempPassword, setResetTempPassword] = useState('');
-  const [showResetPassword, setShowResetPassword] = useState(false);
-  const [copiedField, setCopiedField] = useState<string | null>(null);
+  const loadData = useCallback(async () => {
+    if (!currentUser || !canManage) {
+      setAccounts([]);
+      setTeachingStaff([]);
+      setLoading(false);
+      return;
+    }
 
-  const isAdmin = currentUserRole === 'Admin' || currentUserRole === 'TeacherAffairs';
+    setLoading(true);
+    setPageError('');
+    const result = await teacherAccountAdminService.getBundle(currentUser);
 
-  const loadData = () => {
-    const accs = storageService.getTeacherAccounts();
-    const emps = storageService.getEmployees();
-    setAccounts(accs);
-    setEmployees(emps);
-  };
+    if (!result.success || !result.data) {
+      setAccounts([]);
+      setTeachingStaff([]);
+      setEffectiveSchoolId('');
+      setPageError(result.message || 'تعذر تحميل حسابات المعلمين.');
+      setLoading(false);
+      return;
+    }
+
+    setAccounts(result.data.accounts);
+    setTeachingStaff(result.data.teachingStaff);
+    setEffectiveSchoolId(result.data.effectiveSchoolId);
+    setLoading(false);
+  }, [canManage, currentUser]);
 
   useEffect(() => {
-    loadData();
-    const unsubscribe = storageService.subscribe(() => {
-      loadData();
-    });
-    return () => unsubscribe();
-  }, []);
+    void loadData();
+  }, [loadData]);
 
-  const generateRandomPassword = () => {
-    const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
-    const lower = 'abcdefghjkmnpqrstuvwxyz';
-    const digits = '23456789';
-    const special = '#!@$%';
-    let pass = '';
-    pass += upper[Math.floor(Math.random() * upper.length)];
-    pass += lower[Math.floor(Math.random() * lower.length)];
-    pass += digits[Math.floor(Math.random() * digits.length)];
-    pass += special[Math.floor(Math.random() * special.length)];
-    const all = upper + lower + digits + special;
-    for (let i = 0; i < 6; i++) {
-      pass += all[Math.floor(Math.random() * all.length)];
-    }
-    return pass;
-  };
-
-  const openCreateModal = () => {
-    setIsCreateModalOpen(true);
-    setSelectedEmployeeId('');
-    setCreateUsername('');
-    setCreateTempPassword(generateRandomPassword());
-    setShowCreatePassword(false);
-  };
-
-  const handleSelectEmployee = (empId: string) => {
-    setSelectedEmployeeId(empId);
-    const emp = employees.find(e => e.id === empId);
-    if (emp) {
-      // Auto suggest username (case-insensitive clean)
-      const transliterated = (emp.teacherCode || emp.id)
-        .replace(/[^a-zA-Z0-9]/g, '')
-        .toLowerCase();
-      const suggested = `t_${transliterated || Math.floor(1000 + Math.random() * 9000)}`;
-      setCreateUsername(suggested);
-    }
-  };
-
-  const handleCreateSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedEmployeeId || !createUsername.trim() || !createTempPassword.trim()) {
-      setNotification({ type: 'error', message: 'يرجى ملء جميع الحقول المطلوبة' });
-      return;
-    }
-
-    if (createTempPassword.trim().length < 8) {
-      setNotification({ type: 'error', message: 'كلمة المرور المؤقتة يجب ألا تقل عن 8 خانات' });
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      const emp = employees.find(e => e.id === selectedEmployeeId);
-      const res = await storageService.createTeacherAccount(
-        selectedEmployeeId,
-        createUsername.trim(),
-        createTempPassword.trim()
-      );
-
-      if (res.success) {
-        setCreatedSummary({
-          teacherName: emp?.name || 'المعلم',
-          username: createUsername.trim().toLowerCase(),
-          tempPassword: createTempPassword.trim(),
-        });
-        setIsCreateModalOpen(false);
-        setNotification({ type: 'success', message: 'تم إنشاء حساب المعلم وتشفير كلمة المرور في الخادم بنجاح' });
-      } else {
-        setNotification({ type: 'error', message: res.message || 'تعذر إنشاء حساب المعلم' });
-      }
-    } catch {
-      setNotification({ type: 'error', message: 'حدث خطأ أثناء الاتصال بالخادم' });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const openSetupModal = (account: TeacherAccount) => {
-    setSelectedEmployeeId(account.employeeId);
-    const transliterated = (account.teacherCode || account.employeeId)
-      .replace(/[^a-zA-Z0-9]/g, '')
-      .toLowerCase();
-    const suggested = `t_${transliterated || Math.floor(1000 + Math.random() * 9000)}`;
-    setCreateUsername(suggested);
-    setCreateTempPassword(generateRandomPassword());
-    setIsCreateModalOpen(true);
-  };
-
-  const openResetModal = (account: TeacherAccount) => {
-    setResetTargetAccount(account);
-    setResetTempPassword(generateRandomPassword());
-    setShowResetPassword(false);
-    setIsResetModalOpen(true);
-  };
-
-  const handleResetSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!resetTargetAccount || !resetTempPassword.trim()) return;
-
-    if (resetTempPassword.trim().length < 8) {
-      setNotification({ type: 'error', message: 'كلمة المرور الجديدة يجب ألا تقل عن 8 خانات' });
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      const res = await storageService.resetTeacherPassword(
-        resetTargetAccount.employeeId,
-        resetTempPassword.trim()
-      );
-
-      if (res.success) {
-        setCreatedSummary({
-          teacherName: resetTargetAccount.teacherName,
-          username: resetTargetAccount.username,
-          tempPassword: resetTempPassword.trim(),
-        });
-        setIsResetModalOpen(false);
-        setNotification({
-          type: 'success',
-          message: 'تمت إعادة تعيين كلمة المرور بنجاح وإلغاء كافة الجلسات النشطة للمعلم'
-        });
-      } else {
-        setNotification({ type: 'error', message: res.message || 'فشلت إعادة تعيين كلمة المرور' });
-      }
-    } catch {
-      setNotification({ type: 'error', message: 'حدث خطأ أثناء إعادة التعيين' });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleToggleStatus = async (account: TeacherAccount) => {
-    const isCurrentlyActive = account.status === 'Active' && account.isActive !== false;
-    const nextStatus = isCurrentlyActive ? 'Disabled' : 'Active';
-    const actionLabel = nextStatus === 'Active' ? 'تنشيط' : 'تعطيل';
-
-    if (!window.confirm(`هل أنت متأكد من ${actionLabel} حساب المعلم (${account.teacherName})؟ ${nextStatus === 'Disabled' ? 'سيتم فوراً إبطال أي جلسة مفتوحة.' : ''}`)) {
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      const res = await storageService.setTeacherAccountStatus(account.employeeId, nextStatus);
-      if (res.success) {
-        setNotification({
-          type: 'success',
-          message: `تم ${actionLabel} حساب المعلم (${account.teacherName}) بنجاح.`
-        });
-      } else {
-        setNotification({ type: 'error', message: res.message || 'فشل تعديل حالة الحساب' });
-      }
-    } catch {
-      setNotification({ type: 'error', message: 'حدث خطأ أثناء تعديل حالة الحساب' });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleUnlockAccount = async (account: TeacherAccount) => {
-    setIsLoading(true);
-    try {
-      const res = await storageService.resetTeacherPassword(
-        account.employeeId,
-        generateRandomPassword()
-      );
-      if (res.success) {
-        setNotification({
-          type: 'success',
-          message: `تم إلغاء تجميد الحساب وإعادة تعيين المحاولات للمعلم (${account.teacherName}) بنجاح.`
-        });
-      }
-    } catch {
-      setNotification({ type: 'error', message: 'حدث خطأ أثناء إلغاء التجميد' });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleCopy = (text: string, fieldId: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedField(fieldId);
-    setTimeout(() => setCopiedField(null), 2000);
-  };
-
-  // Teaching staff without accounts
-  const teachingStaff = employees.filter(e => e.isTeachingStaff || e.jobTitle?.includes('معلم') || e.department === 'هيئة التدريس');
-  const staffWithoutAccounts = teachingStaff.filter(
-    e => !accounts.some(a => a.employeeId === e.id)
+  const accountEmployeeIds = useMemo(
+    () => new Set(accounts.map(account => account.employeeId)),
+    [accounts]
   );
 
-  // Filtered accounts
-  const filteredAccounts = accounts.filter(a => {
-    const q = searchQuery.toLowerCase().trim();
-    if (!q) return true;
-    return (
-      a.teacherName.toLowerCase().includes(q) ||
-      a.username.toLowerCase().includes(q) ||
-      (a.teacherCode && a.teacherCode.toLowerCase().includes(q)) ||
-      (a.department && a.department.toLowerCase().includes(q))
-    );
-  });
+  const availableTeachers = useMemo(
+    () => teachingStaff.filter(employee => !accountEmployeeIds.has(employee.id)),
+    [accountEmployeeIds, teachingStaff]
+  );
 
-  const activeCount = accounts.filter(a => a.status === 'Active' && a.isActive !== false).length;
-  const disabledCount = accounts.filter(a => a.status === 'Disabled' || a.status === 'Suspended').length;
-  const lockedCount = accounts.filter(a => {
-    if (!a.lockedUntil) return false;
-    return new Date(a.lockedUntil).getTime() > Date.now();
+  const filteredAccounts = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return accounts;
+    return accounts.filter(account =>
+      String(account.teacherName || '').toLowerCase().includes(query) ||
+      String(account.username || '').toLowerCase().includes(query) ||
+      String(account.teacherCode || '').toLowerCase().includes(query) ||
+      String(account.department || '').toLowerCase().includes(query)
+    );
+  }, [accounts, searchQuery]);
+
+  const activeCount = accounts.filter(account => account.status === 'Active').length;
+  const disabledCount = accounts.filter(account => account.status !== 'Active').length;
+  const lockedCount = accounts.filter(account => {
+    if (!account.lockedUntil) return false;
+    return new Date(account.lockedUntil).getTime() > Date.now();
   }).length;
 
+  const openCreate = () => {
+    setSelectedEmployeeId('');
+    setUsername('');
+    setTemporaryPassword(generateTemporaryPassword());
+    setShowPassword(false);
+    setModalError('');
+    setIsCreateOpen(true);
+  };
+
+  const selectTeacher = (employeeId: string) => {
+    setSelectedEmployeeId(employeeId);
+    const employee = teachingStaff.find(item => item.id === employeeId);
+    const source = employee?.teacherCode || employee?.id || '';
+    const safe = source.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+    setUsername(safe ? `t_${safe}` : '');
+  };
+
+  const createAccount = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!currentUser) return;
+
+    if (!selectedEmployeeId || !username.trim() || temporaryPassword.trim().length < 8) {
+      setModalError('اختر المعلم وأدخل اسم مستخدم وكلمة مرور لا تقل عن 8 أحرف.');
+      return;
+    }
+
+    const employee = teachingStaff.find(item => item.id === selectedEmployeeId);
+    setSaving(true);
+    setModalError('');
+    setNotification('');
+
+    const result = await teacherAccountAdminService.createAccount(
+      selectedEmployeeId,
+      username,
+      temporaryPassword,
+      currentUser
+    );
+
+    setSaving(false);
+    if (!result.success) {
+      setModalError(result.message || 'تعذر إنشاء حساب المعلم.');
+      return;
+    }
+
+    setCredentialSummary({
+      teacherName: employee?.name || selectedEmployeeId,
+      username: username.trim().toLowerCase(),
+      temporaryPassword,
+    });
+    setTemporaryPassword('');
+    setIsCreateOpen(false);
+    setNotification('تم إنشاء حساب المعلم بنجاح من خلال الخادم المعتمد.');
+    await loadData();
+  };
+
+  const openReset = (account: TeacherAccount) => {
+    setResetTarget(account);
+    setResetPassword(generateTemporaryPassword());
+    setShowPassword(false);
+    setModalError('');
+    setIsResetOpen(true);
+  };
+
+  const submitReset = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!currentUser || !resetTarget) return;
+
+    if (resetPassword.trim().length < 8) {
+      setModalError('كلمة المرور الجديدة يجب ألا تقل عن 8 أحرف.');
+      return;
+    }
+
+    const passwordForSummary = resetPassword;
+    setSaving(true);
+    setModalError('');
+
+    const result = await teacherAccountAdminService.resetPassword(
+      resetTarget.employeeId,
+      resetPassword,
+      currentUser
+    );
+
+    setSaving(false);
+    setResetPassword('');
+
+    if (!result.success) {
+      setModalError(result.message || 'تعذر إعادة تعيين كلمة المرور.');
+      return;
+    }
+
+    setCredentialSummary({
+      teacherName: resetTarget.teacherName,
+      username: resetTarget.username,
+      temporaryPassword: passwordForSummary,
+    });
+    setIsResetOpen(false);
+    setResetTarget(null);
+    setNotification('تمت إعادة تعيين كلمة المرور وإلغاء الجلسات السابقة بنجاح.');
+    await loadData();
+  };
+
+  const changeStatus = async (account: TeacherAccount) => {
+    if (!currentUser) return;
+    const isActive = account.status === 'Active';
+    const nextStatus = isActive ? 'Suspended' : 'Active';
+    const verb = isActive ? 'تعطيل' : 'تنشيط';
+
+    if (!window.confirm(`هل تريد ${verb} حساب المعلم ${account.teacherName}؟`)) return;
+
+    setSaving(true);
+    setPageError('');
+    setNotification('');
+
+    const result = await teacherAccountAdminService.setStatus(
+      account.employeeId,
+      nextStatus,
+      currentUser
+    );
+
+    setSaving(false);
+    if (!result.success) {
+      setPageError(result.message || 'تعذر تعديل حالة الحساب.');
+      return;
+    }
+
+    setNotification(`تم ${verb} حساب المعلم بنجاح.`);
+    await loadData();
+  };
+
+  if (!canManage) {
+    return (
+      <div dir="rtl" className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
+        لا تملك صلاحية إدارة حسابات المعلمين.
+      </div>
+    );
+  }
+
   return (
-    <div dir="rtl" className="space-y-6">
-      {/* Top Banner & Action */}
-      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
+    <div dir="rtl" className="space-y-5">
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="rounded-xl bg-indigo-50 p-2 text-indigo-600">
+                <GraduationCap className="h-5 w-5" />
+              </span>
+              <h2 className="text-base font-bold text-slate-900">حسابات بوابة المعلمين</h2>
+            </div>
+            <p className="mt-2 text-xs text-slate-500">
+              الحسابات والبيانات تُقرأ وتُعدّل من خلال الخادم المعتمد داخل نطاق المدرسة الحالية فقط.
+            </p>
+            <div className="mt-2 text-[11px] font-bold text-slate-500">
+              نطاق المدرسة: {effectiveSchoolId || (isSystemAdmin ? currentUser?.activeSchoolId || 'لم يتم اختيار مدرسة' : currentUser?.schoolId || '—')}
+            </div>
+          </div>
+
           <div className="flex items-center gap-2">
-            <span className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
-              <GraduationCap className="w-5 h-5" />
-            </span>
-            <h2 className="text-base font-bold text-slate-900">
-              إدارة حسابات المعلمين وبوابة المعلم المستقلة
-            </h2>
-          </div>
-          <p className="text-xs text-slate-500 mt-1">
-            إنشاء وإدارة حسابات المعلمين المستقلة، كلمات المرور المؤقتة، وإعادة التعيين مع عزل كامل عن نظام ERP الإداري.
-          </p>
-        </div>
-
-        {isAdmin && (
-          <button
-            type="button"
-            onClick={openCreateModal}
-            className="text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer shrink-0"
-          >
-            <UserPlus className="w-4 h-4" />
-            <span>إنشاء حساب معلم جديد</span>
-          </button>
-        )}
-      </div>
-
-      {/* Security Policies Box */}
-      <div className="bg-indigo-50/70 border border-indigo-200 rounded-2xl p-4 text-xs text-indigo-950 space-y-2">
-        <div className="font-bold flex items-center gap-2 text-indigo-900">
-          <ShieldCheck className="w-4 h-4 text-indigo-700" />
-          <span>قواعد الأمان الصارمة لحسابات المعلمين (Strict Security Policies)</span>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 text-[11px] text-indigo-900/80">
-          <div className="bg-white/80 p-2.5 rounded-xl border border-indigo-100">
-            <span className="font-bold block text-indigo-950">اسم المستخدم (Username)</span>
-            فريد وحصري دون حساسية للأحرف، بدون استخدام رموز PIN.
-          </div>
-          <div className="bg-white/80 p-2.5 rounded-xl border border-indigo-100">
-            <span className="font-bold block text-indigo-950">التشفير والملح (Salt + Hash)</span>
-            الخادم فقط يتولى تشفير كلمة المرور عبر PBKDF2، ولا تُخزن كنص واضح.
-          </div>
-          <div className="bg-white/80 p-2.5 rounded-xl border border-indigo-100">
-            <span className="font-bold block text-indigo-950">تجميد الحساب (Lockout)</span>
-            5 محاولات فاشلة تؤدي تلقائياً لقفل الحساب لمدة 15 دقيقة لحمايته من التخمين.
-          </div>
-          <div className="bg-white/80 p-2.5 rounded-xl border border-indigo-100">
-            <span className="font-bold block text-indigo-950">إلغاء الجلسات (Revocation)</span>
-            إعادة تعيين كلمة المرور أو التعطيل يبطل فوراً كافة الجلسات المفتوحة (Sessions).
+            <button
+              type="button"
+              onClick={() => void loadData()}
+              disabled={loading || saving}
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+              تحديث
+            </button>
+            <button
+              id="btn-add-teacher-account"
+              type="button"
+              onClick={openCreate}
+              disabled={loading || saving || !effectiveSchoolId}
+              className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Plus className="h-4 w-4" />
+              إنشاء حساب معلم
+            </button>
           </div>
         </div>
-      </div>
+      </section>
 
-      {/* Notification */}
-      {notification && (
-        <div
-          className={`p-4 rounded-xl border text-xs font-bold flex items-center justify-between ${
-            notification.type === 'success'
-              ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-              : 'bg-rose-50 text-rose-800 border-rose-200'
-          }`}
-        >
-          <div className="flex items-center gap-2">
-            {notification.type === 'success' ? (
-              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-            ) : (
-              <AlertCircle className="w-4 h-4 text-rose-600" />
-            )}
-            <span>{notification.message}</span>
-          </div>
-          <button
-            type="button"
-            onClick={() => setNotification(null)}
-            className="text-slate-400 hover:text-slate-600"
-          >
-            ×
+      {pageError && (
+        <div className="flex flex-col gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800 sm:flex-row sm:items-center sm:justify-between">
+          <span className="flex items-center gap-2">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            {pageError}
+          </span>
+          <button type="button" onClick={() => void loadData()} className="font-bold underline">
+            إعادة المحاولة
           </button>
         </div>
       )}
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
-          <span className="text-[11px] text-slate-500 font-bold block">إجمالي حسابات المعلمين</span>
-          <span className="text-xl font-bold text-slate-800 font-mono mt-1 block">
-            {accounts.length}
-          </span>
+      {notification && (
+        <div className="flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
+          <CheckCircle2 className="h-4 w-4" />
+          {notification}
         </div>
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
-          <span className="text-[11px] text-emerald-600 font-bold block">الحسابات النشطة</span>
-          <span className="text-xl font-bold text-emerald-700 font-mono mt-1 block">
-            {activeCount}
-          </span>
-        </div>
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
-          <span className="text-[11px] text-slate-500 font-bold block">الحسابات المعطلة</span>
-          <span className="text-xl font-bold text-slate-600 font-mono mt-1 block">
-            {disabledCount}
-          </span>
-        </div>
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
-          <span className="text-[11px] text-rose-600 font-bold block">الحسابات المجمدة (15 دقيقة)</span>
-          <span className="text-xl font-bold text-rose-700 font-mono mt-1 block">
-            {lockedCount}
-          </span>
-        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Summary label="إجمالي الحسابات" value={accounts.length} />
+        <Summary label="الحسابات النشطة" value={activeCount} />
+        <Summary label="الحسابات المعطلة" value={disabledCount} />
+        <Summary label="المجمدة مؤقتًا" value={lockedCount} />
       </div>
 
-      {/* Search and Table */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
-        <div className="p-4 border-b border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3">
-          <div className="relative w-full sm:w-72">
-            <Search className="w-4 h-4 text-slate-400 absolute right-3 top-2.5 pointer-events-none" />
+      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="flex flex-col gap-3 border-b border-slate-200 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <label className="relative w-full sm:max-w-sm">
+            <Search className="absolute right-3 top-3 h-4 w-4 text-slate-400" />
             <input
-              type="text"
-              placeholder="البحث بالاسم أو اسم المستخدم..."
               value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              className="w-full pr-9 pl-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-medium"
+              onChange={event => setSearchQuery(event.target.value)}
+              placeholder="بحث بالاسم أو اسم المستخدم أو كود المعلم"
+              className="w-full rounded-xl border border-slate-200 py-2.5 pr-9 pl-3 text-sm outline-none focus:border-indigo-500"
             />
+          </label>
+          <div className="text-xs font-bold text-slate-500">
+            معلمون بدون حساب: {availableTeachers.length}
           </div>
-
-          <span className="text-xs text-slate-500 font-bold">
-            عدد الحسابات: {filteredAccounts.length}
-          </span>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-right text-xs">
-            <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
-              <tr>
-                <th className="p-3.5">المعلم</th>
-                <th className="p-3.5">اسم المستخدم (Username)</th>
-                <th className="p-3.5">كود المعلم</th>
-                <th className="p-3.5">حالة الحساب</th>
-                <th className="p-3.5">تغيير كلمة المرور</th>
-                <th className="p-3.5">آخر دخول</th>
-                <th className="p-3.5">المحاولات الفاشلة</th>
-                <th className="p-3.5">تاريخ التجميد</th>
-                <th className="p-3.5 text-center">الإجراءات المسموحة</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {filteredAccounts.length === 0 ? (
+        {loading ? (
+          <div className="flex min-h-52 items-center justify-center text-sm text-slate-500">
+            <RefreshCw className="ml-2 h-4 w-4 animate-spin" />
+            جارٍ تحميل حسابات المعلمين...
+          </div>
+        ) : !pageError && filteredAccounts.length === 0 ? (
+          <div className="flex min-h-52 items-center justify-center text-sm text-slate-500">
+            لا توجد حسابات معلمين ضمن المدرسة الحالية.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[900px] text-right text-sm">
+              <thead className="bg-slate-50 text-xs text-slate-500">
                 <tr>
-                  <td colSpan={9} className="p-8 text-center text-slate-400">
-                    لا توجد حسابات معلمين مطابقة لبحثك.
-                  </td>
+                  <th className="px-4 py-3">المعلم</th>
+                  <th className="px-4 py-3">اسم المستخدم</th>
+                  <th className="px-4 py-3">كود المعلم</th>
+                  <th className="px-4 py-3">الحالة</th>
+                  <th className="px-4 py-3">آخر دخول</th>
+                  <th className="px-4 py-3">المحاولات الفاشلة</th>
+                  <th className="px-4 py-3">الإجراءات</th>
                 </tr>
-              ) : (
-                filteredAccounts.map(account => {
-                  const isLocked = account.lockedUntil && new Date(account.lockedUntil).getTime() > Date.now();
-                  const needsSetup = !account.username || account.status === 'Needs Setup' || account.accountStatus === 'Needs Setup';
-                  const isPasswordResetRequired = account.status === 'PasswordResetRequired' || account.accountStatus === 'PasswordResetRequired';
-                  const isActive = account.status === 'Active' && account.isActive !== false && !needsSetup && !isPasswordResetRequired;
-
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filteredAccounts.map(account => {
+                  const locked = account.lockedUntil
+                    ? new Date(account.lockedUntil).getTime() > Date.now()
+                    : false;
                   return (
-                    <tr key={account.id} className="hover:bg-slate-50/50 transition">
-                      <td className="p-3.5">
+                    <tr key={account.id} className="hover:bg-slate-50/60">
+                      <td className="px-4 py-3">
                         <div className="font-bold text-slate-900">{account.teacherName}</div>
-                        <div className="text-[10px] text-slate-400">{account.department || 'هيئة التدريس'}</div>
+                        <div className="text-[11px] text-slate-400">{account.department || 'هيئة التدريس'}</div>
                       </td>
-                      <td className="p-3.5">
-                        {needsSetup ? (
-                          <span className="inline-flex items-center gap-1 bg-amber-50 border border-amber-200 text-amber-800 px-2 py-0.5 rounded-lg text-[10px] font-bold">
-                            الحساب يحتاج تهيئة اسم مستخدم وكلمة مرور
-                          </span>
-                        ) : (
-                          <span className="font-mono text-indigo-700 font-bold text-xs">
-                            @{account.username}
-                          </span>
-                        )}
+                      <td className="px-4 py-3 font-mono text-xs text-slate-700">{account.username || '—'}</td>
+                      <td className="px-4 py-3 text-xs text-slate-600">{account.teacherCode || account.employeeId}</td>
+                      <td className="px-4 py-3">
+                        <AccountStatus account={account} locked={locked} />
                       </td>
-                      <td className="p-3.5 font-mono text-slate-600">
-                        {account.teacherCode || '-'}
-                      </td>
-                      <td className="p-3.5">
-                        {isLocked ? (
-                          <span className="inline-flex items-center gap-1 bg-rose-100 text-rose-800 px-2.5 py-0.5 rounded-full text-[10px] font-bold">
-                            <Clock className="w-3 h-3" />
-                            <span>مجمد 15 دقيقة</span>
-                          </span>
-                        ) : needsSetup ? (
-                          <span className="inline-flex items-center gap-1 bg-amber-100 text-amber-900 px-2.5 py-0.5 rounded-full text-[10px] font-bold">
-                            <span>Needs Setup</span>
-                          </span>
-                        ) : isPasswordResetRequired ? (
-                          <span className="inline-flex items-center gap-1 bg-orange-100 text-orange-900 px-2.5 py-0.5 rounded-full text-[10px] font-bold">
-                            <span>PasswordResetRequired</span>
-                          </span>
-                        ) : isActive ? (
-                          <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full text-[10px] font-bold">
-                            <UserCheck className="w-3 h-3" />
-                            <span>نشط</span>
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 bg-slate-100 text-slate-700 px-2.5 py-0.5 rounded-full text-[10px] font-bold">
-                            <UserX className="w-3 h-3" />
-                            <span>معطل</span>
-                          </span>
-                        )}
-                      </td>
-                      <td className="p-3.5 text-center">
-                        {account.mustChangePassword ? (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800">
-                            نعم (مطلوب)
-                          </span>
-                        ) : (
-                          <span className="text-slate-400 font-medium">لا</span>
-                        )}
-                      </td>
-                      <td className="p-3.5 text-slate-600 font-mono text-[11px]">
-                        {account.lastLoginAt ? (
-                          new Date(account.lastLoginAt).toLocaleString('ar-EG', {
-                            dateStyle: 'short',
-                            timeStyle: 'short',
-                          })
-                        ) : (
-                          <span className="text-slate-400">لم يدخل بعد</span>
-                        )}
-                      </td>
-                      <td className="p-3.5 font-mono">
-                        <span className={account.failedLoginAttempts ? 'text-rose-600 font-bold' : 'text-slate-400'}>
-                          {account.failedLoginAttempts || 0} / 5
-                        </span>
-                      </td>
-                      <td className="p-3.5 text-slate-600 font-mono text-[11px]">
-                        {isLocked ? (
-                          <span className="text-rose-700 font-bold">
-                            {new Date(account.lockedUntil!).toLocaleTimeString('ar-EG', {
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            })}
-                          </span>
-                        ) : (
-                          <span className="text-slate-400">-</span>
-                        )}
-                      </td>
-                      <td className="p-3.5">
-                        <div className="flex items-center justify-center gap-2">
-                          {isLocked && (
-                            <button
-                              type="button"
-                              onClick={() => handleUnlockAccount(account)}
-                              className="px-2.5 py-1 bg-rose-100 hover:bg-rose-200 text-rose-800 text-[11px] font-bold rounded-lg transition"
-                              title="إلغاء تجميد الحساب فوراً"
-                            >
-                              إلغاء التجميد
-                            </button>
-                          )}
-
-                          {needsSetup ? (
-                            <button
-                              type="button"
-                              onClick={() => openSetupModal(account)}
-                              className="inline-flex items-center gap-1 px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold rounded-lg transition shadow-xs"
-                              title="تهيئة اسم المستخدم وكلمة المرور للمعلم"
-                            >
-                              <UserPlus className="w-3 h-3" />
-                              <span>تهيئة الحساب</span>
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => openResetModal(account)}
-                              className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 text-[11px] font-bold rounded-lg border border-amber-200 transition"
-                              title="إعادة تعيين كلمة المرور وإلغاء كل الجلسات"
-                            >
-                              <KeyRound className="w-3 h-3 text-amber-600" />
-                              <span>Reset Password</span>
-                            </button>
-                          )}
-
+                      <td className="px-4 py-3 text-xs text-slate-500">{account.lastLoginAt || '—'}</td>
+                      <td className="px-4 py-3 text-xs font-bold text-slate-600">{account.failedLoginAttempts || 0}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-1">
                           <button
                             type="button"
-                            onClick={() => handleToggleStatus(account)}
-                            className={`inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold rounded-lg border transition ${
-                              isActive
-                                ? 'bg-slate-50 hover:bg-rose-50 text-slate-700 hover:text-rose-700 border-slate-200'
-                                : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-200'
-                            }`}
+                            title="إعادة تعيين كلمة المرور"
+                            onClick={() => openReset(account)}
+                            disabled={saving}
+                            className="rounded-lg p-2 text-slate-600 hover:bg-slate-100 disabled:opacity-50"
                           >
-                            {isActive ? (
-                              <>
-                                <Lock className="w-3 h-3" />
-                                <span>تعطيل</span>
-                              </>
-                            ) : (
-                              <>
-                                <Unlock className="w-3 h-3" />
-                                <span>تنشيط</span>
-                              </>
-                            )}
+                            <KeyRound className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
+                            title="تغيير حالة الحساب"
+                            onClick={() => void changeStatus(account)}
+                            disabled={saving}
+                            className="rounded-lg p-2 text-slate-600 hover:bg-slate-100 disabled:opacity-50"
+                          >
+                            {account.status === 'Active' ? <UserX className="h-4 w-4" /> : <UserCheck className="h-4 w-4" />}
                           </button>
                         </div>
                       </td>
                     </tr>
                   );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
 
-      {/* CREATE TEACHER ACCOUNT MODAL */}
-      {isCreateModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-6 border border-slate-200 shadow-2xl space-y-5">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <span className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
-                  <UserPlus className="w-5 h-5" />
-                </span>
-                <h3 className="text-base font-bold text-slate-900">إنشاء حساب جديد للمعلم</h3>
-              </div>
+      {isCreateOpen && (
+        <Modal title="إنشاء حساب معلم" onClose={() => { setTemporaryPassword(''); setIsCreateOpen(false); }}>
+          <form onSubmit={createAccount} className="space-y-4">
+            {modalError && <ErrorBox>{modalError}</ErrorBox>}
+            <Field label="المعلم">
+              <select
+                value={selectedEmployeeId}
+                onChange={event => selectTeacher(event.target.value)}
+                className="input-base"
+                required
+              >
+                <option value="">اختر المعلم</option>
+                {availableTeachers.map(employee => (
+                  <option key={employee.id} value={employee.id}>
+                    {employee.name} — {employee.teacherCode}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="اسم المستخدم">
+              <input
+                value={username}
+                onChange={event => setUsername(event.target.value.toLowerCase())}
+                className="input-base"
+                dir="ltr"
+                required
+              />
+            </Field>
+            <Field label="كلمة المرور المؤقتة">
+              <PasswordInput
+                value={temporaryPassword}
+                onChange={setTemporaryPassword}
+                visible={showPassword}
+                onToggle={() => setShowPassword(value => !value)}
+              />
               <button
                 type="button"
-                onClick={() => setIsCreateModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 text-xl font-bold"
+                onClick={() => setTemporaryPassword(generateTemporaryPassword())}
+                className="mt-2 text-xs font-bold text-indigo-600"
               >
-                ×
+                توليد كلمة مرور جديدة
               </button>
-            </div>
-
-            <form onSubmit={handleCreateSubmit} className="space-y-4 text-xs">
-              <div>
-                <label className="block font-bold text-slate-700 mb-1.5">
-                  اختر المعلم من السجلات المدرسية
-                </label>
-                <select
-                  required
-                  value={selectedEmployeeId}
-                  onChange={e => handleSelectEmployee(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 font-medium text-slate-800 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                >
-                  <option value="">-- اختر المعلم --</option>
-                  {staffWithoutAccounts.map(emp => (
-                    <option key={emp.id} value={emp.id}>
-                      {emp.name} ({emp.specialization || emp.department || 'هيئة التدريس'})
-                    </option>
-                  ))}
-                </select>
-                {staffWithoutAccounts.length === 0 && (
-                  <p className="text-[11px] text-slate-500 mt-1">
-                    جميع المعلمين المسجلين لديهم حسابات بالفعل.
-                  </p>
-                )}
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 mb-1.5">
-                  اسم المستخدم للمعلم (Username فريد)
-                </label>
-                <div className="relative">
-                  <span className="absolute right-3 top-2.5 text-slate-400 font-mono">@</span>
-                  <input
-                    type="text"
-                    required
-                    value={createUsername}
-                    onChange={e => setCreateUsername(e.target.value)}
-                    placeholder="مثال: ahmed.hassan"
-                    className="w-full pr-8 pl-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl font-mono text-xs focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                  />
-                </div>
-                <p className="text-[10px] text-slate-400 mt-1">
-                  غير حساس لحالة الأحرف (Case-insensitive) وخاص ببوابة المعلم فقط.
-                </p>
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="font-bold text-slate-700">
-                    كلمة المرور المؤقتة (Temporary Password)
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => setCreateTempPassword(generateRandomPassword())}
-                    className="text-indigo-600 hover:text-indigo-800 text-[11px] font-bold flex items-center gap-1"
-                  >
-                    <Sparkles className="w-3 h-3" />
-                    <span>توليد كلمة عشوائية</span>
-                  </button>
-                </div>
-                <div className="relative flex items-center">
-                  <input
-                    type={showCreatePassword ? 'text' : 'password'}
-                    required
-                    value={createTempPassword}
-                    onChange={e => setCreateTempPassword(e.target.value)}
-                    placeholder="••••••••"
-                    className="w-full pr-3 pl-10 py-2.5 bg-slate-50 border border-slate-300 rounded-xl font-mono text-xs focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowCreatePassword(!showCreatePassword)}
-                    className="absolute left-3 text-slate-400 hover:text-slate-600"
-                    tabIndex={-1}
-                  >
-                    {showCreatePassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-                <p className="text-[10px] text-slate-400 mt-1">
-                  يتم تشفير كلمة المرور في الخادم عبر PBKDF2 فور الإنشاء، ولن تظهر في المتصفح بعد إغلاق النافذة.
-                </p>
-              </div>
-
-              <div className="pt-3 flex items-center justify-end gap-3 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setIsCreateModalOpen(false)}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold transition"
-                >
-                  إلغاء
-                </button>
-                <button
-                  type="submit"
-                  disabled={isLoading || !selectedEmployeeId}
-                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold transition flex items-center gap-2 disabled:opacity-50"
-                >
-                  {isLoading ? (
-                    <span>جاري التشفير والإنشاء...</span>
-                  ) : (
-                    <span>إنشاء الحساب وتشفيره</span>
-                  )}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+            </Field>
+            <ModalActions saving={saving} onCancel={() => { setTemporaryPassword(''); setIsCreateOpen(false); }} />
+          </form>
+        </Modal>
       )}
 
-      {/* RESET PASSWORD MODAL */}
-      {isResetModalOpen && resetTargetAccount && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 border border-slate-200 shadow-2xl space-y-5">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <span className="p-2 bg-amber-50 text-amber-600 rounded-xl">
-                  <KeyRound className="w-5 h-5" />
-                </span>
-                <div>
-                  <h3 className="text-base font-bold text-slate-900">إعادة تعيين كلمة المرور</h3>
-                  <p className="text-xs text-slate-500">{resetTargetAccount.teacherName} (@{resetTargetAccount.username})</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsResetModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 text-xl font-bold"
-              >
-                ×
-              </button>
-            </div>
-
-            <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 space-y-1">
-              <span className="font-bold block">إجراء أمني إجباري:</span>
-              <span>سيتم فوراً إبطال وإلغاء كافة الجلسات المفتوحة (Sessions) لهذا المعلم وإلغاء أي تجميد نشط.</span>
-            </div>
-
-            <form onSubmit={handleResetSubmit} className="space-y-4 text-xs">
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="font-bold text-slate-700">
-                    كلمة المرور المؤقتة الجديدة
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => setResetTempPassword(generateRandomPassword())}
-                    className="text-indigo-600 hover:text-indigo-800 text-[11px] font-bold flex items-center gap-1"
-                  >
-                    <Sparkles className="w-3 h-3" />
-                    <span>توليد كلمة عشوائية</span>
-                  </button>
-                </div>
-                <div className="relative flex items-center">
-                  <input
-                    type={showResetPassword ? 'text' : 'password'}
-                    required
-                    value={resetTempPassword}
-                    onChange={e => setResetTempPassword(e.target.value)}
-                    placeholder="••••••••"
-                    className="w-full pr-3 pl-10 py-2.5 bg-slate-50 border border-slate-300 rounded-xl font-mono text-xs focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowResetPassword(!showResetPassword)}
-                    className="absolute left-3 text-slate-400 hover:text-slate-600"
-                    tabIndex={-1}
-                  >
-                    {showResetPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-              </div>
-
-              <div className="pt-3 flex items-center justify-end gap-3 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setIsResetModalOpen(false)}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold transition"
-                >
-                  إلغاء
-                </button>
-                <button
-                  type="submit"
-                  disabled={isLoading}
-                  className="px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold transition flex items-center gap-2 disabled:opacity-50"
-                >
-                  {isLoading ? (
-                    <span>جاري التعيين وإلغاء الجلسات...</span>
-                  ) : (
-                    <span>تأكيد إعادة التعيين</span>
-                  )}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+      {isResetOpen && resetTarget && (
+        <Modal title="إعادة تعيين كلمة المرور" onClose={() => { setResetPassword(''); setIsResetOpen(false); }}>
+          <form onSubmit={submitReset} className="space-y-4">
+            <p className="text-sm text-slate-600">{resetTarget.teacherName}</p>
+            {modalError && <ErrorBox>{modalError}</ErrorBox>}
+            <Field label="كلمة المرور المؤقتة الجديدة">
+              <PasswordInput
+                value={resetPassword}
+                onChange={setResetPassword}
+                visible={showPassword}
+                onToggle={() => setShowPassword(value => !value)}
+              />
+            </Field>
+            <ModalActions saving={saving} onCancel={() => { setResetPassword(''); setIsResetOpen(false); }} />
+          </form>
+        </Modal>
       )}
 
-      {/* CREDENTIALS SUMMARY / PRINT POPUP */}
-      {createdSummary && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 border border-slate-200 shadow-2xl space-y-5">
-            <div className="text-center space-y-2">
-              <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center mx-auto">
-                <CheckCircle2 className="w-7 h-7" />
-              </div>
-              <h3 className="text-base font-bold text-slate-900">بيانات دخول المعلم المعتمدة</h3>
-              <p className="text-xs text-slate-500">
-                يرجى تسليم هذه البيانات للمعلم للدخول عبر بوابة المعلم. لن تظهر كلمة المرور مرة أخرى.
-              </p>
+      {credentialSummary && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/40 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <div className="mb-4 flex items-center gap-2 text-emerald-700">
+              <ShieldCheck className="h-5 w-5" />
+              <h3 className="font-bold">بيانات مؤقتة للتسليم</h3>
             </div>
-
-            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3 text-xs">
-              <div className="flex items-center justify-between border-b border-slate-200/60 pb-2">
-                <span className="text-slate-500 font-bold">المعلم:</span>
-                <span className="text-slate-900 font-bold">{createdSummary.teacherName}</span>
-              </div>
-              <div className="flex items-center justify-between border-b border-slate-200/60 pb-2">
-                <span className="text-slate-500 font-bold">اسم المستخدم:</span>
-                <div className="flex items-center gap-2">
-                  <span className="font-mono font-bold text-indigo-700">@{createdSummary.username}</span>
-                  <button
-                    type="button"
-                    onClick={() => handleCopy(createdSummary.username, 'usr')}
-                    className="p-1 text-slate-400 hover:text-slate-600"
-                    title="نسخ"
-                  >
-                    {copiedField === 'usr' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                  </button>
-                </div>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-slate-500 font-bold">كلمة المرور المؤقتة:</span>
-                <div className="flex items-center gap-2">
-                  <span className="font-mono font-bold text-slate-900 bg-white px-2 py-0.5 rounded border border-slate-300">
-                    {createdSummary.tempPassword}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => handleCopy(createdSummary.tempPassword, 'pwd')}
-                    className="p-1 text-slate-400 hover:text-slate-600"
-                    title="نسخ"
-                  >
-                    {copiedField === 'pwd' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => window.print()}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition flex items-center gap-1.5"
-              >
-                <Printer className="w-4 h-4" />
-                <span>طباعة الإشعار</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setCreatedSummary(null)}
-                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition"
-              >
-                تم الحفظ والإغلاق
-              </button>
-            </div>
+            <p className="mb-4 text-xs text-slate-500">
+              تظهر كلمة المرور في هذه النافذة فقط ولا يتم حفظها في قائمة الحسابات أو التخزين المحلي.
+            </p>
+            <CredentialRow label="المعلم" value={credentialSummary.teacherName} />
+            <CredentialRow label="اسم المستخدم" value={credentialSummary.username} />
+            <CredentialRow label="كلمة المرور المؤقتة" value={credentialSummary.temporaryPassword} />
+            <button
+              type="button"
+              onClick={() => setCredentialSummary(null)}
+              className="mt-5 w-full rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white"
+            >
+              إغلاق وحذف العرض المؤقت
+            </button>
           </div>
         </div>
       )}
     </div>
   );
 };
+
+const Summary: React.FC<{ label: string; value: number }> = ({ label, value }) => (
+  <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="text-[11px] font-bold text-slate-500">{label}</div>
+    <div className="mt-2 text-2xl font-black text-slate-900">{value.toLocaleString('ar-EG')}</div>
+  </div>
+);
+
+const AccountStatus: React.FC<{ account: TeacherAccount; locked: boolean }> = ({ account, locked }) => {
+  if (locked) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2.5 py-1 text-[11px] font-bold text-rose-700">
+        <Lock className="h-3.5 w-3.5" /> مجمد مؤقتًا
+      </span>
+    );
+  }
+
+  const active = account.status === 'Active';
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold ${
+      active ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'
+    }`}>
+      {active ? <UserCheck className="h-3.5 w-3.5" /> : <UserX className="h-3.5 w-3.5" />}
+      {active ? 'نشط' : 'معطل'}
+    </span>
+  );
+};
+
+const Modal: React.FC<{ title: string; onClose: () => void; children: React.ReactNode }> = ({ title, onClose, children }) => (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">
+    <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
+      <div className="mb-5 flex items-center justify-between">
+        <h3 className="font-bold text-slate-900">{title}</h3>
+        <button type="button" onClick={onClose} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100">
+          <X className="h-5 w-5" />
+        </button>
+      </div>
+      {children}
+    </div>
+  </div>
+);
+
+const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
+  <label className="block space-y-1.5">
+    <span className="text-xs font-bold text-slate-700">{label}</span>
+    {children}
+  </label>
+);
+
+const ErrorBox: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <div className="rounded-xl bg-rose-50 p-3 text-sm text-rose-700">{children}</div>
+);
+
+const PasswordInput: React.FC<{
+  value: string;
+  onChange: (value: string) => void;
+  visible: boolean;
+  onToggle: () => void;
+}> = ({ value, onChange, visible, onToggle }) => (
+  <div className="relative">
+    <input
+      type={visible ? 'text' : 'password'}
+      value={value}
+      onChange={event => onChange(event.target.value)}
+      className="input-base pl-10"
+      autoComplete="new-password"
+      required
+    />
+    <button type="button" onClick={onToggle} className="absolute left-3 top-2.5 text-slate-400">
+      {visible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+    </button>
+  </div>
+);
+
+const ModalActions: React.FC<{ saving: boolean; onCancel: () => void }> = ({ saving, onCancel }) => (
+  <div className="flex justify-end gap-2 pt-2">
+    <button type="button" onClick={onCancel} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-bold text-slate-600">
+      إلغاء
+    </button>
+    <button type="submit" disabled={saving} className="rounded-xl bg-indigo-600 px-5 py-2 text-sm font-bold text-white disabled:opacity-50">
+      {saving ? 'جارٍ التنفيذ...' : 'حفظ'}
+    </button>
+  </div>
+);
+
+const CredentialRow: React.FC<{ label: string; value: string }> = ({ label, value }) => (
+  <div className="mb-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
+    <div className="text-[10px] font-bold text-slate-500">{label}</div>
+    <div className="mt-1 break-all font-mono text-sm font-bold text-slate-900">{value}</div>
+  </div>
+);
