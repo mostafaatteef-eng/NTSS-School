@@ -1176,4 +1176,211 @@ describe('NTSS ERP - Security, Login Numbers, First Login & Timetable Integratio
     expect(second.data.status).toBeUndefined();
   });
 
+
+  it('Test 37: Employee management read uses authoritative staff session without client school authority', async () => {
+    storageService.setCurrentUser({
+      id: 'USR-EMP-MGR-1',
+      username: 'employee.manager1',
+      fullName: 'مدير العاملين',
+      role: 'TeacherAffairs',
+      accessScope: 'SCHOOL',
+      schoolId: 'SCH-BADR',
+      activeSchoolId: 'SCH-BADR',
+      allowedSchoolIds: ['SCH-BADR'],
+      sessionToken: 'EMPLOYEE_READ_SESSION_123',
+    });
+
+    vi.spyOn(storageService, 'getBackendUrl').mockReturnValue('https://example.com/admin');
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        status: 'success',
+        data: [{ id: 'EMP001', name: 'موظف', employeeType: 'Administrative', jobTitle: 'إداري' }],
+      }),
+    } as Response);
+
+    const result = await storageService.getEmployeeManagementDataAuthoritative();
+
+    expect(result.success).toBe(true);
+    expect(result.employees?.length).toBe(1);
+
+    const request = JSON.parse(String((fetchSpy.mock.calls[0][1] as RequestInit).body));
+    expect(request.action).toBe('getEmployees');
+    expect(request.sessionToken).toBe('EMPLOYEE_READ_SESSION_123');
+    expect(request.schoolId).toBeUndefined();
+  });
+
+  it('Test 38: Managed employee create strips server-owned and sensitive authority fields', async () => {
+    storageService.setCurrentUser({
+      id: 'USR-EMP-MGR-2',
+      username: 'employee.manager2',
+      fullName: 'مدير العاملين',
+      role: 'TeacherAffairs',
+      accessScope: 'SCHOOL',
+      schoolId: 'SCH-BADR',
+      activeSchoolId: 'SCH-BADR',
+      allowedSchoolIds: ['SCH-BADR'],
+      sessionToken: 'EMPLOYEE_CREATE_SESSION_123',
+    });
+
+    vi.spyOn(storageService, 'getBackendUrl').mockReturnValue('https://example.com/admin');
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        status: 'success',
+        employee: {
+          id: 'EMP001',
+          name: 'معلم جديد',
+          employeeType: 'Teacher',
+          jobTitle: 'معلم',
+          loginNumber: 121,
+          schoolId: 'SCH-BADR',
+        },
+      }),
+    } as Response);
+
+    const result = await storageService.createManagedEmployeeAuthoritative({
+      id: 'EMP001',
+      name: 'معلم جديد',
+      employeeType: 'Teacher',
+      jobTitle: 'معلم',
+      teacherCode: 'T-001',
+      loginNumber: 999,
+      basicSalary: 50000,
+      salary: 60000,
+      ...( { password: 'should-never-send', passwordHash: 'hash', schoolId: 'SCH-OTHER' } as any ),
+    });
+
+    expect(result.success).toBe(true);
+
+    const request = JSON.parse(String((fetchSpy.mock.calls[0][1] as RequestInit).body));
+    expect(request.action).toBe('createManagedEmployee');
+    expect(request.data.id).toBe('EMP001');
+    expect(request.data.name).toBe('معلم جديد');
+    expect(request.data.loginNumber).toBeUndefined();
+    expect(request.data.schoolId).toBeUndefined();
+    expect(request.data.basicSalary).toBeUndefined();
+    expect(request.data.salary).toBeUndefined();
+    expect(request.data.password).toBeUndefined();
+    expect(request.data.passwordHash).toBeUndefined();
+  });
+
+  it('Test 39: Managed employee update and status use edit-specific authoritative actions', async () => {
+    storageService.setCurrentUser({
+      id: 'USR-EMP-MGR-3',
+      username: 'employee.manager3',
+      fullName: 'مدير العاملين',
+      role: 'TeacherAffairs',
+      accessScope: 'SCHOOL',
+      schoolId: 'SCH-BADR',
+      activeSchoolId: 'SCH-BADR',
+      allowedSchoolIds: ['SCH-BADR'],
+      sessionToken: 'EMPLOYEE_EDIT_SESSION_123',
+    });
+
+    vi.spyOn(storageService, 'getBackendUrl').mockReturnValue('https://example.com/admin');
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ status: 'success', employee: { id: 'EMP002', name: 'موظف معدل' } }),
+    } as Response);
+
+    await storageService.updateManagedEmployeeAuthoritative({
+      id: 'EMP002',
+      name: 'موظف معدل',
+      employeeType: 'Administrative',
+      jobTitle: 'إداري',
+    });
+    await storageService.setManagedEmployeeStatusAuthoritative('EMP002', 'Inactive');
+
+    const updateRequest = JSON.parse(String((fetchSpy.mock.calls[0][1] as RequestInit).body));
+    const statusRequest = JSON.parse(String((fetchSpy.mock.calls[1][1] as RequestInit).body));
+
+    expect(updateRequest.action).toBe('updateManagedEmployee');
+    expect(updateRequest.data.id).toBe('EMP002');
+    expect(statusRequest.action).toBe('setManagedEmployeeStatus');
+    expect(statusRequest.data).toEqual({ id: 'EMP002', status: 'Inactive' });
+  });
+
+  it('Test 40: Employee import uses import-specific backend action and strips sensitive fields row-by-row', async () => {
+    storageService.setCurrentUser({
+      id: 'USR-EMP-MGR-4',
+      username: 'employee.manager4',
+      fullName: 'مدير العاملين',
+      role: 'TeacherAffairs',
+      accessScope: 'SCHOOL',
+      schoolId: 'SCH-BADR',
+      activeSchoolId: 'SCH-BADR',
+      allowedSchoolIds: ['SCH-BADR'],
+      sessionToken: 'EMPLOYEE_IMPORT_SESSION_123',
+    });
+
+    vi.spyOn(storageService, 'getBackendUrl').mockReturnValue('https://example.com/admin');
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        status: 'success',
+        stats: { added: 1, updated: 1, skipped: 0, errors: [] },
+      }),
+    } as Response);
+
+    const result = await storageService.importManagedEmployeesAuthoritative([
+      {
+        id: 'EMP003',
+        name: 'موظف 1',
+        employeeType: 'Administrative',
+        jobTitle: 'إداري',
+        loginNumber: 500,
+        basicSalary: 10000,
+        ...( { password: 'nope', schoolId: 'SCH-OTHER' } as any ),
+      },
+      {
+        id: 'EMP004',
+        name: 'معلم 2',
+        employeeType: 'Teacher',
+        jobTitle: 'معلم',
+        teacherCode: 'T-004',
+      },
+    ]);
+
+    expect(result.success).toBe(true);
+    expect(result.added).toBe(1);
+    expect(result.updated).toBe(1);
+
+    const request = JSON.parse(String((fetchSpy.mock.calls[0][1] as RequestInit).body));
+    expect(request.action).toBe('importManagedEmployees');
+    expect(request.data).toHaveLength(2);
+    expect(request.data[0].loginNumber).toBeUndefined();
+    expect(request.data[0].basicSalary).toBeUndefined();
+    expect(request.data[0].password).toBeUndefined();
+    expect(request.data[0].schoolId).toBeUndefined();
+  });
+
+  it('Test 41: Employee management session failure clears current staff session', async () => {
+    storageService.setCurrentUser({
+      id: 'USR-EMP-EXPIRED',
+      username: 'employee.expired',
+      fullName: 'مدير العاملين',
+      role: 'TeacherAffairs',
+      accessScope: 'SCHOOL',
+      schoolId: 'SCH-BADR',
+      allowedSchoolIds: ['SCH-BADR'],
+      sessionToken: 'EXPIRED_EMPLOYEE_SESSION',
+    });
+
+    vi.spyOn(storageService, 'getBackendUrl').mockReturnValue('https://example.com/admin');
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: false,
+      status: 401,
+      json: async () => ({ status: 'error', code: 'SESSION_EXPIRED', message: 'expired' }),
+    } as Response);
+
+    const result = await storageService.getEmployeeManagementDataAuthoritative();
+    expect(result.success).toBe(false);
+    expect(storageService.getCurrentUser()).toBeNull();
+  });
+
 });
