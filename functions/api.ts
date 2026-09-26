@@ -3,7 +3,13 @@ import crypto from 'node:crypto';
 
 const { Pool } = pg;
 const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 5 });
-const allowedOrigins = new Set(String(process.env.CORS_ORIGINS || 'https://mostafaatteef-eng.github.io').split(',').map(x => x.trim()).filter(Boolean));
+const allowedOrigins = new Set([
+  ...String(process.env.CORS_ORIGINS || '').split(',').map(x => x.trim()).filter(Boolean),
+  'https://mostafaatteef-eng.github.io',
+  'https://ntss-schools.edu.eg',
+  'https://www.ntss-schools.edu.eg',
+]);
+const isAllowedOrigin = (origin: string) => allowedOrigins.has(origin.replace(/\/$/, ''));
 const tokenHash = (value: string) => crypto.createHash('sha256').update(value).digest('hex');
 
 function json(data: unknown, status = 200, origin = '') {
@@ -45,7 +51,7 @@ async function canAccessSchool(user: any, schoolId: string) {
 export default {
   async fetch(request: Request) {
     const origin = String(request.headers.get('origin') || '');
-    const corsOrigin = allowedOrigins.has(origin) ? origin : '';
+    const corsOrigin = isAllowedOrigin(origin) ? origin.replace(/\/$/, '') : '';
     if (request.method === 'OPTIONS') return new Response(null, { status: corsOrigin ? 204 : 403, headers: {
       'access-control-allow-origin': corsOrigin, 'access-control-allow-headers': 'content-type, authorization', 'access-control-allow-methods': 'GET,POST,OPTIONS'
     }});
