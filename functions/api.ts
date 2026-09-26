@@ -31,8 +31,14 @@ async function authenticate(request: Request) {
 
 async function canAccessSchool(user: any, schoolId: string) {
   if (!schoolId) return false;
-  if (user.access_scope === 'GLOBAL' || user.school_id === schoolId) return true;
-  const result = await pool.query('SELECT 1 FROM user_school_access WHERE user_id=$1 AND school_id=$2 LIMIT 1', [user.user_id, schoolId]);
+  if (user.access_scope !== 'GLOBAL' && user.school_id === schoolId) {
+    const school = await pool.query("SELECT 1 FROM schools WHERE id=$1 AND status='ACTIVE' LIMIT 1", [schoolId]);
+    return school.rowCount > 0;
+  }
+  const result = await pool.query(
+    "SELECT 1 FROM user_school_access usa JOIN schools s ON s.id=usa.school_id WHERE usa.user_id=$1 AND usa.school_id=$2 AND s.status='ACTIVE' LIMIT 1",
+    [user.user_id, schoolId]
+  );
   return result.rowCount > 0;
 }
 
@@ -92,8 +98,8 @@ export default {
 
       if (request.method === 'GET' && path === '/schools') {
         const query = user.access_scope === 'GLOBAL'
-          ? await pool.query("SELECT id,code,name,status FROM schools WHERE status='ACTIVE' ORDER BY name")
-          : await pool.query("SELECT id,code,name,status FROM schools WHERE status='ACTIVE' AND (id=$2 OR id IN (SELECT school_id FROM user_school_access WHERE user_id=$1)) ORDER BY name", [user.user_id, user.school_id]);
+          ? await pool.query("SELECT s.id,s.code,s.name,s.status FROM schools s JOIN user_school_access usa ON usa.school_id=s.id WHERE usa.user_id=$1 ORDER BY s.name", [user.user_id])
+          : await pool.query("SELECT id,code,name,status FROM schools WHERE id=$2 OR id IN (SELECT school_id FROM user_school_access WHERE user_id=$1) ORDER BY name", [user.user_id, user.school_id]);
         return json({ status: 'success', data: query.rows }, 200, corsOrigin);
       }
 
@@ -102,14 +108,18 @@ export default {
           return json({ status: 'error', code: 'FORBIDDEN' }, 403, corsOrigin);
         }
         const result = await pool.query(
-          `SELECT s.id AS "schoolId", s.code AS "schoolCode", s.name AS "schoolName", s.status,
-                  count(DISTINCT st.id)::int AS "studentsCount",
-                  count(DISTINCT e.id)::int AS "employeesCount"
+          `WITH student_counts AS (
+             SELECT school_id,count(*)::int AS count FROM students GROUP BY school_id
+           ), employee_counts AS (
+             SELECT school_id,count(*)::int AS count FROM employees GROUP BY school_id
+           )
+           SELECT s.id AS "schoolId", s.code AS "schoolCode", s.name AS "schoolName", s.status,
+                  COALESCE(sc.count,0)::int AS "studentsCount",
+                  COALESCE(ec.count,0)::int AS "employeesCount"
            FROM schools s
-           LEFT JOIN students st ON st.school_id=s.id
-           LEFT JOIN employees e ON e.school_id=s.id
-           WHERE s.id IN (SELECT school_id FROM user_school_access WHERE user_id=$1)
-           GROUP BY s.id,s.code,s.name,s.status
+           JOIN user_school_access usa ON usa.school_id=s.id AND usa.user_id=$1
+           LEFT JOIN student_counts sc ON sc.school_id=s.id
+           LEFT JOIN employee_counts ec ON ec.school_id=s.id
            ORDER BY s.name`,
           [user.user_id]
         );
