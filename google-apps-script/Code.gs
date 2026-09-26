@@ -6714,8 +6714,8 @@ function hashStringSHA256(text) {
 
 function computeSaltedHash(password, salt, iterations) {
   // Keep every HMAC invocation on the supported String/String overload.
-  // Apps Script returns Byte[] from HMAC; encode it before the next round
-  // instead of passing Byte[] together with a String key.
+  // Convert each Byte[] digest to deterministic hex text before the next
+  // round so the implementation works in both Apps Script and Vitest.
   var passwordText = String(password == null ? '' : password);
   var saltText = String(salt == null ? '' : salt);
   var rounds = parseInt(iterations, 10);
@@ -6730,7 +6730,7 @@ function computeSaltedHash(password, salt, iterations) {
 
   for (var i = 1; i < rounds; i++) {
     digest = Utilities.computeHmacSha256Signature(
-      Utilities.base64Encode(digest),
+      bytesToHex(digest),
       saltText,
       Utilities.Charset.UTF_8
     );
