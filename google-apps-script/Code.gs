@@ -3110,7 +3110,7 @@ function handleStaffLogin(masterSs, normalizedEmail, inputPassword, requestId) {
       try {
         var newSalt = Utilities.getUuid().replace(/-/g, '');
         var newHash = computeSaltedHash(inputPassword, newSalt, PBKDF2_ITERATIONS);
-        updateUserPasswordColumns(masterSs, userRowIndex, newHash, newSalt, 'PBKDF2-HMAC-SHA256', PBKDF2_ITERATIONS);
+        updateUserPasswordColumns(masterSs, userRowIndex, newHash, newSalt, 'ITERATED-HMAC-SHA256-V1', PBKDF2_ITERATIONS);
       } catch (upgradeErr) {}
     }
   }
@@ -6427,7 +6427,7 @@ function saveUserSecure(ss, payload, authenticatedUsername, requestId) {
     loginNumber: loginNumber,
     passwordHash: passwordHash || (existing ? existing.passwordHash : ''),
     passwordSalt: passwordHash ? salt : (existing ? existing.passwordSalt : ''),
-    passwordAlgorithm: 'PBKDF2-HMAC-SHA256',
+    passwordAlgorithm: 'ITERATED-HMAC-SHA256-V1',
     passwordIterations: iterations,
     passwordInitialized: passwordInitialized,
     activationTokenHash: payload.activationTokenHash || (existing ? existing.activationTokenHash : ''),
@@ -6677,7 +6677,7 @@ function resetUserPasswordSecure(ss, userId, newPassword, authenticatedUsername,
     if (data[i][idCol] === userId) {
       usersSheet.getRange(i + 1, hashCol + 1).setValue(newHash);
       usersSheet.getRange(i + 1, saltCol + 1).setValue(salt);
-      if (algoCol >= 0) usersSheet.getRange(i + 1, algoCol + 1).setValue('PBKDF2-HMAC-SHA256');
+      if (algoCol >= 0) usersSheet.getRange(i + 1, algoCol + 1).setValue('ITERATED-HMAC-SHA256-V1');
       if (iterCol >= 0) usersSheet.getRange(i + 1, iterCol + 1).setValue(PBKDF2_ITERATIONS);
       if (changedCol >= 0) usersSheet.getRange(i + 1, changedCol + 1).setValue(getCairoISOString());
 
@@ -6713,12 +6713,29 @@ function hashStringSHA256(text) {
 }
 
 function computeSaltedHash(password, salt, iterations) {
-  var key = password + salt;
-  var digest = Utilities.computeHmacSha256Signature(key, salt);
-  var saltBytes = Utilities.newBlob(String(salt)).getBytes();
-  for (var i = 1; i < iterations; i++) {
-    digest = Utilities.computeHmacSha256Signature(digest, saltBytes);
+  // Keep every HMAC invocation on the supported String/String overload.
+  // Apps Script returns Byte[] from HMAC; encode it before the next round
+  // instead of passing Byte[] together with a String key.
+  var passwordText = String(password == null ? '' : password);
+  var saltText = String(salt == null ? '' : salt);
+  var rounds = parseInt(iterations, 10);
+
+  if (!isFinite(rounds) || rounds < 1) rounds = 1;
+
+  var digest = Utilities.computeHmacSha256Signature(
+    passwordText + saltText,
+    saltText,
+    Utilities.Charset.UTF_8
+  );
+
+  for (var i = 1; i < rounds; i++) {
+    digest = Utilities.computeHmacSha256Signature(
+      Utilities.base64Encode(digest),
+      saltText,
+      Utilities.Charset.UTF_8
+    );
   }
+
   return bytesToHex(digest);
 }
 
@@ -8048,7 +8065,7 @@ function createTeacherAccount(ss, payload, authUsername, authRole, requestId) {
     usernameNormalized: normalizedUsername,
     passwordHash: hash,
     passwordSalt: salt,
-    passwordAlgorithm: 'PBKDF2-HMAC-SHA256',
+    passwordAlgorithm: 'ITERATED-HMAC-SHA256-V1',
     passwordIterations: PBKDF2_ITERATIONS,
     status: 'Active',
     accountStatus: 'Active',
@@ -8119,7 +8136,7 @@ function resetTeacherPassword(ss, payload, authUsername, authRole, requestId) {
 
   cred.passwordHash = hash;
   cred.passwordSalt = salt;
-  cred.passwordAlgorithm = 'PBKDF2-HMAC-SHA256';
+  cred.passwordAlgorithm = 'ITERATED-HMAC-SHA256-V1';
   cred.passwordIterations = PBKDF2_ITERATIONS;
   cred.status = 'Active';
   cred.accountStatus = 'Active';
@@ -8293,7 +8310,7 @@ function changeTeacherPassword(masterSs, teacherSessionToken, newPassword, reque
 
   cred.passwordHash = hash;
   cred.passwordSalt = salt;
-  cred.passwordAlgorithm = 'PBKDF2-HMAC-SHA256';
+  cred.passwordAlgorithm = 'ITERATED-HMAC-SHA256-V1';
   cred.passwordIterations = PBKDF2_ITERATIONS;
   cred.status = 'Active';
   cred.accountStatus = 'Active';
@@ -8886,7 +8903,7 @@ function provisionInitialSystemFromScriptProperties() {
     if (uAllowedCol >= 0) usersSheet.getRange(userRowIndex, uAllowedCol + 1).setValue(allowedSchoolsJson);
     if (uHashCol >= 0) usersSheet.getRange(userRowIndex, uHashCol + 1).setValue(hash);
     if (uSaltCol >= 0) usersSheet.getRange(userRowIndex, uSaltCol + 1).setValue(salt);
-    if (uAlgoCol >= 0) usersSheet.getRange(userRowIndex, uAlgoCol + 1).setValue('PBKDF2-HMAC-SHA256');
+    if (uAlgoCol >= 0) usersSheet.getRange(userRowIndex, uAlgoCol + 1).setValue('ITERATED-HMAC-SHA256-V1');
     if (uIterCol >= 0) usersSheet.getRange(userRowIndex, uIterCol + 1).setValue(PBKDF2_ITERATIONS);
     if (uPassChangeCol >= 0) usersSheet.getRange(userRowIndex, uPassChangeCol + 1).setValue(nowIso);
     if (uFullNameCol >= 0 && cleanFullName) usersSheet.getRange(userRowIndex, uFullNameCol + 1).setValue(cleanFullName);
@@ -8901,7 +8918,7 @@ function provisionInitialSystemFromScriptProperties() {
         case 'username': newUserRow.push('systemadmin'); break;
         case 'passwordHash': newUserRow.push(hash); break;
         case 'passwordSalt': newUserRow.push(salt); break;
-        case 'passwordAlgorithm': newUserRow.push('PBKDF2-HMAC-SHA256'); break;
+        case 'passwordAlgorithm': newUserRow.push('ITERATED-HMAC-SHA256-V1'); break;
         case 'passwordIterations': newUserRow.push(PBKDF2_ITERATIONS); break;
         case 'fullName': newUserRow.push(cleanFullName); break;
         case 'role': newUserRow.push('SystemAdmin'); break;
@@ -9070,7 +9087,7 @@ function configureSystemAdminFromScriptProperties() {
   configuredUser.allowedSchoolIds = JSON.stringify(allowedSchoolIds);
   configuredUser.passwordHash = hash;
   configuredUser.passwordSalt = salt;
-  configuredUser.passwordAlgorithm = 'PBKDF2-HMAC-SHA256';
+  configuredUser.passwordAlgorithm = 'ITERATED-HMAC-SHA256-V1';
   configuredUser.passwordIterations = PBKDF2_ITERATIONS;
   configuredUser.passwordChangedAt = nowIso;
 
@@ -9300,4 +9317,3 @@ function bindSchoolSpreadsheetFromScriptProperties(schoolId, optActivate) {
     message: 'School spreadsheet bound successfully.'
   };
 }
-
