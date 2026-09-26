@@ -62,6 +62,7 @@ import {
   SyncStatus,
   SystemSettings,
   TeacherAccount,
+  TeacherLessonResource,
   TeacherSession,
   Term,
   User,
@@ -5456,6 +5457,172 @@ class StorageService {
         success: false,
         code: 'NETWORK_ERROR',
         message: 'تعذر الاتصال بالخادم لتغيير كلمة المرور.',
+      };
+    }
+  }
+
+  public async saveTeacherHomeworkDraftAuthoritative(input: {
+    title: string;
+    description?: string;
+    subject?: string;
+    grade?: string;
+    classroom: string;
+    assignedDate?: string;
+    dueDate?: string;
+  }): Promise<{ success: boolean; code?: string; message?: string; homework?: Homework }> {
+    const session = this.getTeacherSession();
+    if (!session?.teacherSessionToken) {
+      return { success: false, code: 'TEACHER_SESSION_REQUIRED', message: 'لا توجد جلسة معلم نشطة.' };
+    }
+
+    const title = String(input?.title || '').trim();
+    const classroom = String(input?.classroom || '').trim();
+    if (!title || !classroom) {
+      return { success: false, code: 'INVALID_PAYLOAD', message: 'عنوان الواجب والفصل الدراسي مطلوبان.' };
+    }
+
+    const scriptUrl = this.getBackendUrl();
+    const isOnline = typeof navigator === 'undefined' || navigator.onLine !== false;
+    if (!scriptUrl || scriptUrl.length < 15 || !isOnline) {
+      return { success: false, code: 'SERVICE_UNAVAILABLE', message: 'حفظ الواجب يتطلب الاتصال بالخادم المعتمد.' };
+    }
+
+    try {
+      const response = await fetch(scriptUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'saveTeacherHomeworkDraft',
+          teacherSessionToken: session.teacherSessionToken,
+          data: {
+            title,
+            description: String(input.description || '').trim(),
+            subject: String(input.subject || '').trim(),
+            grade: String(input.grade || '').trim(),
+            classroom,
+            assignedDate: String(input.assignedDate || '').trim(),
+            dueDate: String(input.dueDate || '').trim(),
+          },
+        }),
+      });
+
+      let res: any = null;
+      try {
+        res = await response.json();
+      } catch {}
+
+      const code = String(res?.code || '');
+      if (!response.ok || res?.status === 'error') {
+        if (response.status === 401 || [
+          'TEACHER_SESSION_REQUIRED',
+          'TEACHER_SESSION_INVALID',
+          'TEACHER_SESSION_EXPIRED',
+          'SESSION_EXPIRED',
+          'SESSION_REVOKED',
+          'INVALID_SESSION',
+        ].includes(code)) {
+          this.setTeacherSession(null);
+        }
+        return {
+          success: false,
+          code: code || 'HOMEWORK_SAVE_FAILED',
+          message: res?.message || 'تعذر حفظ مسودة الواجب.',
+        };
+      }
+
+      return {
+        success: true,
+        message: res?.message || 'تم حفظ مسودة الواجب بنجاح.',
+        homework: res?.homework as Homework | undefined,
+      };
+    } catch {
+      return {
+        success: false,
+        code: 'NETWORK_ERROR',
+        message: 'تعذر الاتصال بالخادم لحفظ مسودة الواجب.',
+      };
+    }
+  }
+
+  public async saveTeacherResourceDraftAuthoritative(input: {
+    title: string;
+    topic?: string;
+    subject?: string;
+    classroom: string;
+    studentResourceUrl?: string;
+    presentationUrl?: string;
+    preparationNotesUrl?: string;
+  }): Promise<{ success: boolean; code?: string; message?: string; resource?: TeacherLessonResource }> {
+    const session = this.getTeacherSession();
+    if (!session?.teacherSessionToken) {
+      return { success: false, code: 'TEACHER_SESSION_REQUIRED', message: 'لا توجد جلسة معلم نشطة.' };
+    }
+
+    const title = String(input?.title || '').trim();
+    const classroom = String(input?.classroom || '').trim();
+    if (!title || !classroom) {
+      return { success: false, code: 'INVALID_PAYLOAD', message: 'عنوان المورد والفصل الدراسي مطلوبان.' };
+    }
+
+    const scriptUrl = this.getBackendUrl();
+    const isOnline = typeof navigator === 'undefined' || navigator.onLine !== false;
+    if (!scriptUrl || scriptUrl.length < 15 || !isOnline) {
+      return { success: false, code: 'SERVICE_UNAVAILABLE', message: 'حفظ المورد يتطلب الاتصال بالخادم المعتمد.' };
+    }
+
+    try {
+      const response = await fetch(scriptUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'saveTeacherResourceDraft',
+          teacherSessionToken: session.teacherSessionToken,
+          data: {
+            title,
+            topic: String(input.topic || '').trim(),
+            subject: String(input.subject || '').trim(),
+            classroom,
+            studentResourceUrl: String(input.studentResourceUrl || '').trim(),
+            presentationUrl: String(input.presentationUrl || '').trim(),
+            preparationNotesUrl: String(input.preparationNotesUrl || '').trim(),
+          },
+        }),
+      });
+
+      let res: any = null;
+      try {
+        res = await response.json();
+      } catch {}
+
+      const code = String(res?.code || '');
+      if (!response.ok || res?.status === 'error') {
+        if (response.status === 401 || [
+          'TEACHER_SESSION_REQUIRED',
+          'TEACHER_SESSION_INVALID',
+          'TEACHER_SESSION_EXPIRED',
+          'SESSION_EXPIRED',
+          'SESSION_REVOKED',
+          'INVALID_SESSION',
+        ].includes(code)) {
+          this.setTeacherSession(null);
+        }
+        return {
+          success: false,
+          code: code || 'RESOURCE_SAVE_FAILED',
+          message: res?.message || 'تعذر حفظ مسودة المورد.',
+        };
+      }
+
+      return {
+        success: true,
+        message: res?.message || 'تم حفظ مسودة المورد بنجاح.',
+        resource: res?.resource as TeacherLessonResource | undefined,
+      };
+    } catch {
+      return {
+        success: false,
+        code: 'NETWORK_ERROR',
+        message: 'تعذر الاتصال بالخادم لحفظ مسودة المورد.',
       };
     }
   }
