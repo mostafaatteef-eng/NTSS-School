@@ -1,36 +1,41 @@
 import express from 'express';
 import crypto from 'node:crypto';
 import pg from 'pg';
-import cors from 'cors';
-import helmet from 'helmet';
-import rateLimit from 'express-rate-limit';
 
 const { Pool } = pg;
 const app = express();
 app.disable('x-powered-by');
-app.use(helmet());
 const allowedOrigins = String(process.env.CORS_ORIGINS || '')
   .split(',').map(x => x.trim()).filter(Boolean);
-app.use(cors({
-  origin(origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
-    return callback(new Error('Origin not allowed by CORS'));
-  },
-  credentials: false,
-}));
+app.use((req,res,next) => {
+  const origin=String(req.headers.origin||'');
+  if(origin && allowedOrigins.includes(origin)){
+    res.setHeader('Access-Control-Allow-Origin',origin);
+    res.setHeader('Vary','Origin');
+    res.setHeader('Access-Control-Allow-Headers','Content-Type, Authorization');
+    res.setHeader('Access-Control-Allow-Methods','GET,POST,PUT,PATCH,DELETE,OPTIONS');
+  }
+  res.setHeader('X-Content-Type-Options','nosniff');
+  res.setHeader('X-Frame-Options','DENY');
+  res.setHeader('Referrer-Policy','no-referrer');
+  if(req.method==='OPTIONS') return res.sendStatus(origin && allowedOrigins.includes(origin) ? 204 : 403);
+  next();
+});
 app.use(express.json({ limit: '2mb' }));
-app.use('/api', rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: Number(process.env.RATE_LIMIT_MAX || 300),
-  standardHeaders: true,
-  legacyHeaders: false,
-}));
-app.use('/api/login', rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: Number(process.env.LOGIN_RATE_LIMIT_MAX || 20),
-  standardHeaders: true,
-  legacyHeaders: false,
-}));
+
+const rateBuckets=new Map();
+function rateLimit({windowMs,max}){
+  return (req,res,next)=>{
+    const key=(req.ip||req.socket?.remoteAddress||'unknown')+':'+req.path;
+    const now=Date.now(); const current=rateBuckets.get(key);
+    if(!current||current.reset<=now){rateBuckets.set(key,{count:1,reset:now+windowMs});return next();}
+    current.count+=1;
+    if(current.count>max) return res.status(429).json({status:'error',code:'RATE_LIMITED'});
+    next();
+  };
+}
+app.use('/api',rateLimit({windowMs:15*60*1000,max:Number(process.env.RATE_LIMIT_MAX||300)}));
+app.use('/api/login',rateLimit({windowMs:15*60*1000,max:Number(process.env.LOGIN_RATE_LIMIT_MAX||20)}));
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
