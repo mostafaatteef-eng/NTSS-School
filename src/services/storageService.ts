@@ -2541,6 +2541,30 @@ class StorageService {
       return { success: false, message: 'غير مصرح للمعلم بتعديل أو إضافة حصص في الجدول العام (مقتصر على الإدارة والمشرفين).' };
     }
 
+    if (isPostgresBackendEnabled()) {
+      const schoolId = this.getActiveSchoolId();
+      if (!schoolId) return { success: false, message: 'يرجى اختيار المدرسة أولاً.' };
+      try {
+        const pg = await postgresApiRequest<any>('/schedule/manage', caller.sessionToken, {
+          method: 'POST', body: JSON.stringify({ action: 'saveScheduleEntry', schoolId, data: item }),
+        });
+        const res = pg.body || {};
+        if (!pg.ok || res.status !== 'success') {
+          if (pg.status === 401) this.setCurrentUser(null);
+          return { success: false, message: res.message || 'فشل حفظ الحصة في PostgreSQL.' };
+        }
+        const saved = (res.data || item) as ScheduleItem;
+        const list = this.getSchedule();
+        const idx = list.findIndex(s => s.id === saved.id || s.id === item.id);
+        if (idx >= 0) list[idx] = saved; else list.push(saved);
+        localStorage.setItem(STORAGE_KEYS.SCHEDULE, JSON.stringify(list));
+        this.notifyChange();
+        return { success: true, message: res.message || 'تم حفظ الحصة في الجدول بنجاح' };
+      } catch {
+        return { success: false, message: 'تعذر الاتصال بخادم PostgreSQL لحفظ الجدول.' };
+      }
+    }
+
     const scriptUrl = this.getBackendUrl();
     if (!scriptUrl || scriptUrl.length < 15) {
       return { success: false, message: 'Google Apps Script URL غير مهيأ' };
@@ -2626,6 +2650,26 @@ class StorageService {
     const isScheduleAdmin = caller.role === 'Admin' || caller.role === 'SchoolDirector' || (caller.role as string) === 'Supervisor' || caller.role === 'TeacherAffairs';
     if (!isScheduleAdmin) {
       return { success: false, message: 'غير مصرح للمعلم بحذف حصص من الجدول العام.' };
+    }
+
+    if (isPostgresBackendEnabled()) {
+      const schoolId = this.getActiveSchoolId();
+      if (!schoolId) return { success: false, message: 'يرجى اختيار المدرسة أولاً.' };
+      try {
+        const pg = await postgresApiRequest<any>('/schedule/manage', caller.sessionToken, {
+          method: 'POST', body: JSON.stringify({ action: 'deleteScheduleEntry', schoolId, data: { id } }),
+        });
+        const res = pg.body || {};
+        if (!pg.ok || res.status !== 'success') {
+          if (pg.status === 401) this.setCurrentUser(null);
+          return { success: false, message: res.message || 'فشل حذف الحصة من PostgreSQL.' };
+        }
+        localStorage.setItem(STORAGE_KEYS.SCHEDULE, JSON.stringify(this.getSchedule().filter(s => s.id !== id)));
+        this.notifyChange();
+        return { success: true, message: res.message || 'تم حذف الحصة من الجدول' };
+      } catch {
+        return { success: false, message: 'تعذر الاتصال بخادم PostgreSQL لحذف الحصة.' };
+      }
     }
 
     const scriptUrl = this.getBackendUrl();
