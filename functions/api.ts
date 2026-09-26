@@ -193,6 +193,116 @@ export default {
         return json({ status: 'success', activeSchoolId: schoolId }, 200, corsOrigin);
       }
 
+      if (request.method === 'POST' && (path === '/students/manage' || path === '/employees/manage')) {
+        const body: any = await request.json();
+        const action = String(body.action || '');
+        const data: any = body.data || {};
+        const isStudent = path === '/students/manage';
+        const allowedRoles = isStudent
+          ? new Set(['SystemAdmin','Admin','SchoolAdmin','SchoolDirector','StudentAffairs'])
+          : new Set(['SystemAdmin','Admin','SchoolAdmin','SchoolDirector','TeacherAffairs']);
+        if (!allowedRoles.has(String(user.role || ''))) return json({ status: 'error', code: 'FORBIDDEN' }, 403, corsOrigin);
+        const schoolId = String(body.schoolId || user.active_school_id || user.school_id || '').trim();
+        if (!(await canAccessSchool(user, schoolId))) return json({ status: 'error', code: 'FORBIDDEN' }, 403, corsOrigin);
+        const table = isStudent ? 'students' : 'employees';
+        const entity = isStudent ? 'STUDENT' : 'EMPLOYEE';
+        const readAction = isStudent ? 'getStudents' : 'getEmployees';
+        if (action === readAction) {
+          const rows = await pool.query(`SELECT * FROM ${table} WHERE school_id=$1 ORDER BY full_name`, [schoolId]);
+          return json({ status: 'success', data: rows.rows }, 200, corsOrigin);
+        }
+        const createAction = isStudent ? 'createManagedStudent' : 'createManagedEmployee';
+        const updateAction = isStudent ? 'updateManagedStudent' : 'updateManagedEmployee';
+        const statusAction = isStudent ? 'setManagedStudentStatus' : 'setManagedEmployeeStatus';
+        const deleteAction = isStudent ? 'deleteStudent' : 'deleteEmployee';
+        if (![createAction, updateAction, statusAction, deleteAction].includes(action)) {
+          return json({ status: 'error', code: 'ACTION_NOT_MIGRATED' }, 400, corsOrigin);
+        }
+        const targetId = String(data.id || '').trim() || (isStudent ? 'STD-' : 'EMP-') + crypto.randomBytes(8).toString('hex').toUpperCase();
+        if (action === deleteAction) {
+          const deleted = await pool.query(`DELETE FROM ${table} WHERE school_id=$1 AND id=$2 RETURNING id`, [schoolId, targetId]);
+          if (!deleted.rowCount) return json({ status: 'error', code: 'NOT_FOUND' }, 404, corsOrigin);
+          await pool.query('INSERT INTO audit_logs(school_id,user_id,username,role,action,entity,target_id,details) VALUES($1,$2,$3,$4,$5,$6,$7,$8)', [schoolId,user.user_id,user.email,user.role,'DELETE',entity,targetId,'Deleted through Neon API']);
+          return json({ status: 'success', data: { id: targetId } }, 200, corsOrigin);
+        }
+        if (action === statusAction) {
+          const status = String(data.status || '').trim();
+          const updated = await pool.query(`UPDATE ${table} SET status=$3,updated_at=now() WHERE school_id=$1 AND id=$2 RETURNING *`, [schoolId,targetId,status]);
+          if (!updated.rowCount) return json({ status: 'error', code: 'NOT_FOUND' }, 404, corsOrigin);
+          await pool.query('INSERT INTO audit_logs(school_id,user_id,username,role,action,entity,target_id,details) VALUES($1,$2,$3,$4,$5,$6,$7,$8)', [schoolId,user.user_id,user.email,user.role,'STATUS',entity,targetId,status]);
+          return json({ status: 'success', data: updated.rows[0], [isStudent ? 'student' : 'employee']: updated.rows[0] }, 200, corsOrigin);
+        }
+        const fullName = String(data.fullName || data.name || '').trim();
+        if (!fullName) return json({ status: 'error', code: 'FULL_NAME_REQUIRED' }, 400, corsOrigin);
+        const payload = JSON.stringify(data);
+        let saved;
+        if (isStudent) {
+          saved = await pool.query(
+            `INSERT INTO students(id,school_id,student_code,full_name,grade,classroom,section,status,payload)
+             VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb)
+             ON CONFLICT(school_id,id) DO UPDATE SET student_code=EXCLUDED.student_code,full_name=EXCLUDED.full_name,grade=EXCLUDED.grade,classroom=EXCLUDED.classroom,section=EXCLUDED.section,status=EXCLUDED.status,payload=EXCLUDED.payload,updated_at=now()
+             RETURNING *`,
+            [targetId,schoolId,String(data.studentCode||''),fullName,String(data.grade||''),String(data.classroom||''),String(data.section||''),String(data.status||'نشط'),payload]
+          );
+        } else {
+          saved = await pool.query(
+            `INSERT INTO employees(id,school_id,employee_code,full_name,department,job_title,status,payload)
+             VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb)
+             ON CONFLICT(school_id,id) DO UPDATE SET employee_code=EXCLUDED.employee_code,full_name=EXCLUDED.full_name,department=EXCLUDED.department,job_title=EXCLUDED.job_title,status=EXCLUDED.status,payload=EXCLUDED.payload,updated_at=now()
+             RETURNING *`,
+            [targetId,schoolId,String(data.employeeCode||data.employeeId||''),fullName,String(data.department||''),String(data.jobTitle||''),String(data.status||'Active'),payload]
+          );
+        }
+        await pool.query('INSERT INTO audit_logs(school_id,user_id,username,role,action,entity,target_id,details) VALUES($1,$2,$3,$4,$5,$6,$7,$8)', [schoolId,user.user_id,user.email,user.role,action===createAction?'CREATE':'UPDATE',entity,targetId,'Saved through Neon API']);
+        return json({ status: 'success', data: saved.rows[0], [isStudent ? 'student' : 'employee']: saved.rows[0] }, action===createAction?201:200, corsOrigin);
+      }
+
+      if (request.method === 'POST' && (path === '/student-attendance/batch' || path === '/employee-attendance/batch')) {
+        const body: any = await request.json();
+        const isStudent = path === '/student-attendance/batch';
+        const allowedRoles = isStudent
+          ? new Set(['SystemAdmin','Admin','SchoolAdmin','SchoolDirector','StudentAffairs'])
+          : new Set(['SystemAdmin','Admin','SchoolAdmin','SchoolDirector','TeacherAffairs']);
+        if (!allowedRoles.has(String(user.role || ''))) return json({ status: 'error', code: 'FORBIDDEN' }, 403, corsOrigin);
+        const schoolId = String(body.schoolId || user.active_school_id || user.school_id || '').trim();
+        if (!(await canAccessSchool(user, schoolId))) return json({ status: 'error', code: 'FORBIDDEN' }, 403, corsOrigin);
+        const date = String(body.date || '').slice(0,10);
+        const records = Array.isArray(body.records) ? body.records : [];
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || records.length > 500) return json({ status: 'error', code: 'INVALID_BATCH' }, 400, corsOrigin);
+        const canonical: any[] = [];
+        for (const rec of records) {
+          if (isStudent) {
+            const studentId = String(rec.studentId || '').trim();
+            const exists = await pool.query('SELECT full_name FROM students WHERE school_id=$1 AND id=$2', [schoolId,studentId]);
+            if (!exists.rowCount) return json({ status:'error', code:'STUDENT_NOT_FOUND', studentId },404,corsOrigin);
+            const payload = JSON.stringify({ lateMinutes:Number(rec.lateMinutes||0), notes:String(rec.notes||'') });
+            const saved = await pool.query(
+              `INSERT INTO student_attendance(school_id,student_id,attendance_date,status,payload) VALUES($1,$2,$3::date,$4,$5::jsonb)
+               ON CONFLICT(school_id,student_id,attendance_date) DO UPDATE SET status=EXCLUDED.status,payload=EXCLUDED.payload RETURNING id,student_id,attendance_date,status,payload`,
+              [schoolId,studentId,date,String(rec.status||'لم يسجل'),payload]
+            );
+            const row=saved.rows[0]; canonical.push({ id:String(row.id),schoolId,studentId:row.student_id,studentName:exists.rows[0].full_name,date:String(row.attendance_date).slice(0,10),status:row.status,...(row.payload||{}) });
+          } else {
+            const employeeId = String(rec.employeeId || '').trim();
+            const exists = await pool.query('SELECT full_name FROM employees WHERE school_id=$1 AND id=$2', [schoolId,employeeId]);
+            if (!exists.rowCount) return json({ status:'error', code:'EMPLOYEE_NOT_FOUND', employeeId },404,corsOrigin);
+            const payload = JSON.stringify({ notes:String(rec.notes||'') });
+            const checkIn = String(rec.checkIn||'').trim();
+            const checkOut = String(rec.checkOut||'').trim();
+            const saved = await pool.query(
+              `INSERT INTO employee_attendance(school_id,employee_id,attendance_date,status,check_in,check_out,payload)
+               VALUES($1,$2,$3::date,$4,CASE WHEN $5='' THEN NULL ELSE ($3::date + $5::time) END,CASE WHEN $6='' THEN NULL ELSE ($3::date + $6::time) END,$7::jsonb)
+               ON CONFLICT(school_id,employee_id,attendance_date) DO UPDATE SET status=EXCLUDED.status,check_in=EXCLUDED.check_in,check_out=EXCLUDED.check_out,payload=EXCLUDED.payload
+               RETURNING id,employee_id,attendance_date,status,check_in,check_out,payload`,
+              [schoolId,employeeId,date,String(rec.status||''),checkIn,checkOut,payload]
+            );
+            const row=saved.rows[0]; canonical.push({ id:String(row.id),schoolId,employeeId:row.employee_id,employeeName:exists.rows[0].full_name,date:String(row.attendance_date).slice(0,10),status:row.status,checkIn:checkIn,checkOut:checkOut,...(row.payload||{}) });
+          }
+        }
+        await pool.query('INSERT INTO audit_logs(school_id,user_id,username,role,action,entity,details) VALUES($1,$2,$3,$4,$5,$6,$7)', [schoolId,user.user_id,user.email,user.role,'BATCH_UPSERT',isStudent?'STUDENT_ATTENDANCE':'ATTENDANCE',`Saved ${canonical.length} records for ${date}`]);
+        return json({ status:'success', savedCount:canonical.length, records:canonical },200,corsOrigin);
+      }
+
       if (request.method === 'GET' && (path === '/student-attendance' || path === '/employee-attendance')) {
         const schoolId = String(url.searchParams.get('schoolId') || user.active_school_id || user.school_id || '');
         if (!(await canAccessSchool(user, schoolId))) return json({ status: 'error', code: 'FORBIDDEN' }, 403, corsOrigin);
