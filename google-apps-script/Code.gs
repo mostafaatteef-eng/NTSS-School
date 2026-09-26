@@ -6945,6 +6945,15 @@ function ensureProductionStaffSheetsExist(ss) {
         var h = sheetDefinitions[name];
         sheet.getRange(1, 1, 1, h.length).setValues([h]);
         styleHeaderRow(sheet, h.length);
+      } else {
+        // Existing installations may have legacy sheets that predate newer
+        // authentication/RBAC columns. Add every missing canonical header
+        // before any upsert so fields such as passwordHash/passwordSalt are
+        // never silently discarded.
+        var requiredHeaders = sheetDefinitions[name];
+        for (var headerIndex = 0; headerIndex < requiredHeaders.length; headerIndex++) {
+          ensureHeaderColumn(sheet, requiredHeaders[headerIndex]);
+        }
       }
     }
   }
