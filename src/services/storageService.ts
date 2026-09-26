@@ -5628,6 +5628,161 @@ class StorageService {
     }
   }
 
+  private sanitizeEmployeeManagementInput(input: Partial<Employee>): Partial<Employee> {
+    const safe: Partial<Employee> = {
+      id: input.id ? String(input.id).trim().toUpperCase() : undefined,
+      name: String(input.name || input.fullName || '').trim(),
+      fullName: String(input.name || input.fullName || '').trim(),
+      employeeType: input.employeeType === 'Teacher' ? 'Teacher' : 'Administrative',
+      jobTitle: String(input.jobTitle || '').trim(),
+      specialization: String(input.specialization || '').trim(),
+      teacherCode: input.employeeType === 'Teacher' && input.teacherCode
+        ? String(input.teacherCode).trim().toUpperCase()
+        : undefined,
+      nationalId: input.nationalId ? String(input.nationalId).trim() : undefined,
+      hireDate: input.hireDate ? String(input.hireDate).trim() : undefined,
+      workingHours: input.workingHours !== undefined ? Number(input.workingHours) : undefined,
+      workStartTime: input.workStartTime ? String(input.workStartTime).trim() : undefined,
+      workEndTime: input.workEndTime ? String(input.workEndTime).trim() : undefined,
+      daysOff: Array.isArray(input.daysOff) ? input.daysOff.map(x => String(x).trim()).filter(Boolean) : undefined,
+      status: input.status,
+      phone: input.phone ? String(input.phone).trim() : undefined,
+      email: input.email ? String(input.email).trim().toLowerCase() : undefined,
+      teachingSubjects: Array.isArray(input.teachingSubjects) ? input.teachingSubjects : undefined,
+      assignedGrades: Array.isArray(input.assignedGrades) ? input.assignedGrades : undefined,
+    };
+
+    return safe;
+  }
+
+  private async postEmployeeManagementAction(
+    action: string,
+    data?: Record<string, unknown> | Array<Record<string, unknown>>
+  ): Promise<{
+    success: boolean;
+    code?: string;
+    message?: string;
+    data?: any;
+    employee?: Employee;
+    stats?: { added: number; updated: number; skipped: number; errors: Array<{ row: number; code: string; message: string }> };
+  }> {
+    const user = this.getCurrentUser();
+    if (!user?.sessionToken) {
+      return { success: false, code: 'AUTH_REQUIRED', message: 'يجب تسجيل الدخول بجلسة عمل معتمدة.' };
+    }
+
+    const scriptUrl = this.getBackendUrl();
+    const online = typeof navigator === 'undefined' || navigator.onLine !== false;
+    if (!scriptUrl || scriptUrl.length < 15 || !online) {
+      return { success: false, code: 'SERVICE_UNAVAILABLE', message: 'إدارة بيانات العاملين تتطلب الاتصال بالخادم المعتمد.' };
+    }
+
+    try {
+      const response = await fetch(scriptUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action,
+          sessionToken: user.sessionToken,
+          ...(data !== undefined ? { data } : {}),
+        }),
+      });
+
+      let res: any = null;
+      try { res = await response.json(); } catch {}
+      const code = String(res?.code || '');
+
+      if (!response.ok || res?.status === 'error') {
+        if (response.status === 401 || ['SESSION_EXPIRED','INVALID_SESSION','SESSION_REVOKED','UNAUTHORIZED','AUTH_REQUIRED'].includes(code)) {
+          this.setCurrentUser(null);
+        }
+        return {
+          success: false,
+          code: code || 'EMPLOYEE_MANAGEMENT_ACTION_FAILED',
+          message: res?.message || 'تعذر تنفيذ العملية على بيانات العاملين.',
+        };
+      }
+
+      return {
+        success: true,
+        message: res?.message || 'تم تنفيذ العملية بنجاح.',
+        data: res?.data,
+        employee: res?.employee as Employee | undefined,
+        stats: res?.stats,
+      };
+    } catch {
+      return {
+        success: false,
+        code: 'NETWORK_ERROR',
+        message: 'تعذر الاتصال بالخادم لإدارة بيانات العاملين.',
+      };
+    }
+  }
+
+  public async getEmployeeManagementDataAuthoritative(): Promise<{
+    success: boolean;
+    code?: string;
+    message?: string;
+    employees?: Employee[];
+  }> {
+    const result = await this.postEmployeeManagementAction('getEmployees');
+    if (!result.success) return result;
+    return {
+      success: true,
+      message: result.message,
+      employees: Array.isArray(result.data) ? result.data : [],
+    };
+  }
+
+  public async createManagedEmployeeAuthoritative(input: Partial<Employee>) {
+    const safe = this.sanitizeEmployeeManagementInput(input);
+    return this.postEmployeeManagementAction('createManagedEmployee', safe as Record<string, unknown>);
+  }
+
+  public async updateManagedEmployeeAuthoritative(input: Partial<Employee> & { id: string }) {
+    const safe = this.sanitizeEmployeeManagementInput(input);
+    safe.id = String(input.id || '').trim().toUpperCase();
+    return this.postEmployeeManagementAction('updateManagedEmployee', safe as Record<string, unknown>);
+  }
+
+  public async setManagedEmployeeStatusAuthoritative(
+    id: string,
+    status: 'Active' | 'Inactive' | 'Suspended'
+  ) {
+    return this.postEmployeeManagementAction('setManagedEmployeeStatus', {
+      id: String(id || '').trim().toUpperCase(),
+      status,
+    });
+  }
+
+  public async deleteManagedEmployeeAuthoritative(id: string) {
+    return this.postEmployeeManagementAction('deleteEmployee', {
+      id: String(id || '').trim().toUpperCase(),
+    });
+  }
+
+  public async importManagedEmployeesAuthoritative(importedEmployees: Partial<Employee>[]): Promise<{
+    success: boolean;
+    code?: string;
+    message?: string;
+    added: number;
+    updated: number;
+    skipped: number;
+    errors: Array<{ row: number; code: string; message: string }>;
+  }> {
+    const payload = importedEmployees.map(emp => this.sanitizeEmployeeManagementInput(emp) as Record<string, unknown>);
+    const result = await this.postEmployeeManagementAction('importManagedEmployees', payload);
+    return {
+      success: result.success,
+      code: result.code,
+      message: result.message,
+      added: Number(result.stats?.added || 0),
+      updated: Number(result.stats?.updated || 0),
+      skipped: Number(result.stats?.skipped || 0),
+      errors: Array.isArray(result.stats?.errors) ? result.stats!.errors : [],
+    };
+  }
+
   private async postLeaveManagementAction(
     action: string,
     data?: Record<string, unknown>
