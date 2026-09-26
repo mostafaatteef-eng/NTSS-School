@@ -26,6 +26,7 @@
   "exclude": [
     "neon.ts",
     "server",
-    "scripts"
+    "scripts",
+    "functions"
   ]
 }
