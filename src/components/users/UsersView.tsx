@@ -349,7 +349,7 @@ export const UsersView: React.FC<UsersViewProps> = ({ currentUser }) => {
     return (
       <div className="space-y-5" dir="rtl">
         <SubTabs active={activeSubTab} setActive={setActiveSubTab} />
-        <TeacherAccountsManager currentUserRole={currentUser?.role as string | undefined} />
+        <TeacherAccountsManager currentUser={currentUser} />
       </div>
     );
   }
