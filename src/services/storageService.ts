@@ -70,6 +70,7 @@ import {
   User,
   normalizeStaffRole,
 } from '../types';
+import { isPostgresBackendEnabled, postgresApiRequest } from './backend/postgresRuntime';
 import { EmployeePermissionRecord } from '../types_extended';
 import {
   MASTER_SCHOOLS_KEY,
@@ -495,6 +496,36 @@ class StorageService {
         code: 'SCHOOL_INACTIVE',
         message: 'المدرسة المطلوبة غير مفعلة حالياً في النظام.',
       };
+    }
+
+    if (isPostgresBackendEnabled()) {
+      try {
+        const pg = await postgresApiRequest<any>('/switch-school', currentUser.sessionToken || '', {
+          method: 'POST',
+          body: JSON.stringify({ schoolId: cleanTarget }),
+        });
+        const result = pg.body;
+        if (!pg.ok || result?.status !== 'success') {
+          return {
+            success: false,
+            code: result?.code || 'SWITCH_FAILED',
+            message: result?.message || 'فشل تبديل سياق المدرسة من قبل الخادم.',
+          };
+        }
+        this.clearSchoolScopedCaches();
+        const updatedUser: User = {
+          ...currentUser,
+          activeSchoolId: String(result.activeSchoolId || cleanTarget).trim().toUpperCase(),
+          sessionToken: currentUser.sessionToken,
+        };
+        this.setCurrentUser(updatedUser);
+        this.setActiveSchoolId(updatedUser.activeSchoolId || cleanTarget);
+        if (currentUser.sessionToken) delete this.sessionValidationCache[currentUser.sessionToken];
+        this.notifyChange();
+        return { success: true, user: updatedUser, school: targetSchoolObj, message: 'تم تبديل سياق المدرسة بنجاح.' };
+      } catch {
+        return { success: false, code: 'NETWORK_ERROR', message: 'حدث خطأ في الاتصال أثناء تبديل المدرسة.' };
+      }
     }
 
     const scriptUrl = this.getBackendUrl();
