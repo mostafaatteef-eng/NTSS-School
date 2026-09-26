@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Download,
   Edit,
@@ -24,13 +24,13 @@ import {
 import * as XLSX from 'xlsx';
 import {
   Student,
-  StudentEnrollment,
   StudentTransferHistory,
   normalizeStudentGender,
   normalizeStudentReligion,
   normalizeStudentEnrollmentState,
 } from '../../types';
 import { storageService } from '../../services/storageService';
+import { hasPermission } from '../../utils/permissions';
 import { ImportWizardModal } from '../import/ImportWizardModal';
 import { StudentProfileModal } from './StudentProfileModal';
 import { StudentPromotionWizard } from './StudentPromotionWizard';
@@ -54,6 +54,14 @@ export const StudentsView: React.FC = () => {
   const [selectedStudentForProfile, setSelectedStudentForProfile] = useState<Student | null>(null);
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
+  const [managementLoading, setManagementLoading] = useState(false);
+  const [managementError, setManagementError] = useState('');
+  const [managementAction, setManagementAction] = useState<string | null>(null);
+
+  const currentUser = storageService.getCurrentUser();
+  const canCreateStudent = hasPermission(currentUser, 'students.create');
+  const canEditStudent = hasPermission(currentUser, 'students.edit');
+  const canImportStudents = hasPermission(currentUser, 'students.import');
 
   // Quick Transfer Modal
   const [transferModalStudent, setTransferModalStudent] = useState<Student | null>(null);
@@ -89,9 +97,24 @@ export const StudentsView: React.FC = () => {
   const stages = settings.stages || [];
   const activeAcademicYear = storageService.getActiveAcademicYear();
 
-  const reloadStudents = () => {
-    setStudents(storageService.getStudents());
+  const reloadStudents = async () => {
+    setManagementLoading(true);
+    setManagementError('');
+    const result = await storageService.getStudentManagementDataAuthoritative();
+    setManagementLoading(false);
+
+    if (!result.success) {
+      setManagementError(result.message || 'تعذر تحميل سجل الطلاب من الخادم المعتمد.');
+      return false;
+    }
+
+    setStudents(result.students || []);
+    return true;
   };
+
+  useEffect(() => {
+    void reloadStudents();
+  }, [currentUser?.sessionToken, currentUser?.activeSchoolId, currentUser?.schoolId]);
 
   // Extract unique stages, grades, classrooms
   const availableGrades = useMemo(() => {
@@ -135,6 +158,10 @@ export const StudentsView: React.FC = () => {
   }, [students, searchTerm, selectedStage, selectedGrade, selectedClassroom, selectedStatus, genderFilter, religionFilter, studentStatusFilter]);
 
   const handleOpenAdd = () => {
+    if (!canCreateStudent) {
+      setManagementError('ليست لديك صلاحية إضافة طالب جديد.');
+      return;
+    }
     setEditingStudent(null);
     const currYear = activeAcademicYear?.name || settings.currentAcademicYear || '2025/2026';
     setFormData({
@@ -162,79 +189,119 @@ export const StudentsView: React.FC = () => {
   };
 
   const handleOpenEdit = (student: Student) => {
+    if (!canEditStudent) {
+      setManagementError('ليست لديك صلاحية تعديل بيانات الطلاب.');
+      return;
+    }
     setEditingStudent(student);
     setFormData({ ...student });
     setIsFormModalOpen(true);
   };
 
-  const handleSaveForm = (e: React.FormEvent) => {
+  const handleSaveForm = async (e: React.FormEvent) => {
     e.preventDefault();
+    setManagementError('');
+
+    const requiredPermission = editingStudent ? canEditStudent : canCreateStudent;
+    if (!requiredPermission) {
+      setManagementError('ليست لديك الصلاحية اللازمة لتنفيذ هذه العملية.');
+      return;
+    }
+
     if (!formData.name?.trim() || !formData.grade?.trim() || !formData.classroom?.trim()) {
-      alert('يرجى ملء الحقول الأساسية: اسم الطالب، الصف الدراسي، والفصل');
+      setManagementError('يرجى ملء الحقول الأساسية: اسم الطالب، الصف الدراسي، والفصل.');
       return;
     }
 
     const currentYear = activeAcademicYear?.name || formData.academicYear || settings.currentAcademicYear || '2025/2026';
     const currentYearId = activeAcademicYear?.id || 'AY-CURRENT';
-    const studentId = editingStudent ? editingStudent.id : `STU-${Date.now().toString().slice(-6)}`;
-    const now = getCairoNowISO();
-
     const normalizedG = formData.gender ? normalizeStudentGender(formData.gender) : undefined;
     const normalizedR = formData.religion ? normalizeStudentReligion(formData.religion) : undefined;
     const normalizedS = formData.studentStatus ? normalizeStudentEnrollmentState(formData.studentStatus) : undefined;
+    const desiredStatus = String(formData.status || editingStudent?.status || 'نشط') as
+      | 'نشط'
+      | 'غير نشط'
+      | 'موقوف'
+      | 'منقول'
+      | 'متخرج';
 
-    const studentRecord: Student = {
-      id: studentId,
-      studentCode: formData.studentCode || `STD-${Math.floor(1000 + Math.random() * 9000)}`,
+    const studentInput: Partial<Student> = {
+      studentCode: formData.studentCode?.trim() || undefined,
       name: formData.name.trim(),
       nationalId: formData.nationalId?.trim() || undefined,
       gender: normalizedG === 'غير محدد' ? undefined : normalizedG,
       religion: normalizedR === 'غير محدد' ? undefined : normalizedR,
       studentStatus: normalizedS === 'غير محدد' ? undefined : normalizedS,
+      birthDate: formData.birthDate,
       stage: formData.stage || 'المرحلة الثانوية',
+      stageId: formData.stageId,
       grade: formData.grade,
+      gradeId: formData.gradeId,
+      gradeName: formData.gradeName,
       classroom: formData.classroom,
+      classroomId: formData.classroomId,
+      classroomNumber: formData.classroomNumber,
       section: formData.section || 'أ',
       academicYear: currentYear,
-      status: (formData.status as any) || 'نشط',
-      parentName: formData.parentName?.trim() || 'ولي أمر الطالب',
-      relationship: formData.relationship?.trim() || 'ولي أمر',
+      academicYearId: currentYearId,
+      enrollmentDate: activeAcademicYear?.startDate,
+      parentName: formData.parentName?.trim() || '',
+      relationship: formData.relationship?.trim() || '',
       parentPhone: formData.parentPhone?.trim() || '',
       parentEmail: formData.parentEmail?.trim() || '',
       phone: formData.phone?.trim() || '',
       address: formData.address?.trim() || '',
       notes: formData.notes?.trim() || '',
       initialBehaviorScore: formData.initialBehaviorScore ?? 100,
-      createdAt: editingStudent?.createdAt || now,
-      updatedAt: now,
     };
 
-    // Save Student Record
-    storageService.saveStudent(studentRecord);
+    setManagementAction(editingStudent ? 'update-student' : 'create-student');
+    const result = editingStudent
+      ? await storageService.updateManagedStudentAuthoritative(
+          editingStudent.id,
+          studentInput,
+          {
+            academicYearId: currentYearId,
+            academicYearName: currentYear,
+            enrollmentDate: activeAcademicYear?.startDate,
+          }
+        )
+      : await storageService.createManagedStudentAuthoritative(
+          studentInput,
+          {
+            academicYearId: currentYearId,
+            academicYearName: currentYear,
+            enrollmentDate: activeAcademicYear?.startDate,
+          }
+        );
 
-    // Save / Update Student Enrollment for current year
-    const enrollment: StudentEnrollment = {
-      id: `ENR-${studentId}-${currentYearId}`,
-      studentId: studentId,
-      studentCode: studentRecord.studentCode,
-      studentName: studentRecord.name,
-      academicYearId: currentYearId,
-      academicYearName: currentYear,
-      stage: studentRecord.stage,
-      grade: studentRecord.grade,
-      classroom: studentRecord.classroom,
-      section: studentRecord.section,
-      enrollmentStatus: studentRecord.status === 'نشط' ? 'نشط' : 'موقوف',
-      status: 'ACTIVE',
-      promotionStatus: 'ENROLLED',
-      enrollmentDate: activeAcademicYear?.startDate || now.split('T')[0],
-      createdAt: now,
-      updatedAt: now,
-    };
-    storageService.saveStudentEnrollment(enrollment);
+    if (!result.success || !result.student) {
+      setManagementAction(null);
+      setManagementError(result.message || 'تعذر حفظ بيانات الطالب.');
+      return;
+    }
 
+    const currentStatus = String(result.student.status || 'نشط');
+    if (desiredStatus !== currentStatus) {
+      if (!canEditStudent) {
+        setManagementAction(null);
+        setManagementError('تم إنشاء الطالب بحالة نشط، لكن تغيير الحالة يتطلب صلاحية تعديل الطلاب.');
+        await reloadStudents();
+        return;
+      }
+      const statusResult = await storageService.setManagedStudentStatusAuthoritative(result.student.id, desiredStatus);
+      if (!statusResult.success) {
+        setManagementAction(null);
+        setManagementError(statusResult.message || 'تم حفظ بيانات الطالب لكن تعذر تحديث حالته.');
+        await reloadStudents();
+        return;
+      }
+    }
+
+    setManagementAction(null);
     setIsFormModalOpen(false);
-    reloadStudents();
+    setEditingStudent(null);
+    await reloadStudents();
   };
 
   const handleOpenTransfer = (student: Student) => {
@@ -279,14 +346,25 @@ export const StudentsView: React.FC = () => {
     reloadStudents();
   };
 
-  const handleDelete = (id: string, name: string) => {
-    if (window.confirm(`هل تريد نقل الطالب (${name}) إلى حالة "مؤرشف / غير نشط" للحفاظ على السجلات التاريخية؟`)) {
-      const target = students.find(s => s.id === id);
-      if (target) {
-        storageService.saveStudent({ ...target, status: 'غير نشط' });
-        reloadStudents();
-      }
+  const handleDelete = async (id: string, name: string) => {
+    if (!canEditStudent) {
+      setManagementError('ليست لديك صلاحية أرشفة أو تغيير حالة الطالب.');
+      return;
     }
+    if (!window.confirm(`هل تريد نقل الطالب (${name}) إلى حالة "مؤرشف / غير نشط" للحفاظ على السجلات التاريخية؟`)) {
+      return;
+    }
+
+    setManagementAction(`archive-student:${id}`);
+    const result = await storageService.setManagedStudentStatusAuthoritative(id, 'غير نشط');
+    setManagementAction(null);
+
+    if (!result.success) {
+      setManagementError(result.message || 'تعذر أرشفة الطالب.');
+      return;
+    }
+
+    await reloadStudents();
   };
 
   const exportToExcel = () => {
@@ -340,6 +418,7 @@ export const StudentsView: React.FC = () => {
             <span>معالج ترحيل الطلاب</span>
           </button>
 
+          {canImportStudents && (
           <button
             onClick={() => setIsImportModalOpen(true)}
             className="inline-flex items-center gap-2 px-4 py-2.5 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs rounded-2xl border border-slate-200 transition-colors shadow-xs cursor-pointer"
@@ -347,6 +426,7 @@ export const StudentsView: React.FC = () => {
             <Upload className="w-4 h-4 text-[#008e8b]" />
             <span>استيراد ملف Excel</span>
           </button>
+          )}
 
           <button
             onClick={exportToExcel}
@@ -356,6 +436,7 @@ export const StudentsView: React.FC = () => {
             <span>تصدير Excel</span>
           </button>
 
+          {canCreateStudent && (
           <button
             onClick={handleOpenAdd}
             className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#008e8b] hover:bg-teal-700 text-white font-bold text-xs rounded-2xl transition-colors shadow-md cursor-pointer"
@@ -363,8 +444,24 @@ export const StudentsView: React.FC = () => {
             <Plus className="w-4 h-4" />
             <span>إضافة طالب جديد</span>
           </button>
+          )}
         </div>
       </div>
+
+      {managementError && (
+        <div className="flex items-center justify-between gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-xs font-bold text-rose-800">
+          <span>{managementError}</span>
+          <button type="button" onClick={() => void reloadStudents()} className="underline">
+            إعادة المحاولة
+          </button>
+        </div>
+      )}
+
+      {managementLoading && (
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-center text-xs font-bold text-slate-500">
+          جارٍ تحميل سجل الطلاب من الخادم المعتمد...
+        </div>
+      )}
 
       {/* Advanced Filter Bar */}
       <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs space-y-4">
@@ -632,20 +729,26 @@ export const StudentsView: React.FC = () => {
                         >
                           <ArrowRightLeft className="w-4 h-4" />
                         </button>
-                        <button
-                          onClick={() => handleOpenEdit(student)}
-                          className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
-                          title="تعديل بيانات الطالب"
-                        >
-                          <Edit className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(student.id, student.name)}
-                          className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                          title="أرشفة / تعطيل الطالب"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        {canEditStudent && (
+                          <>
+                            <button
+                              disabled={managementAction !== null}
+                              onClick={() => handleOpenEdit(student)}
+                              className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer disabled:opacity-40"
+                              title="تعديل بيانات الطالب"
+                            >
+                              <Edit className="w-4 h-4" />
+                            </button>
+                            <button
+                              disabled={managementAction !== null}
+                              onClick={() => void handleDelete(student.id, student.name)}
+                              className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer disabled:opacity-40"
+                              title="أرشفة / تعطيل الطالب"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -911,6 +1014,7 @@ export const StudentsView: React.FC = () => {
                   <label className="block text-xs font-bold text-slate-700 mb-1">حالة الحساب / النشاط</label>
                   <select
                     value={formData.status || 'نشط'}
+                    disabled={!canEditStudent}
                     onChange={(e) => setFormData({ ...formData, status: e.target.value as any })}
                     className="w-full text-xs bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-800 focus:outline-hidden focus:border-[#008e8b]"
                   >
@@ -995,9 +1099,12 @@ export const StudentsView: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  className="px-6 py-2 bg-[#008e8b] hover:bg-teal-700 text-white rounded-xl text-xs font-bold shadow-md cursor-pointer"
+                  disabled={managementAction !== null}
+                  className="px-6 py-2 bg-[#008e8b] hover:bg-teal-700 text-white rounded-xl text-xs font-bold shadow-md cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  حفظ بيانات الطالب
+                  {managementAction === 'create-student' || managementAction === 'update-student'
+                    ? 'جارٍ الحفظ...'
+                    : 'حفظ بيانات الطالب'}
                 </button>
               </div>
             </form>
