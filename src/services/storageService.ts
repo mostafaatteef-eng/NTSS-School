@@ -4895,6 +4895,11 @@ class StorageService {
           saveAcademicYear: '/academic-years/manage',
           deleteAcademicYear: '/academic-years/manage',
           saveSettings: '/settings/manage',
+          saveStudentAttendance: '/student-attendance/batch',
+          saveStudentSchoolAttendanceBatch: '/student-attendance/batch',
+          overrideAttendanceRecord: '/student-attendance/batch',
+          saveAttendance: '/employee-attendance/batch',
+          bulkSaveAttendance: '/employee-attendance/batch',
           saveStudent: '/students/manage',
           deleteStudent: '/students/manage',
           bulkSaveStudents: '/students/manage',
@@ -4909,6 +4914,36 @@ class StorageService {
           try {
             let apiAction = action;
             if (action === 'saveSettings') apiAction = 'saveSettings';
+            if (action === 'saveStudentAttendance') {
+              const pg = await postgresApiRequest<any>(path, currentUser.sessionToken, { method: 'POST', body: JSON.stringify({ schoolId, date: payload.date, records: [payload] }) });
+              return { success: pg.ok && pg.body?.status === 'success', message: pg.body?.message || pg.body?.code || 'PostgreSQL sync' };
+            }
+            if (action === 'saveStudentSchoolAttendanceBatch') {
+              const rows = Array.isArray(payload) ? payload : [];
+              const pg = await postgresApiRequest<any>(path, currentUser.sessionToken, { method: 'POST', body: JSON.stringify({ schoolId, date: rows[0]?.date, records: rows }) });
+              return { success: pg.ok && pg.body?.status === 'success', message: pg.body?.message || pg.body?.code || 'PostgreSQL sync' };
+            }
+            if (action === 'overrideAttendanceRecord') {
+              const current = this.getStudentAttendance().find(r => r.studentId === payload.studentId && r.date === payload.date);
+              if (!current) return { success: false, message: 'ATTENDANCE_RECORD_NOT_FOUND' };
+              const record = { ...current, ...(payload.updates || {}) };
+              const pg = await postgresApiRequest<any>(path, currentUser.sessionToken, { method: 'POST', body: JSON.stringify({ schoolId, date: payload.date, records: [record] }) });
+              return { success: pg.ok && pg.body?.status === 'success', message: pg.body?.message || pg.body?.code || 'PostgreSQL sync' };
+            }
+            if (action === 'saveAttendance') {
+              const pg = await postgresApiRequest<any>(path, currentUser.sessionToken, { method: 'POST', body: JSON.stringify({ schoolId, date: payload.date, records: [payload] }) });
+              return { success: pg.ok && pg.body?.status === 'success', message: pg.body?.message || pg.body?.code || 'PostgreSQL sync' };
+            }
+            if (action === 'bulkSaveAttendance') {
+              const rows = Array.isArray(payload) ? payload : [];
+              const byDate = new Map<string, any[]>();
+              rows.forEach((r: any) => byDate.set(r.date, [...(byDate.get(r.date) || []), r]));
+              for (const [date, records] of byDate) {
+                const pg = await postgresApiRequest<any>(path, currentUser.sessionToken, { method: 'POST', body: JSON.stringify({ schoolId, date, records }) });
+                if (!pg.ok || pg.body?.status !== 'success') return { success: false, message: pg.body?.message || pg.body?.code || 'POSTGRES_ATTENDANCE_SYNC_FAILED' };
+              }
+              return { success: true, message: 'PostgreSQL sync' };
+            }
             if (action === 'saveStudent') apiAction = 'saveManagedStudent';
             if (action === 'deleteStudent') apiAction = 'deleteManagedStudent';
             if (action === 'bulkSaveStudents') apiAction = 'bulkSaveManagedStudents';
