@@ -29,7 +29,6 @@ import {
   TeacherLoadCalculation,
   User,
 } from '../../types';
-import { timetableService } from '../../services/timetableService';
 import { storageService } from '../../services/storageService';
 import { MyRequestsView } from '../leaves/MyRequestsView';
 import { CurriculumPlansView } from './CurriculumPlansView';
@@ -127,48 +126,35 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ onBackToLo
     };
   }, []);
 
-  const selectTeacher = (teacher: Employee, portalData?: any) => {
+  const selectTeacher = (teacher: Employee, portalData: any) => {
+    // Operational portal data must come from the validated TeacherSession API.
+    // Missing data fails closed to empty collections; local caches are never authority.
     setActiveTeacher(teacher);
-
-    if (portalData) {
-      setWeeklySchedule(Array.isArray(portalData.schedule) ? portalData.schedule : []);
-      setHomeworkList(Array.isArray(portalData.homework) ? portalData.homework : []);
-      setResources(
-        Array.isArray(portalData.resources)
-          ? portalData.resources.map((resource: any) => ({
-              id: String(resource.id || ''),
-              teacherId: String(resource.teacherId || teacher.id),
-              subjectId: String(resource.subjectId || resource.subject || ''),
-              classroomId: String(resource.classroomId || resource.classroom || ''),
-              gradeId: resource.gradeId ? String(resource.gradeId) : undefined,
-              academicYearId: resource.academicYearId ? String(resource.academicYearId) : undefined,
-              date: resource.date ? String(resource.date) : undefined,
-              periodNumber: resource.periodNumber ? Number(resource.periodNumber) : undefined,
-              preparationUrl: resource.preparationUrl || resource.preparationNotesUrl || undefined,
-              presentationUrl: resource.presentationUrl || undefined,
-              studentResourceUrl: resource.studentResourceUrl || undefined,
-              teacherNotes: resource.teacherNotes || resource.topic || resource.title || '',
-              visibility: resource.visibility === 'Published' ? 'Published' : 'Draft',
-              createdAt: resource.createdAt || undefined,
-              updatedAt: resource.updatedAt || undefined,
-            }))
-          : []
-      );
-      setExams(Array.isArray(portalData.examDuties) ? portalData.examDuties : []);
-      setLoadStats(null);
-      return;
-    }
-
-    // Fallback is used only after an authoritative teacher session has already
-    // been validated. It is not an authentication or authorization source.
-    const schedule = timetableService.getTeacherWeeklySchedule(teacher.id);
-    setWeeklySchedule(schedule);
-    setLoadStats(timetableService.calculateTeacherLoad(teacher.id));
-    setHomeworkList(storageService.getHomeworks().filter(h => h.teacherId === teacher.id || h.teacherName === teacher.name));
-    setResources(timetableService.getTeacherLessonResources({ teacherId: teacher.id }));
-    setExams(timetableService.getExamSchedules().filter(
-      e => e.status === 'PUBLISHED' || (e.status as any) === 'Published'
-    ));
+    setWeeklySchedule(Array.isArray(portalData?.schedule) ? portalData.schedule : []);
+    setHomeworkList(Array.isArray(portalData?.homework) ? portalData.homework : []);
+    setResources(
+      Array.isArray(portalData?.resources)
+        ? portalData.resources.map((resource: any) => ({
+            id: String(resource.id || ''),
+            teacherId: String(resource.teacherId || teacher.id),
+            subjectId: String(resource.subjectId || resource.subject || ''),
+            classroomId: String(resource.classroomId || resource.classroom || ''),
+            gradeId: resource.gradeId ? String(resource.gradeId) : undefined,
+            academicYearId: resource.academicYearId ? String(resource.academicYearId) : undefined,
+            date: resource.date ? String(resource.date) : undefined,
+            periodNumber: resource.periodNumber ? Number(resource.periodNumber) : undefined,
+            preparationUrl: resource.preparationUrl || resource.preparationNotesUrl || undefined,
+            presentationUrl: resource.presentationUrl || undefined,
+            studentResourceUrl: resource.studentResourceUrl || undefined,
+            teacherNotes: resource.teacherNotes || resource.topic || resource.title || '',
+            visibility: resource.visibility === 'Published' ? 'Published' : 'Draft',
+            createdAt: resource.createdAt || undefined,
+            updatedAt: resource.updatedAt || undefined,
+          }))
+        : []
+    );
+    setExams(Array.isArray(portalData?.examDuties) ? portalData.examDuties : []);
+    setLoadStats(null);
   };
 
   const refreshAuthoritativePortalData = async (): Promise<boolean> => {
@@ -792,7 +778,7 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ onBackToLo
       {/* TAB: CURRICULUM PLANS & DISTRIBUTION */}
       {portalTab === 'curriculum' && (
         <div>
-          <CurriculumPlansView currentUser={teacherPortalUser} />
+          <CurriculumPlansView currentUser={teacherPortalUser} readOnly />
         </div>
       )}
 
