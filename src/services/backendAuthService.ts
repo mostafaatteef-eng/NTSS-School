@@ -742,6 +742,10 @@ export const ACTION_PERMISSION_MAP: Record<string, PermissionKey> = {
   saveEmployee: 'employees.create',
   bulkSaveEmployees: 'employees.import',
   deleteEmployee: 'employees.delete',
+  createManagedEmployee: 'employees.create',
+  updateManagedEmployee: 'employees.edit',
+  setManagedEmployeeStatus: 'employees.edit',
+  importManagedEmployees: 'employees.import',
 
   // Staff Attendance
   getAttendance: 'teacherAttendance.view',
