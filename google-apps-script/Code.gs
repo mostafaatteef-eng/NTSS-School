@@ -1562,6 +1562,98 @@ function doPost(e) {
       return createJsonResponse(output, 200);
     }
 
+    if (action === 'getLeaveManagementData') {
+      output.data = {
+        leaves: getSheetData(schoolSs, SHEETS.LEAVES),
+        permissions: getSheetData(schoolSs, SHEETS.PERMISSIONS)
+      };
+      return createJsonResponse(output, 200);
+    }
+
+    if (action === 'createManagedLeave') {
+      var managedLeaveResult = createManagedLeaveRequest(
+        schoolSs,
+        activeSession,
+        payload || {},
+        effectiveSchoolId,
+        requestId
+      );
+      if (!managedLeaveResult.success) {
+        return createJsonResponse({
+          status: 'error',
+          code: managedLeaveResult.code || 'LEAVE_CREATE_FAILED',
+          message: managedLeaveResult.message,
+          requestId: requestId
+        }, 400);
+      }
+      output.message = managedLeaveResult.message;
+      output.leave = managedLeaveResult.leave;
+      return createJsonResponse(output, 200);
+    }
+
+    if (action === 'createManagedPermission') {
+      var managedPermissionResult = createManagedPermissionRequest(
+        schoolSs,
+        activeSession,
+        payload || {},
+        effectiveSchoolId,
+        requestId
+      );
+      if (!managedPermissionResult.success) {
+        return createJsonResponse({
+          status: 'error',
+          code: managedPermissionResult.code || 'PERMISSION_CREATE_FAILED',
+          message: managedPermissionResult.message,
+          requestId: requestId
+        }, 400);
+      }
+      output.message = managedPermissionResult.message;
+      output.permission = managedPermissionResult.permission;
+      return createJsonResponse(output, 200);
+    }
+
+    if (action === 'approveManagedLeave' || action === 'rejectManagedLeave') {
+      var managedLeaveStatusResult = setManagedLeaveStatus(
+        schoolSs,
+        activeSession,
+        payload || {},
+        action === 'approveManagedLeave' ? 'مقبولة' : 'مرفوضة',
+        requestId
+      );
+      if (!managedLeaveStatusResult.success) {
+        return createJsonResponse({
+          status: 'error',
+          code: managedLeaveStatusResult.code || 'LEAVE_STATUS_FAILED',
+          message: managedLeaveStatusResult.message,
+          requestId: requestId
+        }, managedLeaveStatusResult.httpStatus || 400);
+      }
+      output.message = managedLeaveStatusResult.message;
+      output.leave = managedLeaveStatusResult.leave;
+      return createJsonResponse(output, 200);
+    }
+
+    if (action === 'approveManagedPermission' || action === 'rejectManagedPermission') {
+      var managedPermissionStatusResult = setManagedPermissionStatus(
+        schoolSs,
+        activeSession,
+        payload || {},
+        action === 'approveManagedPermission' ? 'مقبولة' : 'مرفوضة',
+        requestId
+      );
+      if (!managedPermissionStatusResult.success) {
+        return createJsonResponse({
+          status: 'error',
+          code: managedPermissionStatusResult.code || 'PERMISSION_STATUS_FAILED',
+          message: managedPermissionStatusResult.message,
+          requestId: requestId
+        }, managedPermissionStatusResult.httpStatus || 400);
+      }
+      output.message = managedPermissionStatusResult.message;
+      output.permission = managedPermissionStatusResult.permission;
+      return createJsonResponse(output, 200);
+    }
+
     if (action === 'getLeaves') {
       var allLeaves = getSheetData(schoolSs, SHEETS.LEAVES);
       if (activeSession.accessScope === 'SELF') {
@@ -3543,6 +3635,13 @@ var ACTION_PERMISSION_MAP = {
   getPermissions: 'leaves.view',
   savePermission: 'leaves.create',
   deletePermission: 'leaves.delete',
+  getLeaveManagementData: 'leaves.manage.view',
+  createManagedLeave: 'leaves.create',
+  createManagedPermission: 'leaves.create',
+  approveManagedLeave: 'leaves.manage.approve',
+  rejectManagedLeave: 'leaves.manage.reject',
+  approveManagedPermission: 'leaves.manage.approve',
+  rejectManagedPermission: 'leaves.manage.reject',
   getMyRequests: 'leaves.own.view',
   createMyLeaveRequest: 'leaves.own.create',
   createMyPermissionRequest: 'leaves.own.create',
@@ -3701,7 +3800,11 @@ var BASE_ADMIN_PERMISSIONS = {
   'teacherAttendance.manage': true,
   'leaves.view': true,
   'leaves.create': true,
+  'leaves.edit': true,
   'leaves.delete': true,
+  'leaves.manage.view': true,
+  'leaves.manage.approve': true,
+  'leaves.manage.reject': true,
   'leaves.own.view': true,
   'leaves.own.create': true,
   'timetable.view': true,
@@ -3779,6 +3882,9 @@ var CANONICAL_ROLE_PERMISSIONS = {
     'leaves.create': true,
     'leaves.edit': true,
     'leaves.delete': true,
+    'leaves.manage.view': true,
+    'leaves.manage.approve': true,
+    'leaves.manage.reject': true,
     'leaves.own.view': true,
     'leaves.own.create': true,
     'timetable.view': true,
@@ -3872,6 +3978,9 @@ var CANONICAL_ROLE_PERMISSIONS = {
     'leaves.view': true,
     'leaves.create': true,
     'leaves.delete': true,
+    'leaves.manage.view': true,
+    'leaves.manage.approve': true,
+    'leaves.manage.reject': true,
     'leaves.own.view': true,
     'leaves.own.create': true,
     'timetable.view': true,
@@ -4285,6 +4394,153 @@ function authorize(session, action, resourceContext, masterSs, requestId) {
 // -------------------------------------------------------------
 // TIMETABLE, RESERVE, SUPERVISION & PORTAL LOGIC
 // -------------------------------------------------------------
+
+/**
+ * Authoritative leave/permission management helpers.
+ * The client may select an employee and provide request content only.
+ * Record identity, school, status, employee metadata and calculated values are server-owned.
+ */
+function getManagedEmployeeProfile(ss, employeeId) {
+  var targetId = String(employeeId || '').trim();
+  if (!targetId) return null;
+
+  var employees = getSheetData(ss, SHEETS.EMPLOYEES);
+  for (var i = 0; i < employees.length; i++) {
+    if (String(employees[i].id || '').trim().toLowerCase() === targetId.toLowerCase()) {
+      return {
+        employeeId: String(employees[i].id || '').trim(),
+        employeeName: String(employees[i].name || '').trim(),
+        department: String(employees[i].department || '').trim()
+      };
+    }
+  }
+  return null;
+}
+
+function createManagedLeaveRequest(ss, session, payload, effectiveSchoolId, requestId) {
+  var profile = getManagedEmployeeProfile(ss, payload.employeeId);
+  if (!profile) {
+    return { success: false, code: 'EMPLOYEE_NOT_FOUND', message: 'الموظف المحدد غير موجود في المدرسة النشطة.' };
+  }
+
+  var leaveType = String(payload.leaveType || '').trim();
+  var startDate = String(payload.startDate || '').trim();
+  var endDate = String(payload.endDate || '').trim();
+  var reason = String(payload.reason || '').trim();
+  var start = parseTeacherSelfDate(startDate);
+  var end = parseTeacherSelfDate(endDate);
+
+  if (!leaveType || !reason || !start || !end || end.getTime() < start.getTime()) {
+    return { success: false, code: 'INVALID_PAYLOAD', message: 'بيانات طلب الإجازة غير مكتملة أو الفترة غير صالحة.' };
+  }
+
+  var leave = {
+    id: 'LEV_' + Utilities.getUuid().substring(0, 12),
+    schoolId: String(effectiveSchoolId || '').trim().toUpperCase(),
+    employeeId: profile.employeeId,
+    employeeName: profile.employeeName,
+    department: profile.department,
+    leaveType: leaveType,
+    startDate: startDate,
+    endDate: endDate,
+    daysCount: Math.floor((end.getTime() - start.getTime()) / 86400000) + 1,
+    reason: reason,
+    notes: String(payload.notes || '').trim(),
+    attachment: String(payload.attachment || ''),
+    status: 'معلقة',
+    createdAt: getCairoISOString()
+  };
+
+  upsertRecord(ss, SHEETS.LEAVES, 'id', leave);
+  recordAuthoritativeAudit(ss, requestId, session.username || session.email || session.userId, session.role, 'MANAGED_LEAVE_CREATED', 'LEAVES', leave.id, 'إنشاء طلب إجازة إداري قيد المراجعة');
+
+  return { success: true, message: 'تم إنشاء طلب الإجازة وهو الآن قيد المراجعة.', leave: sanitizeTeacherLeaveRecord(leave) };
+}
+
+function createManagedPermissionRequest(ss, session, payload, effectiveSchoolId, requestId) {
+  var profile = getManagedEmployeeProfile(ss, payload.employeeId);
+  if (!profile) {
+    return { success: false, code: 'EMPLOYEE_NOT_FOUND', message: 'الموظف المحدد غير موجود في المدرسة النشطة.' };
+  }
+
+  var date = String(payload.date || '').trim();
+  var permissionType = String(payload.permissionType || '').trim();
+  var startTime = String(payload.startTime || '').trim();
+  var endTime = String(payload.endTime || '').trim();
+  var reason = String(payload.reason || '').trim();
+  var startMinutes = parseTeacherSelfTime(startTime);
+  var endMinutes = parseTeacherSelfTime(endTime);
+
+  if (!parseTeacherSelfDate(date) || !permissionType || !reason || startMinutes === null || endMinutes === null || endMinutes <= startMinutes) {
+    return { success: false, code: 'INVALID_PAYLOAD', message: 'بيانات طلب الإذن غير مكتملة أو الفترة الزمنية غير صالحة.' };
+  }
+
+  var permission = {
+    id: 'PERM_' + Utilities.getUuid().substring(0, 12),
+    schoolId: String(effectiveSchoolId || '').trim().toUpperCase(),
+    employeeId: profile.employeeId,
+    employeeName: profile.employeeName,
+    department: profile.department,
+    date: date,
+    permissionType: permissionType,
+    startTime: startTime,
+    endTime: endTime,
+    durationHours: Math.round(((endMinutes - startMinutes) / 60) * 100) / 100,
+    reason: reason,
+    notes: String(payload.notes || '').trim(),
+    attachment: String(payload.attachment || ''),
+    status: 'معلقة',
+    createdAt: getCairoISOString()
+  };
+
+  upsertRecord(ss, SHEETS.PERMISSIONS, 'id', permission);
+  recordAuthoritativeAudit(ss, requestId, session.username || session.email || session.userId, session.role, 'MANAGED_PERMISSION_CREATED', 'PERMISSIONS', permission.id, 'إنشاء طلب إذن إداري قيد المراجعة');
+
+  return { success: true, message: 'تم إنشاء طلب الإذن وهو الآن قيد المراجعة.', permission: sanitizeTeacherPermissionRecord(permission) };
+}
+
+function findRecordById(records, id) {
+  var targetId = String(id || '').trim();
+  if (!targetId) return null;
+  for (var i = 0; i < records.length; i++) {
+    if (String(records[i].id || '').trim() === targetId) return records[i];
+  }
+  return null;
+}
+
+function setManagedLeaveStatus(ss, session, payload, status, requestId) {
+  var leave = findRecordById(getSheetData(ss, SHEETS.LEAVES), payload.id);
+  if (!leave) return { success: false, code: 'RESOURCE_NOT_FOUND', message: 'سجل الإجازة غير موجود.', httpStatus: 404 };
+
+  leave.status = status;
+  leave.approvedBy = String(session.fullName || session.username || session.email || session.userId || '').trim();
+  leave.approvedAt = getCairoISOString();
+  leave.rejectionReason = status === 'مرفوضة'
+    ? String(payload.reason || 'لم يتم استيفاء شروط الإجازة').trim()
+    : '';
+
+  upsertRecord(ss, SHEETS.LEAVES, 'id', leave);
+  recordAuthoritativeAudit(ss, requestId, session.username || session.email || session.userId, session.role, status === 'مقبولة' ? 'LEAVE_APPROVED' : 'LEAVE_REJECTED', 'LEAVES', leave.id, leave.rejectionReason || 'اعتماد طلب الإجازة');
+
+  return { success: true, message: status === 'مقبولة' ? 'تم اعتماد الإجازة.' : 'تم رفض الإجازة.', leave: sanitizeTeacherLeaveRecord(leave) };
+}
+
+function setManagedPermissionStatus(ss, session, payload, status, requestId) {
+  var permission = findRecordById(getSheetData(ss, SHEETS.PERMISSIONS), payload.id);
+  if (!permission) return { success: false, code: 'RESOURCE_NOT_FOUND', message: 'سجل الإذن غير موجود.', httpStatus: 404 };
+
+  permission.status = status;
+  permission.approvedBy = String(session.fullName || session.username || session.email || session.userId || '').trim();
+  permission.approvedAt = getCairoISOString();
+  permission.rejectionReason = status === 'مرفوضة'
+    ? String(payload.reason || 'لم يتم استيفاء شروط الإذن').trim()
+    : '';
+
+  upsertRecord(ss, SHEETS.PERMISSIONS, 'id', permission);
+  recordAuthoritativeAudit(ss, requestId, session.username || session.email || session.userId, session.role, status === 'مقبولة' ? 'PERMISSION_APPROVED' : 'PERMISSION_REJECTED', 'PERMISSIONS', permission.id, permission.rejectionReason || 'اعتماد طلب الإذن');
+
+  return { success: true, message: status === 'مقبولة' ? 'تم اعتماد الإذن.' : 'تم رفض الإذن.', permission: sanitizeTeacherPermissionRecord(permission) };
+}
 
 /**
  * Staff self-service profile and request helpers.
