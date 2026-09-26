@@ -193,6 +193,44 @@ export default {
         return json({ status: 'success', activeSchoolId: schoolId }, 200, corsOrigin);
       }
 
+      if (request.method === 'POST' && path === '/leave-management') {
+        const body: any = await request.json();
+        const action = String(body.action || '');
+        const data: any = body.data || {};
+        const schoolId = String(body.schoolId || user.active_school_id || user.school_id || '').trim();
+        if (!(await canAccessSchool(user, schoolId))) return json({ status:'error', code:'FORBIDDEN' },403,corsOrigin);
+        const allowedRoles = new Set(['SystemAdmin','Admin','SchoolAdmin','SchoolDirector','TeacherAffairs']);
+        if (!allowedRoles.has(String(user.role || ''))) return json({ status:'error', code:'FORBIDDEN' },403,corsOrigin);
+        const mapRow = (row: any, kind: string) => ({ ...(row.payload || {}), id:row.id, schoolId:row.school_id, employeeId:row.employee_id, status:row.status, ...(kind==='leave'?{startDate:String(row.start_date||'').slice(0,10),endDate:String(row.end_date||'').slice(0,10)}:{date:String(row.permission_date||'').slice(0,10)}) });
+        if (action === 'getLeaveManagementData') {
+          const [lr,pr] = await Promise.all([pool.query('SELECT * FROM leaves WHERE school_id=$1 ORDER BY created_at DESC',[schoolId]),pool.query('SELECT * FROM permissions WHERE school_id=$1 ORDER BY created_at DESC',[schoolId])]);
+          return json({status:'success',data:{leaves:lr.rows.map((x:any)=>mapRow(x,'leave')),permissions:pr.rows.map((x:any)=>mapRow(x,'permission'))}},200,corsOrigin);
+        }
+        const isLeave = ['createManagedLeave','approveManagedLeave','rejectManagedLeave','deleteLeave'].includes(action);
+        const isPerm = ['createManagedPermission','approveManagedPermission','rejectManagedPermission','deletePermission'].includes(action);
+        if (!isLeave && !isPerm) return json({status:'error',code:'ACTION_NOT_MIGRATED'},400,corsOrigin);
+        const table=isLeave?'leaves':'permissions'; const id=String(data.id||'').trim() || (isLeave?'LEV-':'PER-')+crypto.randomBytes(8).toString('hex').toUpperCase();
+        if (action==='deleteLeave'||action==='deletePermission') {
+          const d=await pool.query(`DELETE FROM ${table} WHERE school_id=$1 AND id=$2 RETURNING id`,[schoolId,id]);
+          return d.rowCount?json({status:'success'},200,corsOrigin):json({status:'error',code:'NOT_FOUND'},404,corsOrigin);
+        }
+        if (action.startsWith('approve')||action.startsWith('reject')) {
+          const status=action.startsWith('approve')?'مقبولة':'مرفوضة';
+          const u=await pool.query(`UPDATE ${table} SET status=$3,payload=payload || $4::jsonb WHERE school_id=$1 AND id=$2 RETURNING *`,[schoolId,id,status,JSON.stringify({decisionReason:String(data.reason||''),approvedBy:user.full_name||user.email})]);
+          if(!u.rowCount)return json({status:'error',code:'NOT_FOUND'},404,corsOrigin);
+          return json({status:'success',[isLeave?'leave':'permission']:mapRow(u.rows[0],isLeave?'leave':'permission')},200,corsOrigin);
+        }
+        const employeeId=String(data.employeeId||'').trim();
+        const emp=await pool.query('SELECT id FROM employees WHERE school_id=$1 AND id=$2',[schoolId,employeeId]);
+        if(!emp.rowCount)return json({status:'error',code:'EMPLOYEE_NOT_FOUND'},404,corsOrigin);
+        const payload=JSON.stringify(data);
+        let s;
+        if(isLeave)s=await pool.query('INSERT INTO leaves(id,school_id,employee_id,start_date,end_date,status,payload) VALUES($1,$2,$3,$4::date,$5::date,$6,$7::jsonb) RETURNING *',[id,schoolId,employeeId,String(data.startDate||''),String(data.endDate||''),'قيد المراجعة',payload]);
+        else s=await pool.query('INSERT INTO permissions(id,school_id,employee_id,permission_date,status,payload) VALUES($1,$2,$3,$4::date,$5,$6::jsonb) RETURNING *',[id,schoolId,employeeId,String(data.date||''),'قيد المراجعة',payload]);
+        await pool.query('INSERT INTO audit_logs(school_id,user_id,username,role,action,entity,target_id,details) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[schoolId,user.user_id,user.email,user.role,'CREATE',isLeave?'LEAVE':'PERMISSION',id,'Created through Neon API']);
+        return json({status:'success',[isLeave?'leave':'permission']:mapRow(s.rows[0],isLeave?'leave':'permission')},201,corsOrigin);
+      }
+
       if (request.method === 'POST' && (path === '/students/manage' || path === '/employees/manage')) {
         const body: any = await request.json();
         const action = String(body.action || '');
