@@ -6507,6 +6507,25 @@ class StorageService {
       return { success: false, code: 'AUTH_REQUIRED', message: 'يجب تسجيل الدخول بجلسة عمل معتمدة.' };
     }
 
+    if (isPostgresBackendEnabled()) {
+      const schoolId = this.getActiveSchoolId();
+      if (!schoolId) return { success: false, code: 'SCHOOL_CONTEXT_REQUIRED', message: 'يرجى اختيار المدرسة أولاً.' };
+      try {
+        const pg = await postgresApiRequest<any>('/leave-management', user.sessionToken, {
+          method: 'POST',
+          body: JSON.stringify({ action, schoolId, data }),
+        });
+        const res = pg.body || {};
+        if (!pg.ok || res.status !== 'success') {
+          if (pg.status === 401) this.setCurrentUser(null);
+          return { success: false, code: res.code || `HTTP_${pg.status}`, message: res.message || 'تعذر تنفيذ العملية.' };
+        }
+        return { success: true, message: res.message || 'تم تنفيذ العملية بنجاح.', data: res.data, leave: res.leave as LeaveRecord | undefined, permission: res.permission as EmployeePermissionRecord | undefined };
+      } catch {
+        return { success: false, code: 'NETWORK_ERROR', message: 'تعذر الاتصال بخادم PostgreSQL لتنفيذ العملية.' };
+      }
+    }
+
     const scriptUrl = this.getBackendUrl();
     const online = typeof navigator === 'undefined' || navigator.onLine !== false;
     if (!scriptUrl || scriptUrl.length < 15 || !online) {
