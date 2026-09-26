@@ -1,5 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
+  AlertCircle,
+  ArrowRight,
+  BookOpen,
   CalendarDays,
   Clock,
   Download,
@@ -9,12 +12,13 @@ import {
   RefreshCw,
   School,
   Search,
-  UserCheck,
-  AlertCircle,
-  ArrowRight,
-  BookOpen
 } from 'lucide-react';
-import { PublicClassScheduleDTO, PublicClassScheduleLesson, SystemSettings } from '../../types';
+import {
+  PublicClassScheduleDTO,
+  PublicSchoolOption,
+  PublicScheduleClassroomOption,
+  PublicScheduleGradeOption,
+} from '../../types';
 import { storageService } from '../../services/storageService';
 import { NTSSLogo } from '../common/NTSSLogo';
 
@@ -23,328 +27,377 @@ interface PublicStudentScheduleViewProps {
 }
 
 export const PublicStudentScheduleView: React.FC<PublicStudentScheduleViewProps> = ({ onBackToLogin }) => {
-  const [settings, setSettings] = useState<SystemSettings>(storageService.getSettings());
-  const [selectedGrade, setSelectedGrade] = useState<string>('');
-  const [selectedClassroom, setSelectedClassroom] = useState<string>('');
-  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [schools, setSchools] = useState<PublicSchoolOption[]>([]);
+  const [grades, setGrades] = useState<PublicScheduleGradeOption[]>([]);
+  const [classrooms, setClassrooms] = useState<PublicScheduleClassroomOption[]>([]);
+
+  const [selectedSchoolId, setSelectedSchoolId] = useState('');
+  const [selectedGradeId, setSelectedGradeId] = useState('');
+  const [selectedClassroomId, setSelectedClassroomId] = useState('');
+
+  const [schoolsLoading, setSchoolsLoading] = useState(true);
+  const [optionsLoading, setOptionsLoading] = useState(false);
+  const [scheduleLoading, setScheduleLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [hasQueried, setHasQueried] = useState(false);
   const [scheduleData, setScheduleData] = useState<PublicClassScheduleDTO | null>(null);
-  const [errorMessage, setErrorMessage] = useState<string>('');
-  const [hasQueried, setHasQueried] = useState<boolean>(false);
 
-  // Load available grades and classrooms from settings
-  const activeGrades = (settings.grades || []).filter(g => g.isActive !== false);
-  const availableClassrooms = (settings.classrooms || []).filter(c => {
-    if (c.isActive === false) return false;
-    if (!selectedGrade) return true;
-    return c.gradeId === selectedGrade || c.gradeName === selectedGrade;
-  });
+  const selectedSchool = useMemo(
+    () => schools.find(s => s.schoolId === selectedSchoolId),
+    [schools, selectedSchoolId]
+  );
 
-  // Default selection on load
-  useEffect(() => {
-    if (activeGrades.length > 0 && !selectedGrade) {
-      setSelectedGrade(activeGrades[0].name || activeGrades[0].id);
-    }
-  }, [activeGrades, selectedGrade]);
+  const selectedGrade = useMemo(
+    () => grades.find(g => g.id === selectedGradeId),
+    [grades, selectedGradeId]
+  );
 
-  useEffect(() => {
-    if (availableClassrooms.length > 0 && !selectedClassroom) {
-      setSelectedClassroom(availableClassrooms[0].displayName || availableClassrooms[0].id);
-    }
-  }, [availableClassrooms, selectedClassroom]);
+  const availableClassrooms = useMemo(() => {
+    if (!selectedGrade) return [];
+    return classrooms.filter(classroom => {
+      const gradeIdMatch = classroom.gradeId && classroom.gradeId === selectedGrade.id;
+      const gradeNameMatch = classroom.gradeName && classroom.gradeName === selectedGrade.name;
+      return gradeIdMatch || gradeNameMatch;
+    });
+  }, [classrooms, selectedGrade]);
 
-  const handleFetchSchedule = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (!selectedGrade || !selectedClassroom) {
-      setErrorMessage('يرجى اختيار الصف الدراسي والفصل');
+  const selectedClassroom = useMemo(
+    () => availableClassrooms.find(c => c.id === selectedClassroomId),
+    [availableClassrooms, selectedClassroomId]
+  );
+
+  const loadSchools = async () => {
+    setSchoolsLoading(true);
+    setErrorMessage('');
+
+    const result = await storageService.getPublicSchools();
+    setSchoolsLoading(false);
+
+    if (!result.success) {
+      setSchools([]);
+      setErrorMessage(result.message || 'تعذر تحميل المدارس المتاحة.');
       return;
     }
 
+    setSchools(result.schools || []);
+  };
+
+  useEffect(() => {
+    void loadSchools();
+  }, []);
+
+  const handleSchoolChange = async (schoolId: string) => {
+    setSelectedSchoolId(schoolId);
+    setSelectedGradeId('');
+    setSelectedClassroomId('');
+    setScheduleData(null);
+    setHasQueried(false);
+    setGrades([]);
+    setClassrooms([]);
     setErrorMessage('');
-    setIsLoading(true);
+
+    if (!schoolId) return;
+
+    setOptionsLoading(true);
+    const result = await storageService.getPublicScheduleOptions(schoolId);
+    setOptionsLoading(false);
+
+    if (!result.success) {
+      setErrorMessage(result.message || 'تعذر تحميل الصفوف والفصول لهذه المدرسة.');
+      return;
+    }
+
+    setGrades(result.grades || []);
+    setClassrooms(result.classrooms || []);
+  };
+
+  const handleGradeChange = (gradeId: string) => {
+    setSelectedGradeId(gradeId);
+    setSelectedClassroomId('');
+    setScheduleData(null);
+    setHasQueried(false);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMessage('');
+    setHasQueried(false);
+    setScheduleData(null);
+
+    if (!selectedSchoolId || !selectedGrade || !selectedClassroom) {
+      setErrorMessage('يرجى اختيار المدرسة ثم الصف ثم الفصل.');
+      return;
+    }
+
+    setScheduleLoading(true);
+    const result = await storageService.getPublicClassSchedule(
+      selectedGrade.name,
+      selectedClassroom.name,
+      selectedSchoolId
+    );
+    setScheduleLoading(false);
     setHasQueried(true);
 
-    try {
-      const res = await storageService.getPublicClassSchedule(selectedGrade, selectedClassroom);
-      if (res.success && res.data) {
-        setScheduleData(res.data);
-      } else {
-        setScheduleData({
-          gradeName: selectedGrade,
-          classroomName: selectedClassroom,
-          schedule: [],
-        });
-        setErrorMessage(res.message || 'تعذر تحميل الجدول الدراسي');
-      }
-    } catch (err: any) {
-      setErrorMessage('حدث خطأ أثناء تحميل جدول الفصل، يرجى المحاولة مرة أخرى.');
-    } finally {
-      setIsLoading(false);
+    if (!result.success || !result.data) {
+      setErrorMessage(result.message || 'تعذر تحميل الجدول الدراسي.');
+      return;
     }
+
+    setScheduleData({
+      ...result.data,
+      schoolId: selectedSchoolId,
+      schoolName: selectedSchool?.schoolName,
+    });
   };
 
-  const handlePrint = () => {
-    window.print();
-  };
+  const days = useMemo(() => {
+    const preferred = ['الأحد', 'الإثنين', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الاربعاء', 'الخميس'];
+    const found = Array.from(new Set((scheduleData?.schedule || []).map(item => item.dayOfWeek).filter(Boolean)));
+    return preferred.filter(day => found.includes(day)).concat(found.filter(day => !preferred.includes(day)));
+  }, [scheduleData]);
 
-  const DAYS = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس'];
-  const PERIODS = [1, 2, 3, 4, 5, 6, 7, 8];
-
-  // Group lessons by Day and Period for the grid view
-  const lessonsGrid: Record<string, Record<number, PublicClassScheduleLesson>> = {};
-  (scheduleData?.schedule || []).forEach(lesson => {
-    const d = lesson.dayOfWeek;
-    const p = lesson.periodNumber;
-    if (!lessonsGrid[d]) lessonsGrid[d] = {};
-    lessonsGrid[d][p] = lesson;
-  });
+  const periods = useMemo(() => {
+    return Array.from(new Set((scheduleData?.schedule || []).map(item => Number(item.periodNumber) || 0)))
+      .filter(Boolean)
+      .sort((a, b) => a - b);
+  }, [scheduleData]);
 
   return (
-    <div dir="rtl" className="min-h-screen bg-slate-50 text-slate-800 font-sans pb-16 selection:bg-[#008e8b]/20 selection:text-[#008e8b]">
-      {/* Top Header */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-20 shadow-xs print:hidden">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <NTSSLogo className="w-10 h-10 object-contain" />
-            <div>
-              <div className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
-                <span>بوابة جدول الطلاب والفصول</span>
-                <span className="text-[10px] font-medium bg-teal-50 text-[#008e8b] border border-teal-200 px-2 py-0.2 rounded-full">
-                  النسخة العامة (بدون تسجيل دخول)
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-500">
-                مدرسة التكنولوجيا التطبيقية للمفاعلات النووية بالضبعة (NTSS)
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            {scheduleData && scheduleData.schedule.length > 0 && (
-              <button
-                type="button"
-                onClick={handlePrint}
-                className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl flex items-center gap-1.5 transition"
-                title="طباعة الجدول"
-              >
-                <Printer className="w-4 h-4 text-slate-600" />
-                <span className="hidden sm:inline">طباعة الجدول</span>
-              </button>
-            )}
-
-            {onBackToLogin && (
-              <button
-                type="button"
-                onClick={onBackToLogin}
-                className="px-3.5 py-1.5 bg-[#008e8b] hover:bg-[#007775] text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition shadow-xs"
-              >
-                <ArrowRight className="w-4 h-4" />
-                <span>دخول الإدارة / المعلمين</span>
-              </button>
-            )}
-          </div>
+    <div dir="rtl" className="min-h-screen bg-slate-50 text-slate-900">
+      <header className="border-b border-slate-200 bg-white print:hidden">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
+          <NTSSLogo variant="full" size="md" />
+          {onBackToLogin && (
+            <button
+              type="button"
+              onClick={onBackToLogin}
+              className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 transition hover:bg-slate-50"
+            >
+              <ArrowRight className="h-4 w-4" />
+              العودة للبوابة الرئيسية
+            </button>
+          )}
         </div>
       </header>
 
-      {/* Hero / Filter Section */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 space-y-6">
-        <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm print:border-none print:shadow-none print:p-0">
-          <div className="max-w-3xl">
-            <h1 className="text-xl font-black text-slate-900 flex items-center gap-2">
-              <GraduationCap className="w-6 h-6 text-[#008e8b]" />
-              استعلام الجدول المدرسي للعام الدراسي 2026 / 2027
+      <main className="mx-auto max-w-7xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
+        <section className="grid gap-5 lg:grid-cols-[0.72fr_1.28fr] lg:items-end">
+          <div className="space-y-3">
+            <div className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-700">
+              <CalendarDays className="h-4 w-4" />
+              بوابة الطلاب العامة
+            </div>
+            <h1 className="text-2xl font-black tracking-tight text-slate-950 sm:text-3xl">
+              الجدول الدراسي المنشور
             </h1>
-            <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
-              اختر الصف الدراسي والفصل لعرض الجدول الأسبوعي المعتمد والموزع على الحصص الدراسية.
-              هذه الخدمة متاحة للطلاب وأولياء الأمور دون الحاجة لأي حساب أو كلمة مرور.
+            <p className="max-w-xl text-sm leading-7 text-slate-500">
+              اختر المدرسة أولًا، ثم الصف والفصل. لا تحتاج إلى حساب أو كلمة مرور لعرض الجدول الدراسي المنشور.
             </p>
           </div>
 
-          <form onSubmit={handleFetchSchedule} className="mt-6 grid grid-cols-1 sm:grid-cols-12 gap-3.5 print:hidden">
-            <div className="sm:col-span-5">
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">الصف الدراسي</label>
-              <select
-                value={selectedGrade}
-                onChange={e => {
-                  setSelectedGrade(e.target.value);
-                  setSelectedClassroom('');
-                }}
-                className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs font-medium text-slate-800 focus:bg-white focus:border-[#008e8b] focus:ring-2 focus:ring-[#008e8b]/20 transition"
-              >
-                <option value="">-- اختر الصف الدراسي --</option>
-                {activeGrades.map(g => (
-                  <option key={g.id} value={g.name}>
-                    {g.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+            {errorMessage && (
+              <div className="mb-4 flex items-start gap-2 rounded-2xl border border-rose-200 bg-rose-50 p-3 text-xs font-bold text-rose-700">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{errorMessage}</span>
+              </div>
+            )}
 
-            <div className="sm:col-span-5">
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">الفصل الدراسي</label>
-              <select
-                value={selectedClassroom}
-                onChange={e => setSelectedClassroom(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs font-medium text-slate-800 focus:bg-white focus:border-[#008e8b] focus:ring-2 focus:ring-[#008e8b]/20 transition"
-              >
-                <option value="">-- اختر الفصل الدراسي --</option>
-                {availableClassrooms.map(c => (
-                  <option key={c.id} value={c.displayName || c.classroomNumber}>
-                    {c.displayName || `فصل ${c.classroomNumber}`}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <form onSubmit={handleSubmit} className="grid gap-3 md:grid-cols-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-extrabold text-slate-700">1. المدرسة</label>
+                <select
+                  id="select-public-school"
+                  value={selectedSchoolId}
+                  disabled={schoolsLoading}
+                  onChange={e => void handleSchoolChange(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs font-semibold outline-none transition focus:border-[#008e8b] focus:bg-white focus:ring-2 focus:ring-[#008e8b]/15"
+                >
+                  <option value="">{schoolsLoading ? 'جارٍ تحميل المدارس...' : '-- اختر المدرسة --'}</option>
+                  {schools.map(school => (
+                    <option key={school.schoolId} value={school.schoolId}>
+                      {school.schoolName}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-            <div className="sm:col-span-2 flex items-end">
-              <button
-                type="submit"
-                disabled={isLoading || !selectedGrade || !selectedClassroom}
-                className="w-full py-2.5 bg-[#008e8b] hover:bg-[#007775] disabled:bg-slate-300 text-white font-bold text-xs rounded-xl shadow-sm transition flex items-center justify-center gap-2 cursor-pointer"
-              >
-                {isLoading ? (
-                  <>
-                    <RefreshCw className="w-4 h-4 animate-spin" />
-                    <span>جارٍ الجلب...</span>
-                  </>
-                ) : (
-                  <>
-                    <Search className="w-4 h-4" />
-                    <span>عرض الجدول</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </form>
-        </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-extrabold text-slate-700">2. الصف</label>
+                <select
+                  id="select-public-grade"
+                  value={selectedGradeId}
+                  disabled={!selectedSchoolId || optionsLoading}
+                  onChange={e => handleGradeChange(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs font-semibold outline-none transition focus:border-[#008e8b] focus:bg-white focus:ring-2 focus:ring-[#008e8b]/15 disabled:opacity-50"
+                >
+                  <option value="">{optionsLoading ? 'جارٍ تحميل الصفوف...' : '-- اختر الصف --'}</option>
+                  {grades.map(grade => (
+                    <option key={grade.id} value={grade.id}>
+                      {grade.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-        {/* Print Only Header */}
-        <div className="hidden print:block text-center border-b pb-4 mb-4">
-          <div className="text-base font-bold text-slate-900">مدرسة التكنولوجيا التطبيقية للمفاعلات النووية بالضبعة</div>
-          <div className="text-xs text-slate-600">الجدول الدراسي الأسبوعي المعتمد</div>
-          <div className="text-sm font-bold text-[#008e8b] mt-1">
-            {scheduleData?.gradeName} — {scheduleData?.classroomName}
+              <div className="space-y-1.5">
+                <label className="text-xs font-extrabold text-slate-700">3. الفصل</label>
+                <select
+                  id="select-public-classroom"
+                  value={selectedClassroomId}
+                  disabled={!selectedGradeId || optionsLoading}
+                  onChange={e => {
+                    setSelectedClassroomId(e.target.value);
+                    setScheduleData(null);
+                    setHasQueried(false);
+                  }}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs font-semibold outline-none transition focus:border-[#008e8b] focus:bg-white focus:ring-2 focus:ring-[#008e8b]/15 disabled:opacity-50"
+                >
+                  <option value="">-- اختر الفصل --</option>
+                  {availableClassrooms.map(classroom => (
+                    <option key={classroom.id} value={classroom.id}>
+                      {classroom.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-end">
+                <button
+                  type="submit"
+                  disabled={scheduleLoading || !selectedSchoolId || !selectedGradeId || !selectedClassroomId}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#008e8b] px-4 py-2.5 text-xs font-extrabold text-white transition hover:bg-[#007775] disabled:cursor-not-allowed disabled:bg-slate-300"
+                >
+                  {scheduleLoading ? (
+                    <>
+                      <RefreshCw className="h-4 w-4 animate-spin" />
+                      جارٍ تحميل الجدول...
+                    </>
+                  ) : (
+                    <>
+                      <Search className="h-4 w-4" />
+                      عرض الجدول
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
-        </div>
+        </section>
 
-        {/* Schedule Display */}
-        {hasQueried && !isLoading && (
-          <div>
-            {scheduleData && scheduleData.schedule && scheduleData.schedule.length > 0 ? (
-              <div className="space-y-4">
-                {/* Information Ribbon */}
-                <div className="flex flex-wrap items-center justify-between gap-3 bg-white border border-slate-200 px-5 py-3 rounded-2xl print:border-none">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-slate-500 font-medium">الجدول المعتمد لـ:</span>
-                    <span className="text-xs font-bold text-slate-900 bg-slate-100 px-2.5 py-1 rounded-lg">
-                      {scheduleData.gradeName}
-                    </span>
-                    <span className="text-xs font-bold text-[#008e8b] bg-teal-50 border border-teal-200 px-2.5 py-1 rounded-lg">
-                      {scheduleData.classroomName}
-                    </span>
-                  </div>
-                  <div className="text-xs text-slate-500 font-medium flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                    <span>معتمد ومنشور رسمياً ({scheduleData.schedule.length} حصة أسبوعية)</span>
+        {scheduleData && (
+          <section className="space-y-4">
+            <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#008e8b]/10 text-[#008e8b]">
+                  <School className="h-5 w-5" />
+                </div>
+                <div>
+                  <div className="text-sm font-black text-slate-900">{scheduleData.schoolName || selectedSchool?.schoolName}</div>
+                  <div className="mt-1 text-xs font-semibold text-slate-500">
+                    {selectedGrade?.name} — {selectedClassroom?.name}
                   </div>
                 </div>
+              </div>
+              <div className="flex gap-2 print:hidden">
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="flex items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50"
+                >
+                  <Printer className="h-3.5 w-3.5" />
+                  طباعة
+                </button>
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="flex items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  حفظ PDF
+                </button>
+              </div>
+            </div>
 
-                {/* Weekly Grid (Desktop / Print) */}
-                <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden print:border-slate-300">
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-center text-xs border-collapse">
-                      <thead>
-                        <tr className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
-                          <th className="p-3.5 text-right w-28 border-l border-slate-200">اليوم</th>
-                          {PERIODS.map(p => (
-                            <th key={p} className="p-3 border-l border-slate-200 last:border-l-0 min-w-[110px]">
-                              <div className="text-[11px] text-slate-400 font-normal">الحصة</div>
-                              <div className="text-sm font-black text-slate-800">{p}</div>
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-200">
-                        {DAYS.map(day => (
-                          <tr key={day} className="hover:bg-slate-50/50 transition">
-                            <td className="p-3.5 font-bold text-slate-900 bg-slate-50/70 border-l border-slate-200 text-right">
-                              {day}
-                            </td>
-                            {PERIODS.map(period => {
-                              const lesson = lessonsGrid[day]?.[period];
-                              return (
-                                <td
-                                  key={period}
-                                  className={`p-2.5 border-l border-slate-200 last:border-l-0 align-top ${
-                                    lesson ? 'bg-teal-50/30' : 'bg-white'
-                                  }`}
-                                >
-                                  {lesson ? (
-                                    <div className="bg-white p-2 rounded-xl border border-teal-100 shadow-2xs text-right space-y-1">
-                                      <div className="font-bold text-slate-900 text-xs line-clamp-1">
-                                        {lesson.subjectName}
-                                      </div>
-                                      <div className="text-[11px] text-slate-600 flex items-center gap-1">
-                                        <UserCheck className="w-3 h-3 text-[#008e8b] shrink-0" />
-                                        <span className="truncate">{lesson.teacherDisplayName}</span>
-                                      </div>
-                                      {lesson.roomName && (
-                                        <div className="text-[10px] text-slate-400 flex items-center gap-1">
-                                          <MapPin className="w-2.5 h-2.5 text-slate-400 shrink-0" />
-                                          <span className="truncate">{lesson.roomName}</span>
-                                        </div>
-                                      )}
-                                      {(lesson.startTime || lesson.endTime) && (
-                                        <div className="text-[9px] text-slate-400 font-mono flex items-center gap-1">
-                                          <Clock className="w-2.5 h-2.5 text-slate-400 shrink-0" />
-                                          <span>
-                                            {lesson.startTime} - {lesson.endTime}
-                                          </span>
-                                        </div>
-                                      )}
-                                    </div>
-                                  ) : (
-                                    <div className="h-full flex items-center justify-center text-slate-300 font-mono text-[11px] py-4">
-                                      —
-                                    </div>
-                                  )}
-                                </td>
-                              );
-                            })}
-                          </tr>
+            {scheduleData.schedule.length > 0 ? (
+              <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+                <div className="overflow-x-auto">
+                  <table className="min-w-full border-collapse text-xs">
+                    <thead>
+                      <tr className="bg-slate-50">
+                        <th className="border-b border-l border-slate-200 p-3 text-right font-black text-slate-700">اليوم</th>
+                        {periods.map(period => (
+                          <th key={period} className="min-w-[150px] border-b border-l border-slate-200 p-3 text-center font-black text-slate-700">
+                            الحصة {period}
+                          </th>
                         ))}
-                      </tbody>
-                    </table>
-                  </div>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {days.map(day => (
+                        <tr key={day}>
+                          <td className="border-b border-l border-slate-100 bg-slate-50/60 p-3 font-black text-slate-800">{day}</td>
+                          {periods.map(period => {
+                            const lesson = scheduleData.schedule.find(
+                              item => item.dayOfWeek === day && Number(item.periodNumber) === period
+                            );
+                            return (
+                              <td key={period} className="border-b border-l border-slate-100 p-3 align-top">
+                                {lesson ? (
+                                  <div className="space-y-2">
+                                    <div className="font-black text-slate-900">{lesson.subjectName || '—'}</div>
+                                    <div className="flex items-center gap-1 text-[11px] font-semibold text-slate-500">
+                                      <GraduationCap className="h-3 w-3 shrink-0" />
+                                      {lesson.teacherDisplayName || 'معلم المادة'}
+                                    </div>
+                                    {lesson.roomName && (
+                                      <div className="flex items-center gap-1 text-[10px] text-slate-400">
+                                        <MapPin className="h-3 w-3 shrink-0" />
+                                        {lesson.roomName}
+                                      </div>
+                                    )}
+                                    {(lesson.startTime || lesson.endTime) && (
+                                      <div className="flex items-center gap-1 font-mono text-[10px] text-slate-400">
+                                        <Clock className="h-3 w-3 shrink-0" />
+                                        {lesson.startTime} - {lesson.endTime}
+                                      </div>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <div className="py-5 text-center text-slate-300">—</div>
+                                )}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             ) : (
-              /* Unpublished / Empty State */
-              <div className="bg-white rounded-3xl border border-slate-200 p-12 text-center space-y-4 shadow-sm">
-                <div className="w-16 h-16 bg-amber-50 text-amber-600 rounded-3xl flex items-center justify-center mx-auto">
-                  <AlertCircle className="w-8 h-8" />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-slate-900">
-                    الجدول الدراسي لهذا الفصل قيد الإعداد أو لم يُنشر بعد
-                  </h3>
-                  <p className="text-xs text-slate-500 max-w-md mx-auto mt-1.5 leading-relaxed">
-                    لم يتم اعتماد جدول الحصص رسميًا لفصل ({selectedClassroom}) في ({selectedGrade}).
-                    يرجى مراجعة إدارة شؤون المعلمين أو معاودة الزيارة لاحقًا.
-                  </p>
-                </div>
+              <div className="rounded-3xl border border-amber-200 bg-amber-50 p-10 text-center">
+                <AlertCircle className="mx-auto h-8 w-8 text-amber-600" />
+                <h3 className="mt-3 text-sm font-black text-slate-900">لا يوجد جدول منشور لهذا الفصل حاليًا</h3>
+                <p className="mt-1 text-xs leading-6 text-slate-500">يرجى المراجعة لاحقًا بعد اعتماد ونشر الجدول من إدارة المدرسة.</p>
               </div>
             )}
+          </section>
+        )}
+
+        {hasQueried && !scheduleData && !scheduleLoading && !errorMessage && (
+          <div className="rounded-3xl border border-slate-200 bg-white p-10 text-center text-xs text-slate-500">
+            لا توجد بيانات متاحة للعرض.
           </div>
         )}
 
-        {/* Security and Privacy Notice */}
-        <div className="bg-slate-100/80 border border-slate-200 rounded-2xl p-4 text-[11px] text-slate-500 leading-relaxed print:hidden flex items-start gap-2.5">
-          <BookOpen className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
+        <section className="flex items-start gap-2.5 rounded-2xl border border-slate-200 bg-slate-100/70 p-4 text-[11px] leading-6 text-slate-500 print:hidden">
+          <BookOpen className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
           <div>
-            <span className="font-bold text-slate-700">تنبيه أمني ومعايير الخصوصية:</span>
-            {' '}هذه البوابة العامة توفر جداول الحصص المدرسية فقط. لا تتضمن البوابة أي بيانات شخصية، أو أرقام قومية، أو سجلات غياب ودرجات للطلاب، وتخضع لسياسات الأمان المعتمدة في مدرسة الضبعة لتكنولوجيا الطاقة النووية.
+            <span className="font-black text-slate-700">الخصوصية:</span>{' '}
+            تعرض هذه البوابة الجداول الدراسية المنشورة فقط. لا تعرض بيانات طلاب شخصية أو حضورًا أو درجات أو أرقامًا قومية.
           </div>
-        </div>
+        </section>
       </main>
     </div>
   );
