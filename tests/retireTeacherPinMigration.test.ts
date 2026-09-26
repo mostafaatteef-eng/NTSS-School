@@ -7,7 +7,7 @@ import { TeacherAccount, TeacherSession } from '../src/types';
 describe('MIG_SCOPE_013_RETIRE_TEACHER_PIN - Teacher Authentication System Tests', () => {
   beforeEach(() => {
     localStorage.clear();
-    sessionStorage.clear();
+    if (typeof sessionStorage !== 'undefined') sessionStorage.clear();
     vi.restoreAllMocks();
   });
 
