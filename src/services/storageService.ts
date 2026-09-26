@@ -768,11 +768,12 @@ class StorageService {
       this.sessionValidationCache[token] = { result: false, timestamp: now };
       return false;
     } catch {
-      // Fail-closed on network errors / offline / timeout (No offline auth)
-      if (targetUser) {
-        this.setCurrentUser(null);
-      }
-      return false;
+      // A transient Apps Script/network timeout is not evidence that the
+      // server rejected an otherwise unexpired session. Keep the locally
+      // issued session so navigation does not immediately log the user out.
+      // Protected backend operations remain fail-closed because every
+      // request is still authorized server-side with the session token.
+      return this.isAuthenticated(targetUser);
     }
   }
 
