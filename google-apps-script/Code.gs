@@ -64,6 +64,7 @@ var SHEETS = {
   POSITIVE_BEHAVIOR_TYPES: 'Positive_Behavior_Types',
   ACADEMIC_YEARS: 'Academic_Years',
   STUDENT_ENROLLMENTS: 'Student_Enrollments',
+  STUDENT_TRANSFERS: 'Student_Transfers',
   PARENT_COMMUNICATIONS: 'Parent_Communications',
   LOCATIONS: 'Locations',
   ARCHIVE_METRICS: 'Archive_Metrics',
@@ -1244,6 +1245,52 @@ function doPost(e) {
       }
       output.message = studentStatusResult.message;
       output.student = studentStatusResult.student;
+      return createJsonResponse(output, 200);
+    }
+
+    if (action === 'transferManagedStudent') {
+      var transferStudentResult = transferManagedStudentRecord(
+        schoolSs,
+        payload || {},
+        effectiveSchoolId,
+        authenticatedUsername,
+        authenticatedRole,
+        requestId
+      );
+      if (!transferStudentResult.success) {
+        return createJsonResponse({
+          status: 'error',
+          code: transferStudentResult.code || 'STUDENT_TRANSFER_FAILED',
+          message: transferStudentResult.message,
+          requestId: requestId
+        }, transferStudentResult.httpStatus || 400);
+      }
+      output.message = transferStudentResult.message;
+      output.student = transferStudentResult.student;
+      output.enrollment = transferStudentResult.enrollment || null;
+      output.transfer = transferStudentResult.transfer;
+      return createJsonResponse(output, 200);
+    }
+
+    if (action === 'importManagedStudents') {
+      var importStudentsResult = importManagedStudents(
+        schoolSs,
+        Array.isArray(payload) ? payload : [],
+        effectiveSchoolId,
+        authenticatedUsername,
+        authenticatedRole,
+        requestId
+      );
+      if (!importStudentsResult.success) {
+        return createJsonResponse({
+          status: 'error',
+          code: importStudentsResult.code || 'STUDENT_IMPORT_FAILED',
+          message: importStudentsResult.message,
+          requestId: requestId
+        }, importStudentsResult.httpStatus || 400);
+      }
+      output.message = importStudentsResult.message;
+      output.stats = importStudentsResult.stats;
       return createJsonResponse(output, 200);
     }
 
@@ -3740,6 +3787,8 @@ var ACTION_PERMISSION_MAP = {
   createManagedStudent: 'students.create',
   updateManagedStudent: 'students.edit',
   setManagedStudentStatus: 'students.edit',
+  transferManagedStudent: 'students.edit',
+  importManagedStudents: 'students.import',
 
   // Student Attendance
   getStudentAttendance: 'studentAttendance.view',
@@ -6711,6 +6760,7 @@ function ensureProductionStaffSheetsExist(ss) {
     Positive_Behavior_Types: ['id', 'title', 'category', 'points', 'description'],
     Academic_Years: ['id', 'name', 'startDate', 'endDate', 'isActive', 'status'],
     Student_Enrollments: ['id', 'studentId', 'academicYearId', 'grade', 'classroom', 'status', 'enrollmentDate'],
+    Student_Transfers: ['id', 'studentId', 'studentCode', 'studentName', 'academicYearId', 'fromGrade', 'fromClassroom', 'toGrade', 'toClassroom', 'transferType', 'reason', 'transferDate', 'performedBy', 'approvedBy', 'notes', 'createdAt'],
     Parent_Communications: ['id', 'studentId', 'studentName', 'parentName', 'parentPhone', 'type', 'reason', 'notes', 'staffMember', 'date'],
     Locations: ['id', 'name', 'type', 'capacity', 'building', 'floor'],
     Archive_Metrics: ['id', 'archivedAt', 'archivedBy', 'reason', 'archivedSheetsCount', 'payloadJson'],
@@ -7182,6 +7232,167 @@ function setManagedStudentStatus(ss, payload, effectiveSchoolId, actorUsername, 
     success: true,
     message: existing.status === 'نشط' ? 'تم تفعيل الطالب.' : 'تم أرشفة الطالب كغير نشط.',
     student: existing
+  };
+}
+
+function transferManagedStudentRecord(ss, payload, effectiveSchoolId, actorUsername, actorRole, requestId) {
+  var studentId = String(payload.studentId || '').trim();
+  var toGrade = String(payload.toGrade || '').trim();
+  var toClassroom = String(payload.toClassroom || '').trim();
+  var academicYearId = String(payload.academicYearId || '').trim();
+
+  if (!studentId || !toGrade || !toClassroom) {
+    return { success: false, code: 'INVALID_TRANSFER_PAYLOAD', message: 'الطالب والصف والفصل الجديد حقول مطلوبة.' };
+  }
+
+  var students = getSheetData(ss, SHEETS.STUDENTS);
+  var student = findStudentRecordById(students, studentId);
+  if (!student) {
+    return { success: false, code: 'RESOURCE_NOT_FOUND', message: 'سجل الطالب غير موجود.', httpStatus: 404 };
+  }
+
+  if (
+    student.schoolId &&
+    String(student.schoolId).trim().toUpperCase() !== String(effectiveSchoolId || '').trim().toUpperCase()
+  ) {
+    return { success: false, code: 'CROSS_SCHOOL_ACCESS_DENIED', message: 'الطالب خارج نطاق المدرسة الحالية.', httpStatus: 403 };
+  }
+
+  var fromGrade = String(student.grade || '').trim();
+  var fromClassroom = String(student.classroom || '').trim();
+  var now = getCairoISOString();
+
+  student.schoolId = String(effectiveSchoolId || '').trim().toUpperCase();
+  student.grade = toGrade;
+  student.classroom = toClassroom;
+  student.updatedAt = now;
+  upsertRecord(ss, SHEETS.STUDENTS, 'id', student);
+
+  var updatedEnrollment = null;
+  var enrollments = getSheetData(ss, SHEETS.STUDENT_ENROLLMENTS);
+  for (var i = 0; i < enrollments.length; i++) {
+    var sameStudent = String(enrollments[i].studentId || '').trim() === studentId;
+    var sameYear = !academicYearId || String(enrollments[i].academicYearId || '').trim() === academicYearId;
+    if (sameStudent && sameYear) {
+      enrollments[i].studentCode = student.studentCode || enrollments[i].studentCode || '';
+      enrollments[i].studentName = student.name || enrollments[i].studentName || '';
+      enrollments[i].grade = toGrade;
+      enrollments[i].classroom = toClassroom;
+      enrollments[i].updatedAt = now;
+      upsertRecord(ss, SHEETS.STUDENT_ENROLLMENTS, 'id', enrollments[i]);
+      if (!updatedEnrollment || academicYearId) updatedEnrollment = enrollments[i];
+      if (academicYearId) break;
+    }
+  }
+
+  var transfer = {
+    id: 'TRF-' + Utilities.getUuid().replace(/-/g, '').substring(0, 12).toUpperCase(),
+    studentId: studentId,
+    studentCode: String(student.studentCode || '').trim(),
+    studentName: String(student.name || '').trim(),
+    academicYearId: academicYearId,
+    fromGrade: fromGrade,
+    fromClassroom: fromClassroom,
+    toGrade: toGrade,
+    toClassroom: toClassroom,
+    transferType: 'نقل فصل',
+    reason: String(payload.reason || '').trim(),
+    transferDate: getCairoISOString().substring(0, 10),
+    performedBy: String(actorUsername || '').trim(),
+    approvedBy: String(actorUsername || '').trim(),
+    notes: String(payload.notes || '').trim(),
+    createdAt: now
+  };
+
+  upsertRecord(ss, SHEETS.STUDENT_TRANSFERS, 'id', transfer);
+  recordAuthoritativeAudit(
+    ss,
+    requestId,
+    actorUsername,
+    actorRole,
+    'STUDENT_TRANSFERRED',
+    'STUDENTS',
+    studentId,
+    'نقل الطالب من ' + fromGrade + ' / ' + fromClassroom + ' إلى ' + toGrade + ' / ' + toClassroom
+  );
+
+  return {
+    success: true,
+    message: 'تم نقل الطالب وتحديث قيده بنجاح.',
+    student: student,
+    enrollment: updatedEnrollment,
+    transfer: transfer
+  };
+}
+
+function importManagedStudents(ss, operations, effectiveSchoolId, actorUsername, actorRole, requestId) {
+  if (!operations || !Array.isArray(operations) || operations.length === 0) {
+    return { success: false, code: 'INVALID_IMPORT_PAYLOAD', message: 'لا توجد سجلات طلاب صالحة للاستيراد.' };
+  }
+
+  var stats = { added: 0, updated: 0, skipped: 0, errors: [] };
+
+  for (var i = 0; i < operations.length; i++) {
+    var op = operations[i] || {};
+    var kind = String(op.operation || '').trim().toUpperCase();
+    var data = op.data || {};
+    var result;
+
+    if (kind === 'NEW') {
+      result = createManagedStudentRecord(
+        ss,
+        data,
+        effectiveSchoolId,
+        actorUsername,
+        actorRole,
+        requestId
+      );
+      if (result.success) stats.added++;
+    } else if (kind === 'UPDATE') {
+      var targetId = String(op.targetId || '').trim();
+      if (!targetId) {
+        result = { success: false, code: 'STUDENT_ID_REQUIRED', message: 'معرف الطالب مطلوب لتحديث سجل مستورد.' };
+      } else {
+        var updateData = Object.assign({}, data, { id: targetId });
+        result = updateManagedStudentRecord(
+          ss,
+          updateData,
+          effectiveSchoolId,
+          actorUsername,
+          actorRole,
+          requestId
+        );
+      }
+      if (result.success) stats.updated++;
+    } else {
+      stats.skipped++;
+      continue;
+    }
+
+    if (!result.success) {
+      stats.errors.push({
+        row: Number(op.rowNumber || i + 1),
+        code: result.code || 'IMPORT_ROW_FAILED',
+        message: result.message || 'تعذر حفظ السجل.'
+      });
+    }
+  }
+
+  recordAuthoritativeAudit(
+    ss,
+    requestId,
+    actorUsername,
+    actorRole,
+    'STUDENTS_IMPORTED',
+    'STUDENTS',
+    String(operations.length),
+    'استيراد طلاب: إضافة ' + stats.added + ' / تحديث ' + stats.updated + ' / أخطاء ' + stats.errors.length
+  );
+
+  return {
+    success: true,
+    message: stats.errors.length > 0 ? 'اكتمل الاستيراد مع بعض الأخطاء.' : 'تم استيراد الطلاب بنجاح.',
+    stats: stats
   };
 }
 
