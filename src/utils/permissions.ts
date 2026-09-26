@@ -328,6 +328,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<LegacyUserRole, Partial<Record<Per
     'teachers.import': true,
     'teacherPortal.access': false,
     'teacherSchedule.viewOwn': false,
+    'teacherAccounts.manage': true,
     'teacherAttendance.view': true,
     'teacherAttendance.create': true,
     'teacherAttendance.edit': true,
