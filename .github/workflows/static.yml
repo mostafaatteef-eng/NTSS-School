@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
@@ -54,6 +54,14 @@ jobs:
           name: neon-function-bundle
           path: neon-function.zip
           retention-days: 1
+      - name: Publish Neon bundle payload
+        run: |
+          base64 -w0 neon-function.zip > neon-function.b64
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f neon-function.b64
+          git commit -m "chore(neon): publish deployment bundle [skip ci]"
+          git push
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
