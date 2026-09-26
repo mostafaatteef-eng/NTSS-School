@@ -168,8 +168,20 @@ export const StudentAttendanceView: React.FC = () => {
         records: recordsToSave,
       });
 
-      setAttendanceRecords(storageService.getStudentAttendance());
+      if (!res.success) {
+        setSaveError(res.message || 'فشل حفظ حضور الفصل في الخادم. لم يتم تعديل البيانات المحلية.');
+        return;
+      }
+
+      if (res.cacheUpdated) {
+        setAttendanceRecords(storageService.getStudentAttendance());
+        setTempRecords({});
+      }
+
       setSaveSuccess(true);
+      if (!res.cacheUpdated) {
+        setSaveError('تم حفظ الحضور في الخادم، لكن تعذر تحديث نسخة العرض المحلية. أعد تحميل الصفحة للحصول على البيانات المعتمدة.');
+      }
       setTimeout(() => setSaveSuccess(false), 4000);
     } catch (err: any) {
       setSaveError(err?.message || 'حدث خطأ أثناء حفظ حضور الفصل');
