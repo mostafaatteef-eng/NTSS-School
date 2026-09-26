@@ -273,7 +273,9 @@ class TeacherAccountAdminService {
       employee.isTeachingStaff && employee.status !== 'Inactive'
     );
 
-    const employeeById = new Map(teachingStaff.map(employee => [employee.id, employee]));
+    const employeeById = new Map<string, SafeTeachingEmployee>(
+      teachingStaff.map(employee => [employee.id, employee] as const)
+    );
 
     const accounts = (Array.isArray(accountsRes.data?.data) ? accountsRes.data.data : [])
       .map((row: any) => this.safeAccount(row, check.effectiveSchoolId!))
