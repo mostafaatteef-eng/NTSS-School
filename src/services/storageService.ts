@@ -6816,6 +6816,18 @@ class StorageService {
       return { success: false, code: 'EMPLOYEE_CONTEXT_REQUIRED', message: 'الحساب غير مربوط بسجل موظف معتمد.' };
     }
 
+    if (isPostgresBackendEnabled()) {
+      try {
+        const pg = await postgresApiRequest<any>('/my-requests', user.sessionToken, { method: 'POST', body: JSON.stringify({ action: 'getMyRequests' }) });
+        const res = pg.body || {};
+        if (!pg.ok || res.status === 'error') {
+          if (pg.status === 401) this.setCurrentUser(null);
+          return { success: false, code: res.code || 'SELF_REQUESTS_READ_FAILED', message: res.message || 'تعذر تحميل الطلبات.' };
+        }
+        return { success: true, message: res.message || 'تم تحميل الطلبات بنجاح.', profile: res.data?.profile, leaves: Array.isArray(res.data?.leaves) ? res.data.leaves : [], permissions: Array.isArray(res.data?.permissions) ? res.data.permissions : [] };
+      } catch { return { success: false, code: 'NETWORK_ERROR', message: 'تعذر الاتصال بالخادم لتحميل الطلبات.' }; }
+    }
+
     const scriptUrl = this.getBackendUrl();
     const online = typeof navigator === 'undefined' || navigator.onLine !== false;
     if (!scriptUrl || scriptUrl.length < 15 || !online) {
@@ -6875,6 +6887,16 @@ class StorageService {
       return { success: false, code: 'EMPLOYEE_CONTEXT_REQUIRED', message: 'الحساب غير مربوط بسجل موظف معتمد.' };
     }
 
+    if (isPostgresBackendEnabled()) {
+      try {
+        const data = { leaveType: String(input.leaveType || '').trim(), startDate: String(input.startDate || '').trim(), endDate: String(input.endDate || '').trim(), reason: String(input.reason || '').trim(), notes: String(input.notes || '').trim(), attachment: String(input.attachment || '') };
+        const pg = await postgresApiRequest<any>('/my-requests', user.sessionToken, { method: 'POST', body: JSON.stringify({ action: 'createMyLeaveRequest', data }) });
+        const res = pg.body || {};
+        if (!pg.ok || res.status === 'error') { if (pg.status === 401) this.setCurrentUser(null); return { success: false, code: res.code || 'LEAVE_REQUEST_FAILED', message: res.message || 'تعذر إرسال طلب الإجازة.' }; }
+        return { success: true, message: res.message || 'تم إرسال طلب الإجازة بنجاح.', leave: res.leave as LeaveRecord | undefined };
+      } catch { return { success: false, code: 'NETWORK_ERROR', message: 'تعذر الاتصال بالخادم لإرسال طلب الإجازة.' }; }
+    }
+
     const scriptUrl = this.getBackendUrl();
     const online = typeof navigator === 'undefined' || navigator.onLine !== false;
     if (!scriptUrl || scriptUrl.length < 15 || !online) {
@@ -6931,6 +6953,16 @@ class StorageService {
     }
     if (!user.employeeId) {
       return { success: false, code: 'EMPLOYEE_CONTEXT_REQUIRED', message: 'الحساب غير مربوط بسجل موظف معتمد.' };
+    }
+
+    if (isPostgresBackendEnabled()) {
+      try {
+        const data = { date: String(input.date || '').trim(), permissionType: String(input.permissionType || '').trim(), startTime: String(input.startTime || '').trim(), endTime: String(input.endTime || '').trim(), reason: String(input.reason || '').trim(), notes: String(input.notes || '').trim(), attachment: String(input.attachment || '') };
+        const pg = await postgresApiRequest<any>('/my-requests', user.sessionToken, { method: 'POST', body: JSON.stringify({ action: 'createMyPermissionRequest', data }) });
+        const res = pg.body || {};
+        if (!pg.ok || res.status === 'error') { if (pg.status === 401) this.setCurrentUser(null); return { success: false, code: res.code || 'PERMISSION_REQUEST_FAILED', message: res.message || 'تعذر إرسال طلب الإذن.' }; }
+        return { success: true, message: res.message || 'تم إرسال طلب الإذن بنجاح.', permission: res.permission as EmployeePermissionRecord | undefined };
+      } catch { return { success: false, code: 'NETWORK_ERROR', message: 'تعذر الاتصال بالخادم لإرسال طلب الإذن.' }; }
     }
 
     const scriptUrl = this.getBackendUrl();
