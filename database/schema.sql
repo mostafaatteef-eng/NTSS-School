@@ -17,3 +17,25 @@ CREATE TABLE IF NOT EXISTS student_attendance (id bigserial PRIMARY KEY, school_
 CREATE INDEX IF NOT EXISTS student_attendance_school_date_idx ON student_attendance(school_id, attendance_date);
 CREATE TABLE IF NOT EXISTS employee_attendance (id bigserial PRIMARY KEY, school_id text NOT NULL REFERENCES schools(id) ON DELETE CASCADE, employee_id text NOT NULL REFERENCES employees(id) ON DELETE CASCADE, attendance_date date NOT NULL, status text, check_in timestamptz, check_out timestamptz, payload jsonb NOT NULL DEFAULT '{}'::jsonb, UNIQUE (school_id, employee_id, attendance_date));
 CREATE INDEX IF NOT EXISTS employee_attendance_school_date_idx ON employee_attendance(school_id, attendance_date);
+
+CREATE TABLE IF NOT EXISTS leaves (
+  id text PRIMARY KEY, school_id text NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+  employee_id text REFERENCES employees(id) ON DELETE SET NULL, start_date date, end_date date,
+  status text, payload jsonb NOT NULL DEFAULT '{}'::jsonb, created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS leaves_school_dates_idx ON leaves(school_id,start_date,end_date);
+
+CREATE TABLE IF NOT EXISTS permissions (
+  id text PRIMARY KEY, school_id text NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+  employee_id text REFERENCES employees(id) ON DELETE SET NULL, permission_date date,
+  status text, payload jsonb NOT NULL DEFAULT '{}'::jsonb, created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS permissions_school_date_idx ON permissions(school_id,permission_date);
+
+CREATE TABLE IF NOT EXISTS schedule (
+  id text PRIMARY KEY, school_id text NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+  academic_year_id text REFERENCES academic_years(id) ON DELETE SET NULL,
+  teacher_id text, grade text, classroom text, weekday text, period_no integer,
+  payload jsonb NOT NULL DEFAULT '{}'::jsonb, updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS schedule_school_class_idx ON schedule(school_id,grade,classroom,weekday);
