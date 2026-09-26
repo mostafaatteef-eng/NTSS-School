@@ -5910,7 +5910,10 @@ class StorageService {
     });
   }
 
-  public async setManagedStudentStatusAuthoritative(id: string, status: 'نشط' | 'غير نشط') {
+  public async setManagedStudentStatusAuthoritative(
+    id: string,
+    status: 'نشط' | 'غير نشط' | 'موقوف' | 'منقول' | 'متخرج'
+  ) {
     return this.postStudentManagementAction('setManagedStudentStatus', {
       id: String(id || '').trim(),
       status,
