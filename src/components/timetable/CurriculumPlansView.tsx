@@ -35,9 +35,10 @@ import * as XLSX from 'xlsx';
 
 interface CurriculumPlansViewProps {
   currentUser: User | null;
+  readOnly?: boolean;
 }
 
-export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ currentUser }) => {
+export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ currentUser, readOnly = false }) => {
   const [plans, setPlans] = useState<CurriculumMasterPlan[]>([]);
   const [distributions, setDistributions] = useState<CurriculumLessonDistribution[]>([]);
   const [selectedPlanId, setSelectedPlanId] = useState<string>('');
@@ -108,6 +109,10 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
   // Handle plan file upload
   const handleFileUpload = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (readOnly) {
+      setUploadError('هذا العرض للقراءة فقط داخل بوابة المعلم.');
+      return;
+    }
     if (!uploadSubject.trim()) {
       setUploadError('يرجى تحديد المادة الدراسية');
       return;
@@ -221,7 +226,7 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
 
   const handleLinkItem = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!linkingItem || !selectedScheduleId) return;
+    if (readOnly || !linkingItem || !selectedScheduleId) return;
 
     const res = curriculumPlanService.linkPlanItemToSchedule({
       planId: linkingItem.plan.id,
@@ -247,6 +252,7 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
     distributionId: string,
     newStatus: CurriculumDistributionStatus
   ) => {
+    if (readOnly) return;
     const dist = distributions.find(d => d.id === distributionId);
     if (!dist) return;
 
@@ -261,6 +267,7 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
   };
 
   const handleDeletePlan = (planId: string) => {
+    if (readOnly) return;
     if (!window.confirm('هل أنت متأكد من حذف هذه الخطة وتوزيعاتها؟')) return;
     const res = storageService.deleteCurriculumPlan(planId, currentUser);
     if (res.success) {
@@ -285,7 +292,7 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
         </div>
 
         <div className="flex items-center gap-2">
-          {isCurriculumAdmin ? (
+          {isCurriculumAdmin && !readOnly ? (
             <button
               onClick={() => setIsUploadModalOpen(true)}
               className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-sm transition"
@@ -294,7 +301,7 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
             </button>
           ) : (
             <div className="text-xs font-semibold text-slate-500 bg-slate-100 px-3 py-1.5 rounded-xl border">
-              وضع المعلم: استعراض الخطة وربط الحصص المجدولة
+              {readOnly ? 'وضع المعلم: استعراض فقط' : 'وضع المعلم: استعراض الخطة وربط الحصص المجدولة'}
             </div>
           )}
         </div>
@@ -358,7 +365,7 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
           )}
         </div>
 
-        {selectedPlan && isCurriculumAdmin && (
+        {selectedPlan && isCurriculumAdmin && !readOnly && (
           <button
             onClick={() => handleDeletePlan(selectedPlan.id)}
             className="text-rose-600 hover:text-rose-800 font-bold flex items-center gap-1 px-3 py-1 text-xs hover:bg-rose-50 rounded-lg transition"
@@ -437,15 +444,8 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
                       </td>
                       <td className="p-3">
                         {linkedDist ? (
-                          <select
-                            value={linkedDist.status}
-                            onChange={e =>
-                              handleUpdateStatus(
-                                linkedDist.id,
-                                e.target.value as CurriculumDistributionStatus
-                              )
-                            }
-                            className={`text-xs font-bold rounded-lg border px-2 py-1 ${
+                          readOnly ? (
+                            <span className={`inline-flex text-xs font-bold rounded-lg border px-2 py-1 ${
                               linkedDist.status === 'Delivered'
                                 ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
                                 : linkedDist.status === 'Deferred'
@@ -453,25 +453,58 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
                                 : linkedDist.status === 'Cancelled'
                                 ? 'bg-rose-50 text-rose-800 border-rose-300'
                                 : 'bg-indigo-50 text-indigo-800 border-indigo-300'
-                            }`}
-                          >
-                            <option value="Planned">مجدول (Planned)</option>
-                            <option value="Delivered">تم التدريس (Delivered)</option>
-                            <option value="Deferred">مؤجل (Deferred)</option>
-                            <option value="Cancelled">ملغي (Cancelled)</option>
-                          </select>
+                            }`}>
+                              {linkedDist.status === 'Delivered'
+                                ? 'تم التدريس'
+                                : linkedDist.status === 'Deferred'
+                                  ? 'مؤجل'
+                                  : linkedDist.status === 'Cancelled'
+                                    ? 'ملغي'
+                                    : 'مجدول'}
+                            </span>
+                          ) : (
+                            <select
+                              value={linkedDist.status}
+                              onChange={e =>
+                                handleUpdateStatus(
+                                  linkedDist.id,
+                                  e.target.value as CurriculumDistributionStatus
+                                )
+                              }
+                              className={`text-xs font-bold rounded-lg border px-2 py-1 ${
+                                linkedDist.status === 'Delivered'
+                                  ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                                  : linkedDist.status === 'Deferred'
+                                    ? 'bg-amber-50 text-amber-800 border-amber-300'
+                                    : linkedDist.status === 'Cancelled'
+                                      ? 'bg-rose-50 text-rose-800 border-rose-300'
+                                      : 'bg-indigo-50 text-indigo-800 border-indigo-300'
+                              }`}
+                            >
+                              <option value="Planned">مجدول (Planned)</option>
+                              <option value="Delivered">تم التدريس (Delivered)</option>
+                              <option value="Deferred">مؤجل (Deferred)</option>
+                              <option value="Cancelled">ملغي (Cancelled)</option>
+                            </select>
+                          )
                         ) : (
                           <span className="text-slate-400">—</span>
                         )}
                       </td>
                       <td className="p-3 text-center">
-                        <button
-                          type="button"
-                          onClick={() => setLinkingItem({ plan: selectedPlan, item })}
-                          className="px-3 py-1.5 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-xl border border-indigo-200 transition"
-                        >
-                          {linkedDist ? 'تعديل الربط' : 'ربط بحصة'}
-                        </button>
+                        {readOnly ? (
+                          <span className="text-[11px] font-semibold text-slate-400">
+                            عرض فقط
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setLinkingItem({ plan: selectedPlan, item })}
+                            className="px-3 py-1.5 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-xl border border-indigo-200 transition"
+                          >
+                            {linkedDist ? 'تعديل الربط' : 'ربط بحصة'}
+                          </button>
+                        )}
                       </td>
                     </tr>
                   );
@@ -493,7 +526,7 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
       )}
 
       {/* Modal: Upload / Create Master Plan (Curriculum Admin Only) */}
-      {isUploadModalOpen && (
+      {isUploadModalOpen && !readOnly && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white w-full max-w-xl rounded-3xl p-6 shadow-2xl space-y-5 border border-slate-200 text-xs">
             <div className="flex items-center justify-between border-b pb-3">
@@ -622,7 +655,7 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
       )}
 
       {/* Modal: Link Plan Item to Schedule Lesson */}
-      {linkingItem && (
+      {linkingItem && !readOnly && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white w-full max-w-lg rounded-3xl p-6 shadow-2xl space-y-4 border border-slate-200 text-xs">
             <div className="flex items-center justify-between border-b pb-3">
