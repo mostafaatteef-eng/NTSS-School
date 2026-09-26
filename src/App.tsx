@@ -32,6 +32,7 @@ import { UsersView } from './components/users/UsersView';
 import { AuditLogsView } from './components/audit/AuditLogsView';
 import { SettingsView } from './components/settings/SettingsView';
 import { MasterDataManagerView } from './components/masterdata/MasterDataManagerView';
+import { SchoolsManagementView } from './components/schools/SchoolsManagementView';
 import { BackupRestoreView } from './components/backup/BackupRestoreView';
 import { ImportCenterView } from './components/import/ImportCenterView';
 import { SystemHealthView } from './components/health/SystemHealthView';
@@ -472,6 +473,9 @@ export default function App() {
 
       case 'master_data':
         return <MasterDataManagerView />;
+
+      case 'schools':
+        return <SchoolsManagementView currentUser={currentUser} />;
 
       case 'import_center':
         return <ImportCenterView currentUser={currentUser} />;

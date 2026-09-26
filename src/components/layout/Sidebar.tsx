@@ -4,6 +4,7 @@ import {
   Award,
   BookOpen,
   Building,
+  Building2,
   Calendar,
   CalendarDays,
   CalendarRange,
@@ -66,6 +67,7 @@ export type ActiveTab =
   | 'timetable_reports'
   | 'teacher_portal'
   | 'student_schedule_access'
+  | 'schools'
   | 'master_data'
   | 'import_center'
   | 'backup'
@@ -363,6 +365,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
           icon: Activity,
           adminOnly: true,
           permission: 'audit.view',
+        },
+        {
+          id: 'schools',
+          label: 'إدارة المدارس',
+          icon: Building2,
+          adminOnly: true,
+          permission: 'schools.manage',
         },
         {
           id: 'master_data',
