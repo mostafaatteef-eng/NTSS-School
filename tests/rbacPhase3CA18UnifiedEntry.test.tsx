@@ -93,6 +93,8 @@ describe('PHASE 3C-A18 — Unified Multi-Portal Entry & School-Aware Public Sche
 
     await act(async () => {
       root.render(<LoginView onLoginSuccess={success} />);
+    });
+    await act(async () => {
       (container.querySelector('[data-testid="entry-system"]') as HTMLButtonElement).click();
     });
 
@@ -127,6 +129,8 @@ describe('PHASE 3C-A18 — Unified Multi-Portal Entry & School-Aware Public Sche
 
     await act(async () => {
       root.render(<LoginView onLoginSuccess={() => {}} />);
+    });
+    await act(async () => {
       (container.querySelector('[data-testid="entry-staff"]') as HTMLButtonElement).click();
     });
 
