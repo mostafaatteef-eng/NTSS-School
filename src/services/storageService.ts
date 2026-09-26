@@ -4866,7 +4866,23 @@ class StorageService {
 
   public async processSyncQueue(): Promise<{ processed: number; succeeded: number; failed: number }> {
     return SyncQueueService.processQueue(async (action, payload) => {
-      if (isPostgresBackendEnabled()) return { success: false, message: 'LEGACY_GAS_MUTATION_BLOCKED_IN_POSTGRES_RUNTIME' };
+      if (isPostgresBackendEnabled()) {
+        const currentUser = this.getCurrentUser();
+        const schoolId = this.getActiveSchoolId();
+        if (!currentUser?.sessionToken || !schoolId) return { success: false, message: 'POSTGRES_AUTH_OR_SCHOOL_REQUIRED' };
+        if (action === 'saveAcademicYear' || action === 'deleteAcademicYear') {
+          try {
+            const pg = await postgresApiRequest<any>('/academic-years/manage', currentUser.sessionToken, {
+              method: 'POST',
+              body: JSON.stringify({ action, schoolId, data: payload }),
+            });
+            return { success: pg.ok && pg.body?.status === 'success', message: pg.body?.message || pg.body?.code || 'Academic year sync' };
+          } catch {
+            return { success: false, message: 'POSTGRES_ACADEMIC_YEAR_SYNC_FAILED' };
+          }
+        }
+        return { success: false, message: 'LEGACY_GAS_MUTATION_BLOCKED_IN_POSTGRES_RUNTIME' };
+      }
       const settings = this.getSettings();
       const scriptUrl = settings.googleAppsScriptUrl || DEFAULT_BACKEND_URL;
       if (!scriptUrl || scriptUrl.length < 15) {
