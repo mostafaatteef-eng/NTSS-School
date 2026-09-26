@@ -52,6 +52,23 @@ describe('PHASE 3C-A17.4 — Staff attendance integrity freeze', () => {
     expect(gas).toContain('output.records = staffBatchRes.records || []');
   });
 
+  it('client submits only operational attendance inputs, not authoritative metadata', () => {
+    const start = storage.indexOf('public async saveDailyStaffAttendanceBatchToBackend');
+    const end = storage.indexOf('// ---------------- Attendance Exceptions', start);
+    const section = storage.slice(start, end);
+
+    expect(section).toContain('const requestRecords = records.map');
+    expect(section).toContain('employeeId: String(rec.employeeId');
+    expect(section).toContain('status: rec.status');
+    expect(section).toContain("checkIn: String(rec.checkIn");
+    expect(section).toContain("checkOut: String(rec.checkOut");
+    expect(section).not.toContain('employeeName: rec.employeeName');
+    expect(section).not.toContain('department: rec.department');
+    expect(section).not.toContain('workingHours: rec.workingHours');
+    expect(section).not.toContain('lateMinutes: rec.lateMinutes');
+    expect(section).not.toContain('id: rec.id');
+  });
+
   it('client updates attendance cache only from canonical backend records', () => {
     const start = storage.indexOf('public async saveDailyStaffAttendanceBatchToBackend');
     const end = storage.indexOf('// ---------------- Attendance Exceptions', start);
