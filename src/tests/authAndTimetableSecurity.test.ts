@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { storageService } from '../services/storageService';
 import { timetableService } from '../services/timetableService';
 import { derivePBKDF2Hash, generateCryptographicSalt } from '../utils/cryptoUtils';
@@ -7,6 +7,8 @@ import { Employee, User, ScheduleItem } from '../types';
 describe('NTSS ERP - Security, Login Numbers, First Login & Timetable Integration Tests', () => {
   beforeEach(() => {
     localStorage.clear();
+    sessionStorage.clear();
+    vi.restoreAllMocks();
   });
 
   it('Test 1: Login number generation is unique, sequential, and persisted', () => {
@@ -271,7 +273,7 @@ describe('NTSS ERP - Security, Login Numbers, First Login & Timetable Integratio
     expect(knownTeacher).toBeFalsy();
   });
 
-  it('Test 15: Teacher portal rejects legacy PIN and authenticates via Username + Password', async () => {
+  it('Test 15: Teacher portal rejects legacy PIN and never authenticates from local cache when backend is unavailable', async () => {
     const emp: Employee = {
       id: 'EMP-PIN-TEST',
       name: 'معلم الاختبار',
@@ -281,9 +283,7 @@ describe('NTSS ERP - Security, Login Numbers, First Login & Timetable Integratio
       jobTitle: 'معلم روبوتكس',
       department: 'التعليم',
     };
-    storageService.saveEmployee(emp);
 
-    // 1. Assert that legacy setTeacherPin and verifyTeacherPin fail / reject
     const setRes = await timetableService.setTeacherPin(emp.id, '5566');
     expect(setRes.success).toBe(false);
     expect(setRes.code).toBe('LEGACY_PIN_RETIRED');
@@ -292,13 +292,26 @@ describe('NTSS ERP - Security, Login Numbers, First Login & Timetable Integratio
     expect(verifyRes.success).toBe(false);
     expect(verifyRes.code).toBe('LEGACY_PIN_RETIRED');
 
-    // 2. Assert that Teacher Account works securely with Username + Password
-    const createRes = await storageService.createTeacherAccount(emp.id, 'teacher_robotics', 'P@ssw0rd123');
-    expect(createRes.success).toBe(true);
+    localStorage.setItem('ntss_teacher_accounts_v3', JSON.stringify([{
+      id: 'TAC-LOCAL-ONLY',
+      employeeId: emp.id,
+      teacherCode: emp.teacherCode,
+      teacherName: emp.name,
+      username: 'teacher_robotics',
+      status: 'Active',
+      isActive: true,
+      failedLoginAttempts: 0,
+      lockedUntil: null,
+      createdAt: new Date().toISOString(),
+    }]));
 
-    const loginRes = await storageService.teacherLogin('teacher_robotics', 'P@ssw0rd123');
-    expect(loginRes.success).toBe(true);
-    expect(loginRes.teacherSessionToken).toBeTruthy();
+    vi.spyOn(storageService, 'getBackendUrl').mockReturnValue('');
+    const loginRes = await storageService.teacherLogin('teacher_robotics', 'AnyPasswordLongEnough', 'SCH-BADR');
+
+    expect(loginRes.success).toBe(false);
+    expect(loginRes.code).toBe('SERVICE_UNAVAILABLE');
+    expect(loginRes.teacherSessionToken).toBeUndefined();
+    expect(storageService.getTeacherSession()).toBeNull();
   });
 
   it('Test 16: Deactivating a user account blocks subsequent login attempts', async () => {
