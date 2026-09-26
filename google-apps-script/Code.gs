@@ -443,6 +443,9 @@ function doPost(e) {
 
       if (action === 'teacherLogout') {
         revokeTeacherSessionToken(ss, incomingTeacherToken);
+        if (teacherSchoolSs.getId() !== ss.getId()) {
+          revokeTeacherSessionToken(teacherSchoolSs, incomingTeacherToken);
+        }
         output.message = 'تم تسجيل خروج المعلم بنجاح';
         return createJsonResponse(output, 200);
       }
