@@ -922,7 +922,7 @@ class StorageService {
     if (!base) throw new Error('POSTGRES_API_NOT_CONFIGURED');
     const user = this.getCurrentUser();
     const headers = new Headers(init.headers || {});
-    headers.set('Content-Type', 'application/json');
+    if (init.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
     if (user?.sessionToken) headers.set('Authorization', 'Bearer ' + user.sessionToken);
     return fetch(base + path, { ...init, headers });
   }
@@ -946,6 +946,7 @@ class StorageService {
       try {
         const response = await this.postgresRequest('/api/login', {
           method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
           body: JSON.stringify({ email: cleanEmail, password: cleanPassword }),
         });
         const result = await response.json().catch(() => ({}));
