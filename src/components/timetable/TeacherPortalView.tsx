@@ -39,7 +39,7 @@ interface TeacherPortalViewProps {
   onBackToLogin?: () => void;
 }
 
-export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ currentUser, onBackToLogin }) => {
+export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ onBackToLogin }) => {
   const [activeTeacher, setActiveTeacher] = useState<Employee | null>(null);
   const [sessionToken, setSessionToken] = useState<string | null>(storageService.getTeacherSessionToken());
   const [portalTab, setPortalTab] = useState<'today' | 'weekly' | 'classes' | 'curriculum' | 'homework' | 'resources' | 'exams' | 'requests'>('today');
@@ -465,8 +465,6 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ currentUse
   }
 
   // AUTHENTICATED TEACHER PORTAL
-  const allTeachersForSupervisor = isSupervisor ? timetableService.getTeachingStaff() : [];
-
   return (
     <div className="space-y-6" dir="rtl">
       {/* Teacher Portal Independent Header & Security Guard Banner */}
@@ -507,25 +505,6 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ currentUse
 
         {/* Supervisor Teacher Switcher OR Load Summary */}
         <div className="flex flex-wrap items-center gap-3">
-          {isSupervisor && allTeachersForSupervisor.length > 1 && (
-            <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl text-xs">
-              <span className="text-slate-500 font-bold">وضع الإشراف:</span>
-              <select
-                value={activeTeacher.id}
-                onChange={e => {
-                  const target = allTeachersForSupervisor.find(t => t.id === e.target.value);
-                  if (target) selectTeacher(target);
-                }}
-                className="bg-white border border-slate-300 rounded-lg px-2 py-1 text-xs font-medium text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#008e8b]"
-              >
-                {allTeachersForSupervisor.map(t => (
-                  <option key={t.id} value={t.id}>
-                    {t.name} ({t.loginNumber ? `#${t.loginNumber}` : t.teacherCode || ''})
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
           {loadStats && (
             <div className="bg-slate-50 border border-slate-200 px-4 py-2 rounded-xl text-xs flex items-center gap-3">
               <div>
