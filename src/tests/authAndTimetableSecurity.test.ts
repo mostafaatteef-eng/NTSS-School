@@ -332,4 +332,97 @@ describe('NTSS ERP - Security, Login Numbers, First Login & Timetable Integratio
     expect(updated?.status).toBe('Inactive');
     expect(updated?.isActive).toBe(false);
   });
+
+  it('Test 17: Teacher login uses backend authority and persists server session metadata', async () => {
+    vi.spyOn(storageService, 'getBackendUrl').mockReturnValue('https://example.com/teacher');
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        status: 'success',
+        teacherSessionToken: 'SERVER_SESSION_TOKEN_123',
+        expiresAt: new Date(Date.now() + 3600000).toISOString(),
+        schoolId: 'SCH-BADR',
+        mustChangePassword: true,
+        teacher: {
+          employeeId: 'EMP-AUTH-1',
+          teacherCode: 'T-AUTH-1',
+          teacherName: 'معلم معتمد',
+          department: 'التعليم',
+        },
+      }),
+    } as Response);
+
+    const result = await storageService.teacherLogin('teacher.auth', 'TemporaryPassword2026!', 'SCH-BADR');
+
+    expect(result.success).toBe(true);
+    expect(result.mustChangePassword).toBe(true);
+    expect(storageService.getTeacherSession()?.teacherSessionToken).toBe('SERVER_SESSION_TOKEN_123');
+    expect(storageService.getTeacherSession()?.mustChangePassword).toBe(true);
+
+    const request = JSON.parse(String((fetchSpy.mock.calls[0][1] as RequestInit).body));
+    expect(request.action).toBe('teacherLogin');
+    expect(request.schoolId).toBe('SCH-BADR');
+  });
+
+  it('Test 18: Invalid persisted teacher session is rejected after backend revalidation', async () => {
+    storageService.setTeacherSession({
+      teacherSessionToken: 'OLD_SESSION_TOKEN_123',
+      employeeId: 'EMP-AUTH-2',
+      teacherCode: 'T-AUTH-2',
+      teacherName: 'معلم',
+      username: 'teacher.auth2',
+      schoolId: 'SCH-BADR',
+      expiresAt: new Date(Date.now() + 3600000).toISOString(),
+      createdAt: new Date().toISOString(),
+    });
+
+    vi.spyOn(storageService, 'getBackendUrl').mockReturnValue('https://example.com/teacher');
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: false,
+      status: 401,
+      json: async () => ({
+        status: 'error',
+        code: 'TEACHER_SESSION_INVALID',
+        message: 'invalid',
+      }),
+    } as Response);
+
+    const result = await storageService.validateTeacherPortalSession();
+
+    expect(result.success).toBe(false);
+    expect(storageService.getTeacherSession()).toBeNull();
+  });
+
+  it('Test 19: Teacher password change rotates the server-issued session token', async () => {
+    storageService.setTeacherSession({
+      teacherSessionToken: 'OLD_ROTATION_TOKEN_123',
+      employeeId: 'EMP-AUTH-3',
+      teacherCode: 'T-AUTH-3',
+      teacherName: 'معلم',
+      username: 'teacher.auth3',
+      schoolId: 'SCH-BADR',
+      mustChangePassword: true,
+      expiresAt: new Date(Date.now() + 3600000).toISOString(),
+      createdAt: new Date().toISOString(),
+    });
+
+    vi.spyOn(storageService, 'getBackendUrl').mockReturnValue('https://example.com/teacher');
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        status: 'success',
+        teacherSessionToken: 'NEW_ROTATION_TOKEN_456',
+        expiresAt: new Date(Date.now() + 7200000).toISOString(),
+      }),
+    } as Response);
+
+    const result = await storageService.changeTeacherPassword('NewTeacherPassword2026!');
+
+    expect(result.success).toBe(true);
+    expect(storageService.getTeacherSession()?.teacherSessionToken).toBe('NEW_ROTATION_TOKEN_456');
+    expect(storageService.getTeacherSession()?.mustChangePassword).toBe(false);
+  });
+
 });
