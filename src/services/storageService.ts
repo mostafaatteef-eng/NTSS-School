@@ -279,6 +279,8 @@ class StorageService {
 
   // In-memory cache for session validation to prevent hammering backend
   private sessionValidationCache: { [token: string]: { result: boolean; timestamp: number } } = {};
+  private static readonly SESSION_VALIDATION_CACHE_MS = 60_000;
+  private static readonly SESSION_VALIDATION_TIMEOUT_MS = 12_000;
 
   public getBackendUrl(): string {
     const envUrl = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_GOOGLE_APPS_SCRIPT_URL as string) || '';
@@ -707,7 +709,7 @@ class StorageService {
     const token = targetUser.sessionToken || '';
     const now = Date.now();
     const cached = this.sessionValidationCache[token];
-    if (cached && now - cached.timestamp < 15000) {
+    if (cached && now - cached.timestamp < StorageService.SESSION_VALIDATION_CACHE_MS) {
       return cached.result;
     }
 
@@ -723,7 +725,7 @@ class StorageService {
 
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      const timeoutId = setTimeout(() => controller.abort(), StorageService.SESSION_VALIDATION_TIMEOUT_MS);
       const response = await fetch(scriptUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -970,6 +972,13 @@ class StorageService {
         }
 
         this.setCurrentUser(userWithToken);
+        // The backend has just issued and returned this token successfully.
+        // Prime the short-lived validation cache to avoid an immediate
+        // duplicate validateSession request during post-login navigation.
+        this.sessionValidationCache[userWithToken.sessionToken || ''] = {
+          result: true,
+          timestamp: Date.now(),
+        };
         return { success: true, user: userWithToken };
       } else if (result.status === 'error') {
         if (result.code === 'DATABASE_EMPTY') {
