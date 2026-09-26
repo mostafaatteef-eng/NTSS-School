@@ -43,7 +43,6 @@ import {
   PositiveBehaviorType,
   PromotionRule,
   PublicClassScheduleDTO,
-  PublicClassScheduleLesson,
   PublicSchoolOption,
   PublicScheduleGradeOption,
   PublicScheduleClassroomOption,
