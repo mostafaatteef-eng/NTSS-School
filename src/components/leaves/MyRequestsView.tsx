@@ -15,10 +15,9 @@ import {
   Info,
   ChevronLeft,
 } from 'lucide-react';
-import { User, Employee, LeaveRecord, LeaveType } from '../../types';
+import { User, LeaveRecord, LeaveType } from '../../types';
 import { EmployeePermissionRecord } from '../../types_extended';
 import { storageService } from '../../services/storageService';
-import { HRPayrollService } from '../../services/hrService';
 import { MasterDataService } from '../../services/masterDataService';
 import { getCairoCurrentDate } from '../../utils/egyptianTime';
 
@@ -63,56 +62,41 @@ export const MyRequestsView: React.FC<MyRequestsViewProps> = ({ currentUser, aut
     employeeName: string;
     department: string;
     teacherCode?: string;
+    employeeNumber?: string;
   } | null>(null);
   const [requestsLoading, setRequestsLoading] = useState(false);
   const [requestsError, setRequestsError] = useState('');
   const [requestSubmitting, setRequestSubmitting] = useState<'leave' | 'permission' | null>(null);
 
-  // Teacher mode is authorized exclusively by TeacherSession.
-  // Staff mode retains the existing ERP self-service path until its own hardening phase.
-  const ownEmpId = currentUser?.employeeId || currentUser?.id || '';
-  const ownEmployee: Employee | undefined = useMemo(() => {
-    if (authMode === 'teacher') return undefined;
-    return storageService.getEmployees().find(e => e.id === ownEmpId || e.employeeNumber === ownEmpId);
-  }, [authMode, ownEmpId]);
-
+  // Both self-service modes are authoritative:
+  // Teacher Portal -> TeacherSession, ERP -> Staff session.
   const loadData = async () => {
     if (!currentUser) return;
 
-    if (authMode === 'teacher') {
-      setRequestsLoading(true);
-      setRequestsError('');
-      const result = await storageService.getTeacherSelfRequestsAuthoritative();
-      setRequestsLoading(false);
+    setRequestsLoading(true);
+    setRequestsError('');
 
-      if (!result.success) {
-        setLeaves([]);
-        setPermissions([]);
-        setTeacherProfile(null);
-        setRequestsError(result.message || 'تعذر تحميل طلباتك من الخادم.');
-        return;
-      }
+    const result = authMode === 'teacher'
+      ? await storageService.getTeacherSelfRequestsAuthoritative()
+      : await storageService.getStaffSelfRequestsAuthoritative();
 
-      setTeacherProfile(result.profile || null);
-      setLeaves(result.leaves || []);
-      setPermissions(result.permissions || []);
+    setRequestsLoading(false);
+
+    if (!result.success) {
+      setLeaves([]);
+      setPermissions([]);
+      setTeacherProfile(null);
+      setRequestsError(result.message || 'تعذر تحميل طلباتك من الخادم.');
       return;
     }
 
-    const targetEmpId = currentUser.employeeId || currentUser.id;
-    const allLeaves = storageService.getLeaves();
-    setLeaves(allLeaves.filter(l => l.employeeId === targetEmpId));
-    setPermissions(HRPayrollService.getPermissions({ employeeId: targetEmpId }));
+    setTeacherProfile(result.profile || null);
+    setLeaves(result.leaves || []);
+    setPermissions(result.permissions || []);
   };
 
   useEffect(() => {
     void loadData();
-    if (authMode === 'teacher') return;
-
-    const unsub = storageService.subscribe(() => {
-      void loadData();
-    });
-    return () => unsub();
   }, [currentUser, authMode]);
 
   // Dynamic leave types
@@ -205,38 +189,31 @@ export const MyRequestsView: React.FC<MyRequestsViewProps> = ({ currentUser, aut
       return;
     }
 
-    const res = storageService.saveLeave(
-      {
-        id: `LEV-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-        employeeId: ownEmpId,
-        employeeName: ownEmployee?.name || currentUser?.fullName || 'الموظف',
-        department: ownEmployee?.department || 'هيئة التدريس',
-        leaveType,
-        startDate: leaveStartDate,
-        endDate: leaveEndDate,
-        daysCount,
-        reason: leaveReason,
-        notes: leaveNotes,
-        attachment: leaveAttachment,
-        status: 'معلقة',
-        createdAt: getCairoCurrentDate(),
-      },
-      currentUser
-    );
+    setRequestSubmitting('leave');
+    const result = await storageService.createStaffLeaveRequestAuthoritative({
+      leaveType,
+      startDate: leaveStartDate,
+      endDate: leaveEndDate,
+      reason: leaveReason,
+      notes: leaveNotes,
+      attachment: leaveAttachment,
+    });
+    setRequestSubmitting(null);
 
-    if (res.success) {
-      setLeaveSuccess('تم إرسال طلب الإجازة بنجاح، وهو الآن قيد المراجعة والاعتماد.');
-      setLeaveReason('');
-      setLeaveNotes('');
-      setLeaveAttachment('');
-      setTimeout(() => {
-        setIsLeaveModalOpen(false);
-        setLeaveSuccess('');
-      }, 1200);
-      void loadData();
-    } else {
-      setLeaveError(res.message || 'تعذر إرسال الطلب');
+    if (!result.success) {
+      setLeaveError(result.message || 'تعذر إرسال طلب الإجازة');
+      return;
     }
+
+    setLeaveSuccess(result.message || 'تم إرسال طلب الإجازة بنجاح، وهو الآن قيد المراجعة والاعتماد.');
+    setLeaveReason('');
+    setLeaveNotes('');
+    setLeaveAttachment('');
+    await loadData();
+    setTimeout(() => {
+      setIsLeaveModalOpen(false);
+      setLeaveSuccess('');
+    }, 700);
   };
 
   // Calculate duration in hours
@@ -299,35 +276,32 @@ export const MyRequestsView: React.FC<MyRequestsViewProps> = ({ currentUser, aut
       return;
     }
 
-    const res = HRPayrollService.savePermission(
-      {
-        id: `PERM-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-        employeeId: ownEmpId,
-        date: permDate,
-        permissionType: permType,
-        startTime: permStartTime,
-        endTime: permEndTime,
-        durationHours,
-        reason: permReason,
-        notes: permNotes,
-        attachment: permAttachment,
-      },
-      currentUser
-    );
+    setRequestSubmitting('permission');
+    const result = await storageService.createStaffPermissionRequestAuthoritative({
+      date: permDate,
+      permissionType: permType,
+      startTime: permStartTime,
+      endTime: permEndTime,
+      reason: permReason,
+      notes: permNotes,
+      attachment: permAttachment,
+    });
+    setRequestSubmitting(null);
 
-    if (res.success) {
-      setPermSuccess('تم إرسال طلب الإذن بنجاح وهو الآن قيد المراجعة.');
-      setPermReason('');
-      setPermNotes('');
-      setPermAttachment('');
-      setTimeout(() => {
-        setIsPermModalOpen(false);
-        setPermSuccess('');
-      }, 1200);
-      void loadData();
-    } else {
-      setPermError(res.message || 'تعذر إرسال طلب الإذن');
+    if (!result.success) {
+      setPermError(result.message || 'تعذر إرسال طلب الإذن');
+      return;
     }
+
+    setPermSuccess(result.message || 'تم إرسال طلب الإذن بنجاح وهو الآن قيد المراجعة.');
+    setPermReason('');
+    setPermNotes('');
+    setPermAttachment('');
+    await loadData();
+    setTimeout(() => {
+      setIsPermModalOpen(false);
+      setPermSuccess('');
+    }, 700);
   };
 
   const getStatusBadge = (status: string) => {
@@ -384,15 +358,15 @@ export const MyRequestsView: React.FC<MyRequestsViewProps> = ({ currentUser, aut
           <div>
             <div className="font-bold text-xs text-slate-900">{teacherProfile?.employeeName || currentUser?.fullName}</div>
             <div className="text-[11px] text-slate-500 flex items-center gap-2">
-              <span>الكود: {teacherProfile?.teacherCode || teacherProfile?.employeeId || ownEmployee?.employeeNumber || currentUser?.employeeId || currentUser?.id}</span>
+              <span>الكود: {teacherProfile?.teacherCode || teacherProfile?.employeeNumber || teacherProfile?.employeeId || currentUser?.employeeId || currentUser?.id}</span>
               <span>•</span>
-              <span>{teacherProfile?.department || ownEmployee?.department || 'هيئة التدريس'}</span>
+              <span>{teacherProfile?.department || 'هيئة التدريس'}</span>
             </div>
           </div>
         </div>
       </div>
 
-      {authMode === 'teacher' && requestsError && (
+      {requestsError && (
         <div className="flex items-center justify-between gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-xs font-bold text-rose-800">
           <span className="flex items-center gap-2">
             <AlertCircle className="h-4 w-4 shrink-0" />
@@ -404,7 +378,7 @@ export const MyRequestsView: React.FC<MyRequestsViewProps> = ({ currentUser, aut
         </div>
       )}
 
-      {authMode === 'teacher' && requestsLoading && (
+      {requestsLoading && (
         <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-center text-xs font-bold text-slate-500">
           جارٍ تحميل طلباتك من الخادم المعتمد...
         </div>
