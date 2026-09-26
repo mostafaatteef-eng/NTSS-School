@@ -2885,6 +2885,20 @@ function doPost(e) {
 
     // V. Authenticated POST Data Sync (Strictly isolated to school operational spreadsheet: schoolSs)
     if (action === 'syncData') {
+      // Cache the assembled school snapshot briefly. Most dashboard reads are
+      // identical across users in the same school and repeatedly reading every
+      // sheet is one of the most expensive Apps Script operations.
+      var syncCache = CacheService.getScriptCache();
+      var syncCacheKey = 'SYNC_DATA_V1_' + String(effectiveSchoolId || 'DEFAULT');
+      var cachedSyncPayload = syncCache.get(syncCacheKey);
+      if (cachedSyncPayload) {
+        try {
+          output.data = JSON.parse(cachedSyncPayload);
+          output.cached = true;
+          return createJsonResponse(output, 200);
+        } catch (cacheParseErr) {}
+      }
+
       output.data = {
         students: getSheetData(schoolSs, SHEETS.STUDENTS),
         employees: getSheetData(schoolSs, SHEETS.EMPLOYEES).map(function(e) {
@@ -2910,6 +2924,16 @@ function doPost(e) {
         permissions: getSheetData(schoolSs, SHEETS.PERMISSIONS),
         settings: getSettingsDataClean(schoolSs)
       };
+
+      // CacheService has a per-entry size limit, so cache only when the
+      // serialized snapshot fits comfortably. Failure must never block sync.
+      try {
+        var serializedSyncPayload = JSON.stringify(output.data);
+        if (serializedSyncPayload.length < 90000) {
+          syncCache.put(syncCacheKey, serializedSyncPayload, 60);
+        }
+      } catch (cacheWriteErr) {}
+
       return createJsonResponse(output, 200);
     }
 
