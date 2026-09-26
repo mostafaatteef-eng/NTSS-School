@@ -328,5 +328,9 @@ describe('PHASE 3A.2 — TEACHER SESSION PERSISTENCE FIX', () => {
     );
     expect(changePassSection).toContain('ensureTeacherSessionHeaders');
     expect(changePassSection).toContain('appendRecordByHeaders');
+    expect(changePassSection).toContain('getSchoolSpreadsheet(teacherSchoolId, masterSs)');
+    expect(changePassSection).toContain("getSheetData(targetSs, SHEETS.TEACHER_CREDENTIALS)");
+    expect(changePassSection).toContain("upsertRecord(targetSs, SHEETS.TEACHER_CREDENTIALS");
+    expect(changePassSection).toContain('revokeTeacherSessions(targetSs, teacherId)');
   });
 });
