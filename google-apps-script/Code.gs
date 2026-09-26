@@ -400,7 +400,15 @@ function doPost(e) {
     // 3. TEACHER SESSION GATE (For Teacher-Specific Actions)
     // -------------------------------------------------------------
     var incomingTeacherToken = postData.teacherSessionToken || (payload && payload.teacherSessionToken) || '';
-    if (action === 'teacherLogout' || action === 'getTeacherPortalData' || action === 'saveTeacherHomeworkDraft' || action === 'saveTeacherResourceDraft') {
+    if (
+      action === 'teacherLogout' ||
+      action === 'getTeacherPortalData' ||
+      action === 'saveTeacherHomeworkDraft' ||
+      action === 'saveTeacherResourceDraft' ||
+      action === 'getTeacherSelfRequests' ||
+      action === 'createTeacherLeaveRequest' ||
+      action === 'createTeacherPermissionRequest'
+    ) {
       if (!incomingTeacherToken) {
         return createJsonResponse({
           status: 'error',
@@ -482,6 +490,54 @@ function doPost(e) {
         }
         output.message = resResult.message;
         output.resource = resResult.resource;
+        return createJsonResponse(output, 200);
+      }
+
+      if (action === 'getTeacherSelfRequests') {
+        var selfRequestsResult = getTeacherSelfRequestsBundle(teacherSchoolSs, tSession);
+        if (!selfRequestsResult.success) {
+          return createJsonResponse({
+            status: 'error',
+            code: selfRequestsResult.code || 'SELF_REQUESTS_READ_FAILED',
+            message: selfRequestsResult.message,
+            requestId: requestId
+          }, 400);
+        }
+        output.data = {
+          profile: selfRequestsResult.profile,
+          leaves: selfRequestsResult.leaves,
+          permissions: selfRequestsResult.permissions
+        };
+        return createJsonResponse(output, 200);
+      }
+
+      if (action === 'createTeacherLeaveRequest') {
+        var teacherLeaveResult = createTeacherLeaveRequest(teacherSchoolSs, tSession, payload, requestId);
+        if (!teacherLeaveResult.success) {
+          return createJsonResponse({
+            status: 'error',
+            code: teacherLeaveResult.code || 'LEAVE_REQUEST_FAILED',
+            message: teacherLeaveResult.message,
+            requestId: requestId
+          }, 400);
+        }
+        output.message = teacherLeaveResult.message;
+        output.leave = teacherLeaveResult.leave;
+        return createJsonResponse(output, 200);
+      }
+
+      if (action === 'createTeacherPermissionRequest') {
+        var teacherPermissionResult = createTeacherPermissionRequest(teacherSchoolSs, tSession, payload, requestId);
+        if (!teacherPermissionResult.success) {
+          return createJsonResponse({
+            status: 'error',
+            code: teacherPermissionResult.code || 'PERMISSION_REQUEST_FAILED',
+            message: teacherPermissionResult.message,
+            requestId: requestId
+          }, 400);
+        }
+        output.message = teacherPermissionResult.message;
+        output.permission = teacherPermissionResult.permission;
         return createJsonResponse(output, 200);
       }
     }
@@ -4163,6 +4219,249 @@ function authorize(session, action, resourceContext, masterSs, requestId) {
 // -------------------------------------------------------------
 // TIMETABLE, RESERVE, SUPERVISION & PORTAL LOGIC
 // -------------------------------------------------------------
+
+/**
+ * Normalize leave/permission status for teacher self-service display.
+ */
+function normalizeTeacherSelfRequestStatus(status) {
+  var raw = String(status || '').trim().toLowerCase();
+  if (raw === 'مقبولة' || raw === 'approved' || raw === 'معتمد' || raw === 'معتمدة' || raw === 'مقبول') return 'مقبولة';
+  if (raw === 'مرفوضة' || raw === 'rejected' || raw === 'مرفوض') return 'مرفوضة';
+  return 'معلقة';
+}
+
+function getTeacherSelfProfile(ss, tSession) {
+  var employeeId = String(tSession.employeeId || tSession.teacherId || '').trim();
+  if (!employeeId) {
+    return null;
+  }
+
+  var employees = getSheetData(ss, SHEETS.EMPLOYEES);
+  var employee = null;
+  for (var i = 0; i < employees.length; i++) {
+    if (String(employees[i].id || '').trim().toLowerCase() === employeeId.toLowerCase()) {
+      employee = employees[i];
+      break;
+    }
+  }
+
+  return {
+    employeeId: employeeId,
+    employeeName: String((employee && employee.name) || tSession.teacherName || 'المعلم').trim(),
+    department: String((employee && employee.department) || 'هيئة التدريس').trim(),
+    teacherCode: String((employee && employee.teacherCode) || tSession.teacherCode || '').trim()
+  };
+}
+
+function sanitizeTeacherLeaveRecord(record) {
+  return {
+    id: String(record.id || '').trim(),
+    employeeId: String(record.employeeId || '').trim(),
+    employeeName: String(record.employeeName || '').trim(),
+    department: String(record.department || '').trim(),
+    leaveType: String(record.leaveType || '').trim(),
+    startDate: String(record.startDate || '').trim(),
+    endDate: String(record.endDate || '').trim(),
+    daysCount: parseInt(record.daysCount || 0, 10) || 0,
+    status: normalizeTeacherSelfRequestStatus(record.status),
+    reason: String(record.reason || '').trim(),
+    notes: String(record.notes || '').trim(),
+    attachment: String(record.attachment || ''),
+    rejectionReason: String(record.rejectionReason || '').trim(),
+    approvedBy: String(record.approvedBy || '').trim(),
+    createdAt: String(record.createdAt || '').trim()
+  };
+}
+
+function sanitizeTeacherPermissionRecord(record) {
+  return {
+    id: String(record.id || '').trim(),
+    employeeId: String(record.employeeId || '').trim(),
+    employeeName: String(record.employeeName || '').trim(),
+    department: String(record.department || '').trim(),
+    date: String(record.date || '').trim(),
+    permissionType: String(record.permissionType || '').trim(),
+    startTime: String(record.startTime || '').trim(),
+    endTime: String(record.endTime || '').trim(),
+    durationHours: Number(record.durationHours || 0) || 0,
+    reason: String(record.reason || '').trim(),
+    notes: String(record.notes || '').trim(),
+    attachment: String(record.attachment || ''),
+    status: normalizeTeacherSelfRequestStatus(record.status),
+    approvedBy: String(record.approvedBy || '').trim(),
+    rejectionReason: String(record.rejectionReason || '').trim(),
+    createdAt: String(record.createdAt || '').trim()
+  };
+}
+
+function getTeacherSelfRequestsBundle(ss, tSession) {
+  var profile = getTeacherSelfProfile(ss, tSession);
+  if (!profile) {
+    return {
+      success: false,
+      code: 'TEACHER_EMPLOYEE_CONTEXT_REQUIRED',
+      message: 'جلسة المعلم غير مرتبطة بسجل موظف صالح.'
+    };
+  }
+
+  var ownId = profile.employeeId.toLowerCase();
+  var leaves = getSheetData(ss, SHEETS.LEAVES).filter(function(record) {
+    return String(record.employeeId || '').trim().toLowerCase() === ownId;
+  }).map(sanitizeTeacherLeaveRecord);
+
+  var permissions = getSheetData(ss, SHEETS.PERMISSIONS).filter(function(record) {
+    return String(record.employeeId || '').trim().toLowerCase() === ownId;
+  }).map(sanitizeTeacherPermissionRecord);
+
+  return {
+    success: true,
+    profile: profile,
+    leaves: leaves,
+    permissions: permissions
+  };
+}
+
+function parseTeacherSelfDate(value) {
+  var raw = String(value || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return null;
+  var parsed = new Date(raw + 'T00:00:00Z');
+  if (isNaN(parsed.getTime())) return null;
+  return parsed;
+}
+
+function createTeacherLeaveRequest(ss, tSession, payload, requestId) {
+  payload = payload || {};
+  var profile = getTeacherSelfProfile(ss, tSession);
+  if (!profile) {
+    return { success: false, code: 'TEACHER_EMPLOYEE_CONTEXT_REQUIRED', message: 'جلسة المعلم غير مرتبطة بسجل موظف صالح.' };
+  }
+
+  var leaveType = String(payload.leaveType || '').trim();
+  var startDate = String(payload.startDate || '').trim();
+  var endDate = String(payload.endDate || '').trim();
+  var reason = String(payload.reason || '').trim();
+  var notes = String(payload.notes || '').trim();
+  var attachment = String(payload.attachment || '');
+
+  if (!leaveType || !startDate || !endDate || !reason) {
+    return { success: false, code: 'INVALID_PAYLOAD', message: 'نوع الإجازة والفترة والسبب حقول مطلوبة.' };
+  }
+
+  var start = parseTeacherSelfDate(startDate);
+  var end = parseTeacherSelfDate(endDate);
+  if (!start || !end || end.getTime() < start.getTime()) {
+    return { success: false, code: 'INVALID_DATE_RANGE', message: 'فترة الإجازة غير صالحة.' };
+  }
+
+  var daysCount = Math.floor((end.getTime() - start.getTime()) / 86400000) + 1;
+  var leave = {
+    id: 'LEV_' + Utilities.getUuid().substring(0, 12),
+    schoolId: String(tSession.schoolId || '').trim(),
+    employeeId: profile.employeeId,
+    employeeName: profile.employeeName,
+    department: profile.department,
+    leaveType: leaveType,
+    startDate: startDate,
+    endDate: endDate,
+    daysCount: daysCount,
+    reason: reason,
+    notes: notes,
+    attachment: attachment,
+    status: 'معلقة',
+    createdAt: getCairoISOString()
+  };
+
+  upsertRecord(ss, SHEETS.LEAVES, 'id', leave);
+  recordAuthoritativeAudit(
+    ss,
+    requestId,
+    tSession.teacherCode || tSession.teacherName || profile.employeeId,
+    'Teacher',
+    'TEACHER_LEAVE_REQUEST_CREATED',
+    'LEAVES',
+    leave.id,
+    'تقديم طلب إجازة ذاتي للمعلم'
+  );
+
+  return {
+    success: true,
+    message: 'تم إرسال طلب الإجازة بنجاح وهو الآن قيد المراجعة.',
+    leave: sanitizeTeacherLeaveRecord(leave)
+  };
+}
+
+function parseTeacherSelfTime(value) {
+  var raw = String(value || '').trim();
+  var match = /^(\d{2}):(\d{2})$/.exec(raw);
+  if (!match) return null;
+  var hour = parseInt(match[1], 10);
+  var minute = parseInt(match[2], 10);
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+  return hour * 60 + minute;
+}
+
+function createTeacherPermissionRequest(ss, tSession, payload, requestId) {
+  payload = payload || {};
+  var profile = getTeacherSelfProfile(ss, tSession);
+  if (!profile) {
+    return { success: false, code: 'TEACHER_EMPLOYEE_CONTEXT_REQUIRED', message: 'جلسة المعلم غير مرتبطة بسجل موظف صالح.' };
+  }
+
+  var date = String(payload.date || '').trim();
+  var permissionType = String(payload.permissionType || '').trim();
+  var startTime = String(payload.startTime || '').trim();
+  var endTime = String(payload.endTime || '').trim();
+  var reason = String(payload.reason || '').trim();
+  var notes = String(payload.notes || '').trim();
+  var attachment = String(payload.attachment || '');
+
+  if (!parseTeacherSelfDate(date) || !permissionType || !reason) {
+    return { success: false, code: 'INVALID_PAYLOAD', message: 'تاريخ ونوع وسبب الإذن حقول مطلوبة.' };
+  }
+
+  var startMinutes = parseTeacherSelfTime(startTime);
+  var endMinutes = parseTeacherSelfTime(endTime);
+  if (startMinutes === null || endMinutes === null || endMinutes <= startMinutes) {
+    return { success: false, code: 'INVALID_TIME_RANGE', message: 'وقت انتهاء الإذن يجب أن يكون بعد وقت البدء.' };
+  }
+
+  var durationHours = Math.round(((endMinutes - startMinutes) / 60) * 100) / 100;
+  var permission = {
+    id: 'PERM_' + Utilities.getUuid().substring(0, 12),
+    schoolId: String(tSession.schoolId || '').trim(),
+    employeeId: profile.employeeId,
+    employeeName: profile.employeeName,
+    department: profile.department,
+    date: date,
+    permissionType: permissionType,
+    startTime: startTime,
+    endTime: endTime,
+    durationHours: durationHours,
+    reason: reason,
+    notes: notes,
+    attachment: attachment,
+    status: 'معلقة',
+    createdAt: getCairoISOString()
+  };
+
+  upsertRecord(ss, SHEETS.PERMISSIONS, 'id', permission);
+  recordAuthoritativeAudit(
+    ss,
+    requestId,
+    tSession.teacherCode || tSession.teacherName || profile.employeeId,
+    'Teacher',
+    'TEACHER_PERMISSION_REQUEST_CREATED',
+    'PERMISSIONS',
+    permission.id,
+    'تقديم طلب إذن ذاتي للمعلم'
+  );
+
+  return {
+    success: true,
+    message: 'تم إرسال طلب الإذن بنجاح وهو الآن قيد المراجعة.',
+    permission: sanitizeTeacherPermissionRecord(permission)
+  };
+}
 
 /**
  * Retrieve Teacher Portal Data Bundle (Authenticated via TeacherSession)
