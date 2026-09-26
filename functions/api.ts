@@ -355,6 +355,42 @@ export default {
         return json({status:'success',message:'تم حفظ الحصة في الجدول بنجاح',data:{...(r.payload||{}),id:r.id,schoolId:r.school_id}},200,corsOrigin);
       }
 
+      if (request.method === 'POST' && path === '/my-requests') {
+        const body: any=await request.json(); const action=String(body.action||''); const data:any=body.data||{};
+        const employeeId=String(user.employee_id||'').trim();
+        if(!employeeId)return json({status:'error',code:'EMPLOYEE_CONTEXT_REQUIRED',message:'الحساب غير مربوط بسجل موظف معتمد.'},409,corsOrigin);
+        const emp=await pool.query('SELECT * FROM employees WHERE id=$1 AND school_id IN (SELECT school_id FROM user_school_access WHERE user_id=$2 UNION SELECT school_id FROM users WHERE id=$2) LIMIT 1',[employeeId,user.user_id]);
+        if(!emp.rowCount)return json({status:'error',code:'EMPLOYEE_CONTEXT_INVALID'},403,corsOrigin);
+        const e=emp.rows[0]; const schoolId=e.school_id;
+        const mapLeave=(r:any)=>({...(r.payload||{}),id:r.id,employeeId:r.employee_id,startDate:r.start_date?String(r.start_date).slice(0,10):'',endDate:r.end_date?String(r.end_date).slice(0,10):'',status:r.status,createdAt:r.created_at});
+        const mapPermission=(r:any)=>({...(r.payload||{}),id:r.id,employeeId:r.employee_id,date:r.permission_date?String(r.permission_date).slice(0,10):'',status:r.status,createdAt:r.created_at});
+        if(action==='getMyRequests'){
+          const [ls,ps]=await Promise.all([
+            pool.query('SELECT * FROM leaves WHERE school_id=$1 AND employee_id=$2 ORDER BY created_at DESC',[schoolId,employeeId]),
+            pool.query('SELECT * FROM permissions WHERE school_id=$1 AND employee_id=$2 ORDER BY created_at DESC',[schoolId,employeeId])
+          ]);
+          return json({status:'success',data:{profile:{employeeId,employeeName:e.full_name,department:e.department||'',employeeNumber:e.employee_code||''},leaves:ls.rows.map(mapLeave),permissions:ps.rows.map(mapPermission)}},200,corsOrigin);
+        }
+        if(action==='createMyLeaveRequest'){
+          const startDate=String(data.startDate||'').trim(),endDate=String(data.endDate||'').trim();
+          if(!startDate||!endDate||endDate<startDate)return json({status:'error',code:'INVALID_DATES'},400,corsOrigin);
+          const id='LEV-'+schoolId+'-'+crypto.randomBytes(8).toString('hex').toUpperCase();
+          const payload={...data,id,employeeId,employeeName:e.full_name,department:e.department||'',status:'قيد المراجعة',createdBy:user.user_id};
+          const q=await pool.query("INSERT INTO leaves(id,school_id,employee_id,start_date,end_date,status,payload) VALUES($1,$2,$3,$4::date,$5::date,'قيد المراجعة',$6::jsonb) RETURNING *",[id,schoolId,employeeId,startDate,endDate,JSON.stringify(payload)]);
+          await pool.query('INSERT INTO audit_logs(school_id,user_id,username,role,action,entity,target_id,details) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[schoolId,user.user_id,user.email,user.role,'CREATE_SELF','LEAVE',id,'Self-service leave request']);
+          return json({status:'success',message:'تم إرسال طلب الإجازة بنجاح.',leave:mapLeave(q.rows[0])},201,corsOrigin);
+        }
+        if(action==='createMyPermissionRequest'){
+          const date=String(data.date||'').trim(); if(!date)return json({status:'error',code:'INVALID_DATE'},400,corsOrigin);
+          const id='PER-'+schoolId+'-'+crypto.randomBytes(8).toString('hex').toUpperCase();
+          const payload={...data,id,employeeId,employeeName:e.full_name,department:e.department||'',status:'قيد المراجعة',createdBy:user.user_id};
+          const q=await pool.query("INSERT INTO permissions(id,school_id,employee_id,permission_date,status,payload) VALUES($1,$2,$3,$4::date,'قيد المراجعة',$5::jsonb) RETURNING *",[id,schoolId,employeeId,date,JSON.stringify(payload)]);
+          await pool.query('INSERT INTO audit_logs(school_id,user_id,username,role,action,entity,target_id,details) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[schoolId,user.user_id,user.email,user.role,'CREATE_SELF','PERMISSION',id,'Self-service permission request']);
+          return json({status:'success',message:'تم إرسال طلب الإذن بنجاح.',permission:mapPermission(q.rows[0])},201,corsOrigin);
+        }
+        return json({status:'error',code:'ACTION_NOT_MIGRATED'},400,corsOrigin);
+      }
+
       if (request.method === 'POST' && path === '/leave-management') {
         const body: any = await request.json();
         const action = String(body.action || '');
