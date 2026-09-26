@@ -5789,7 +5789,7 @@ class StorageService {
 
   private async postStudentManagementAction(
     action: string,
-    data?: Record<string, unknown>
+    data?: Record<string, unknown> | Array<Record<string, unknown>>
   ): Promise<{
     success: boolean;
     code?: string;
@@ -5797,6 +5797,8 @@ class StorageService {
     data?: any;
     student?: Student;
     enrollment?: StudentEnrollment;
+    transfer?: StudentTransferHistory;
+    stats?: { added: number; updated: number; skipped: number; errors: Array<{ row: number; code: string; message: string }> };
   }> {
     const user = this.getCurrentUser();
     if (!user?.sessionToken) {
@@ -5844,6 +5846,8 @@ class StorageService {
         data: res?.data,
         student: res?.student as Student | undefined,
         enrollment,
+        transfer: res?.transfer as StudentTransferHistory | undefined,
+        stats: res?.stats,
       };
     } catch {
       return {
@@ -5918,6 +5922,61 @@ class StorageService {
       id: String(id || '').trim(),
       status,
     });
+  }
+
+  public async transferManagedStudentAuthoritative(input: {
+    studentId: string;
+    academicYearId?: string;
+    toGrade: string;
+    toClassroom: string;
+    reason: string;
+    notes?: string;
+  }) {
+    return this.postStudentManagementAction('transferManagedStudent', {
+      studentId: String(input.studentId || '').trim(),
+      academicYearId: String(input.academicYearId || '').trim(),
+      toGrade: String(input.toGrade || '').trim(),
+      toClassroom: String(input.toClassroom || '').trim(),
+      reason: String(input.reason || '').trim(),
+      notes: String(input.notes || '').trim(),
+    });
+  }
+
+  public async importManagedStudentsAuthoritative(operations: Array<{
+    operation: 'NEW' | 'UPDATE';
+    targetId?: string;
+    rowNumber?: number;
+    data: Partial<Student>;
+  }>): Promise<{
+    success: boolean;
+    code?: string;
+    message?: string;
+    added: number;
+    updated: number;
+    skipped: number;
+    errors: Array<{ row: number; code: string; message: string }>;
+  }> {
+    const payload = operations.map(op => ({
+      operation: op.operation,
+      targetId: op.targetId ? String(op.targetId).trim() : undefined,
+      rowNumber: Number(op.rowNumber || 0) || undefined,
+      data: this.sanitizeStudentManagementInput(op.data),
+    }));
+
+    const result = await this.postStudentManagementAction(
+      'importManagedStudents',
+      payload as unknown as Record<string, unknown>
+    );
+
+    return {
+      success: result.success,
+      code: result.code,
+      message: result.message,
+      added: Number(result.stats?.added || 0),
+      updated: Number(result.stats?.updated || 0),
+      skipped: Number(result.stats?.skipped || 0),
+      errors: Array.isArray(result.stats?.errors) ? result.stats!.errors : [],
+    };
   }
 
   private async postEmployeeManagementAction(
