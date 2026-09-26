@@ -1,0 +1,87 @@
+import express from 'express';
+import crypto from 'node:crypto';
+import pg from 'pg';
+
+const { Pool } = pg;
+const app = express();
+app.use(express.json({ limit: '2mb' }));
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : undefined,
+  max: Number(process.env.DB_POOL_MAX || 10),
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 5000,
+});
+
+const PORT = Number(process.env.PORT || 8787);
+const SESSION_HOURS = 24;
+const hashToken = (token) => crypto.createHash('sha256').update(token).digest('hex');
+const randomToken = () => crypto.randomBytes(32).toString('base64url');
+
+async function auth(req, res, next) {
+  const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '') ||
+    String(req.body?.sessionToken || '');
+  if (!token) return res.status(401).json({ status:'error', code:'AUTH_REQUIRED', message:'Session token required' });
+  const { rows } = await pool.query(
+    `SELECT s.id AS session_id,s.user_id,s.active_school_id,s.expires_at,u.email,u.full_name,u.role,u.access_scope,u.school_id,u.employee_id,u.is_active,u.status
+     FROM sessions s JOIN users u ON u.id=s.user_id
+     WHERE s.token_hash=$1 AND s.status='ACTIVE' AND s.revoked_at IS NULL AND s.expires_at>now() LIMIT 1`,
+    [hashToken(token)]
+  );
+  if (!rows[0] || !rows[0].is_active || rows[0].status !== 'Active')
+    return res.status(401).json({ status:'error', code:'INVALID_SESSION', message:'Invalid or expired session' });
+  req.auth = rows[0]; req.sessionToken = token; next();
+}
+
+app.get('/health', async (_req,res) => {
+  try { await pool.query('SELECT 1'); res.json({status:'success',serviceAvailable:true,backend:'postgresql-api',version:'1.0.0'}); }
+  catch { res.status(503).json({status:'error',serviceAvailable:false}); }
+});
+
+app.post('/api/login', async (req,res) => {
+  const email=String(req.body?.email||'').trim().toLowerCase();
+  const password=String(req.body?.password||'');
+  if(!email||!password) return res.status(400).json({status:'error',code:'CREDENTIALS_REQUIRED'});
+  const {rows}=await pool.query('SELECT * FROM users WHERE lower(email)=lower($1) LIMIT 1',[email]);
+  const user=rows[0];
+  if(!user||!user.is_active||user.status!=='Active') return res.status(401).json({status:'error',code:'INVALID_CREDENTIALS'});
+  // Phase-1 migration supports the existing iterated HMAC credential format.
+  let digest=crypto.createHmac('sha256',String(user.password_salt||'')).update(password+String(user.password_salt||'')).digest();
+  const rounds=Math.max(1,Number(user.password_iterations||10000));
+  for(let i=1;i<rounds;i++) digest=crypto.createHmac('sha256',String(user.password_salt||'')).update(digest.toString('hex')).digest();
+  const computed=digest.toString('hex');
+  const a=Buffer.from(computed); const b=Buffer.from(String(user.password_hash||''));
+  if(a.length!==b.length||!crypto.timingSafeEqual(a,b)) return res.status(401).json({status:'error',code:'INVALID_CREDENTIALS'});
+  const token=randomToken(), sessionId=crypto.randomUUID(), expiresAt=new Date(Date.now()+SESSION_HOURS*3600000);
+  await pool.query('INSERT INTO sessions(id,user_id,token_hash,active_school_id,expires_at) VALUES($1,$2,$3,$4,$5)',[sessionId,user.id,hashToken(token),user.school_id||null,expiresAt]);
+  await pool.query('UPDATE users SET last_login_at=now() WHERE id=$1',[user.id]);
+  const access=await pool.query('SELECT school_id FROM user_school_access WHERE user_id=$1',[user.id]);
+  res.json({status:'success',sessionToken:token,expiresAt:expiresAt.toISOString(),user:{id:user.id,email:user.email,fullName:user.full_name,role:user.role,accessScope:user.access_scope,schoolId:user.school_id||'',activeSchoolId:user.school_id||'',allowedSchoolIds:access.rows.map(x=>x.school_id),employeeId:user.employee_id||''}});
+});
+
+app.post('/api/validate-session', auth, (req,res) => {
+  const u=req.auth;
+  res.json({status:'success',valid:true,expiresAt:u.expires_at,user:{id:u.user_id,email:u.email,fullName:u.full_name,role:u.role,accessScope:u.access_scope,schoolId:u.school_id||'',activeSchoolId:u.active_school_id||'',employeeId:u.employee_id||''}});
+});
+
+app.post('/api/logout', auth, async (req,res) => {
+  await pool.query('UPDATE sessions SET status=\'REVOKED\',revoked_at=now() WHERE id=$1',[req.auth.session_id]);
+  res.json({status:'success'});
+});
+
+app.get('/api/dashboard', auth, async (req,res) => {
+  const schoolId=String(req.query.schoolId||req.auth.active_school_id||req.auth.school_id||'');
+  if(!schoolId) return res.status(400).json({status:'error',code:'SCHOOL_CONTEXT_REQUIRED'});
+  const allowed=req.auth.access_scope==='GLOBAL' ? true : schoolId===req.auth.school_id;
+  if(!allowed) return res.status(403).json({status:'error',code:'FORBIDDEN'});
+  const [students,employees,attendance]=await Promise.all([
+    pool.query('SELECT count(*)::int AS count FROM students WHERE school_id=$1',[schoolId]),
+    pool.query('SELECT count(*)::int AS count FROM employees WHERE school_id=$1',[schoolId]),
+    pool.query('SELECT count(*)::int AS count FROM student_attendance WHERE school_id=$1 AND attendance_date=CURRENT_DATE',[schoolId])
+  ]);
+  res.json({status:'success',data:{studentsCount:students.rows[0].count,employeesCount:employees.rows[0].count,todayAttendanceCount:attendance.rows[0].count}});
+});
+
+app.use((err,_req,res,_next)=>{ console.error(err); res.status(500).json({status:'error',code:'INTERNAL_SERVER_ERROR'}); });
+app.listen(PORT,()=>console.log(`NTSS PostgreSQL API listening on :${PORT}`));
