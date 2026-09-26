@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
   Briefcase,
@@ -23,6 +23,7 @@ import { Employee, EmployeeType, SystemSettings, User } from '../../types';
 import { storageService } from '../../services/storageService';
 import { ExportService } from '../../services/exportService';
 import { StaffImportModal } from './StaffImportModal';
+import { hasPermission } from '../../utils/permissions';
 
 interface EmployeesViewProps {
   employees: Employee[];
@@ -31,7 +32,6 @@ interface EmployeesViewProps {
 }
 
 export const EmployeesView: React.FC<EmployeesViewProps> = ({
-  employees,
   settings,
   currentUser,
 }) => {
@@ -44,6 +44,10 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [editingEmp, setEditingEmp] = useState<Employee | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [employeesLoading, setEmployeesLoading] = useState(true);
+  const [employeesError, setEmployeesError] = useState('');
+  const [employeeAction, setEmployeeAction] = useState<string | null>(null);
 
   // Form Fields - Phase 2 (Salary strictly removed)
   const [id, setId] = useState('');
@@ -62,8 +66,31 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
 
-  const isAdmin = currentUser?.role === 'Admin';
-  const canManage = isAdmin || currentUser?.role === 'HR';
+  const canCreate = hasPermission(currentUser, 'employees.create');
+  const canEdit = hasPermission(currentUser, 'employees.edit');
+  const canDelete = hasPermission(currentUser, 'employees.delete');
+  const canImport = hasPermission(currentUser, 'employees.import');
+  const canManage = canCreate || canEdit || canDelete || canImport;
+
+  const loadEmployees = async () => {
+    setEmployeesLoading(true);
+    setEmployeesError('');
+    const result = await storageService.getEmployeeManagementDataAuthoritative();
+    setEmployeesLoading(false);
+
+    if (!result.success) {
+      setEmployees([]);
+      setEmployeesError(result.message || 'تعذر تحميل بيانات العاملين من الخادم.');
+      return false;
+    }
+
+    setEmployees(result.employees || []);
+    return true;
+  };
+
+  useEffect(() => {
+    void loadEmployees();
+  }, [currentUser?.sessionToken, currentUser?.activeSchoolId, currentUser?.schoolId]);
 
   // Dynamic Distinct Values for Filters
   const distinctJobTitles = useMemo(() => {
@@ -104,6 +131,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
   }, [employees, typeFilter, jobTitleFilter, specializationFilter, statusFilter, searchQuery]);
 
   const openAddModal = () => {
+    if (!canCreate) return;
     const nextNum = employees.length + 1;
     const nextId = `EMP${String(nextNum).padStart(3, '0')}`;
     const nextTeacherCode = `T-${String(nextNum).padStart(3, '0')}`;
@@ -129,6 +157,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
   };
 
   const openEditModal = (emp: Employee) => {
+    if (!canEdit) return;
     setEditingEmp(emp);
     setId(emp.id);
     setName(emp.name);
@@ -149,8 +178,10 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
     setIsModalOpen(true);
   };
 
-  const handleSaveEmployee = (e: React.FormEvent) => {
+  const handleSaveEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
+    setErrorMessage('');
+
     if (!id.trim() || !name.trim()) {
       setErrorMessage('رقم الموظف واسم الموظف حقول مطلوبة');
       return;
@@ -182,23 +213,51 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
       isTeachingStaff: employeeType === 'Teacher',
     };
 
-    const res = storageService.saveEmployee(empToSave);
-    if (res.success) {
-      setIsModalOpen(false);
-    } else {
-      setErrorMessage(res.message || 'فشلت عملية الحفظ');
+    setEmployeeAction(editingEmp ? 'update' : 'create');
+    const result = editingEmp
+      ? await storageService.updateManagedEmployeeAuthoritative(empToSave)
+      : await storageService.createManagedEmployeeAuthoritative(empToSave);
+    setEmployeeAction(null);
+
+    if (!result.success) {
+      setErrorMessage(result.message || 'فشلت عملية الحفظ');
+      return;
     }
+
+    setIsModalOpen(false);
+    await loadEmployees();
   };
 
-  const handleToggleStatus = (emp: Employee) => {
+  const handleToggleStatus = async (emp: Employee) => {
+    if (!canEdit) return;
     const nextStatus = emp.status === 'Active' ? 'Inactive' : 'Active';
-    storageService.saveEmployee({ ...emp, status: nextStatus });
+
+    setEmployeeAction(`status:${emp.id}`);
+    const result = await storageService.setManagedEmployeeStatusAuthoritative(emp.id, nextStatus);
+    setEmployeeAction(null);
+
+    if (!result.success) {
+      setEmployeesError(result.message || 'تعذر تحديث حالة الموظف.');
+      return;
+    }
+
+    await loadEmployees();
   };
 
-  const handleDeleteEmployee = (emp: Employee) => {
-    if (window.confirm(`هل أنت متأكد من حذف الموظف (${emp.name}) نهائياً من النظام؟`)) {
-      storageService.deleteEmployee(emp.id);
+  const handleDeleteEmployee = async (emp: Employee) => {
+    if (!canDelete) return;
+    if (!window.confirm(`هل أنت متأكد من حذف الموظف (${emp.name}) نهائياً من النظام؟`)) return;
+
+    setEmployeeAction(`delete:${emp.id}`);
+    const result = await storageService.deleteManagedEmployeeAuthoritative(emp.id);
+    setEmployeeAction(null);
+
+    if (!result.success) {
+      setEmployeesError(result.message || 'تعذر حذف الموظف.');
+      return;
     }
+
+    await loadEmployees();
   };
 
   const handleExport = () => {
@@ -228,26 +287,26 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {canManage && (
-            <>
-              <button
-                id="btn-import-staff-data"
-                onClick={() => setIsImportModalOpen(true)}
-                className="text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2.5 rounded-2xl transition-colors flex items-center gap-1.5 border border-slate-200 shadow-xs"
-              >
-                <UploadCloud className="w-4 h-4 text-teal-700" />
-                <span>استيراد بيانات العاملين</span>
-              </button>
+          {canImport && (
+            <button
+              id="btn-import-staff-data"
+              onClick={() => setIsImportModalOpen(true)}
+              className="text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2.5 rounded-2xl transition-colors flex items-center gap-1.5 border border-slate-200 shadow-xs"
+            >
+              <UploadCloud className="w-4 h-4 text-teal-700" />
+              <span>استيراد بيانات العاملين</span>
+            </button>
+          )}
 
-              <button
-                id="btn-add-new-employee"
-                onClick={openAddModal}
-                className="text-xs font-bold bg-[#008e8b] hover:bg-teal-700 text-white px-4 py-2.5 rounded-2xl shadow-sm transition-colors flex items-center gap-1.5"
-              >
-                <UserPlus className="w-4 h-4" />
-                <span>إضافة موظف / معلم جديد</span>
-              </button>
-            </>
+          {canCreate && (
+            <button
+              id="btn-add-new-employee"
+              onClick={openAddModal}
+              className="text-xs font-bold bg-[#008e8b] hover:bg-teal-700 text-white px-4 py-2.5 rounded-2xl shadow-sm transition-colors flex items-center gap-1.5"
+            >
+              <UserPlus className="w-4 h-4" />
+              <span>إضافة موظف / معلم جديد</span>
+            </button>
           )}
 
           <button
@@ -259,6 +318,24 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
           </button>
         </div>
       </div>
+
+      {employeesError && (
+        <div className="flex items-center justify-between gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-xs font-bold text-rose-800">
+          <span className="flex items-center gap-2">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            {employeesError}
+          </span>
+          <button type="button" onClick={() => void loadEmployees()} className="underline">
+            إعادة المحاولة
+          </button>
+        </div>
+      )}
+
+      {employeesLoading && (
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-center text-xs font-bold text-slate-500">
+          جارٍ تحميل بيانات العاملين من الخادم المعتمد...
+        </div>
+      )}
 
       {/* Filter and Search Bar - Phase 2: employeeType, jobTitle, specialization */}
       <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-xs flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
@@ -348,7 +425,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                 <th className="py-3.5 px-4">كود المعلم</th>
                 <th className="py-3.5 px-4">مواعيد العمل</th>
                 <th className="py-3.5 px-4">الحالة</th>
-                {canManage && <th className="py-3.5 px-4 text-center">إجراءات</th>}
+                {(canEdit || canDelete) && <th className="py-3.5 px-4 text-center">إجراءات</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium">
@@ -369,22 +446,26 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                             : 'جرّب تغيير كلمات البحث أو إعادة تعيين الفلاتر.'}
                         </p>
                       </div>
-                      {canManage && employees.length === 0 && (
+                      {(canCreate || canImport) && employees.length === 0 && (
                         <div className="flex items-center gap-2 mt-2">
-                          <button
-                            onClick={openAddModal}
-                            className="text-xs font-bold bg-[#008e8b] hover:bg-teal-700 text-white px-4 py-2 rounded-xl transition-all shadow-xs inline-flex items-center gap-1.5"
-                          >
-                            <UserPlus className="w-4 h-4" />
-                            <span>إضافة أول موظف الآن</span>
-                          </button>
-                          <button
-                            onClick={() => setIsImportModalOpen(true)}
-                            className="text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-xl transition-all inline-flex items-center gap-1.5"
-                          >
-                            <UploadCloud className="w-4 h-4 text-teal-600" />
-                            <span>استيراد ملف Excel</span>
-                          </button>
+                          {canCreate && (
+                            <button
+                              onClick={openAddModal}
+                              className="text-xs font-bold bg-[#008e8b] hover:bg-teal-700 text-white px-4 py-2 rounded-xl transition-all shadow-xs inline-flex items-center gap-1.5"
+                            >
+                              <UserPlus className="w-4 h-4" />
+                              <span>إضافة أول موظف الآن</span>
+                            </button>
+                          )}
+                          {canImport && (
+                            <button
+                              onClick={() => setIsImportModalOpen(true)}
+                              className="text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-xl transition-all inline-flex items-center gap-1.5"
+                            >
+                              <UploadCloud className="w-4 h-4 text-teal-600" />
+                              <span>استيراد ملف Excel</span>
+                            </button>
+                          )}
                         </div>
                       )}
                     </div>
@@ -437,31 +518,38 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                         {emp.status === 'Active' ? 'نشط' : 'معطل'}
                       </span>
                     </td>
-                    {canManage && (
+                    {(canEdit || canDelete) && (
                       <td className="py-3.5 px-4">
                         <div className="flex items-center justify-center gap-1">
-                          <button
-                            onClick={() => openEditModal(emp)}
-                            className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
-                            title="تعديل البيانات"
-                          >
-                            <Edit2 className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleToggleStatus(emp)}
-                            className={`p-1.5 rounded-lg transition-colors ${
-                              emp.status === 'Active'
-                                ? 'text-slate-400 hover:text-rose-600 hover:bg-rose-50'
-                                : 'text-slate-400 hover:text-emerald-600 hover:bg-emerald-50'
-                            }`}
-                            title={emp.status === 'Active' ? 'تعطيل الحساب' : 'تنشيط الحساب'}
-                          >
-                            {emp.status === 'Active' ? <UserX className="w-4 h-4" /> : <UserCheck className="w-4 h-4" />}
-                          </button>
-                          {isAdmin && (
+                          {canEdit && (
+                            <>
+                              <button
+                                disabled={employeeAction !== null}
+                                onClick={() => openEditModal(emp)}
+                                className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors disabled:opacity-40"
+                                title="تعديل البيانات"
+                              >
+                                <Edit2 className="w-4 h-4" />
+                              </button>
+                              <button
+                                disabled={employeeAction !== null}
+                                onClick={() => void handleToggleStatus(emp)}
+                                className={`p-1.5 rounded-lg transition-colors disabled:opacity-40 ${
+                                  emp.status === 'Active'
+                                    ? 'text-slate-400 hover:text-rose-600 hover:bg-rose-50'
+                                    : 'text-slate-400 hover:text-emerald-600 hover:bg-emerald-50'
+                                }`}
+                                title={emp.status === 'Active' ? 'تعطيل الحساب' : 'تنشيط الحساب'}
+                              >
+                                {emp.status === 'Active' ? <UserX className="w-4 h-4" /> : <UserCheck className="w-4 h-4" />}
+                              </button>
+                            </>
+                          )}
+                          {canDelete && (
                             <button
-                              onClick={() => handleDeleteEmployee(emp)}
-                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                              disabled={employeeAction !== null}
+                              onClick={() => void handleDeleteEmployee(emp)}
+                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors disabled:opacity-40"
                               title="حذف الموظف"
                             >
                               <Trash2 className="w-4 h-4" />
@@ -674,9 +762,10 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="px-6 py-2 bg-[#008e8b] hover:bg-teal-700 text-white rounded-xl text-xs font-bold shadow-md"
+                  disabled={employeeAction !== null}
+                  className="px-6 py-2 bg-[#008e8b] hover:bg-teal-700 text-white rounded-xl text-xs font-bold shadow-md disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  حفظ البيانات
+                  {employeeAction === 'create' || employeeAction === 'update' ? 'جارٍ الحفظ...' : 'حفظ البيانات'}
                 </button>
               </div>
             </form>
@@ -690,6 +779,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
         onClose={() => setIsImportModalOpen(false)}
         onImportComplete={() => {
           setIsImportModalOpen(false);
+          void loadEmployees();
         }}
       />
     </div>
