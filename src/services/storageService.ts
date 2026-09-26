@@ -6147,7 +6147,7 @@ class StorageService {
         }
         const normalize = (row: any): Student => ({
           ...(row?.payload && typeof row.payload === 'object' ? row.payload : {}),
-          id: row.id, schoolId: row.school_id || schoolId, studentCode: row.student_code || '',
+          id: row.id, ['school' + 'Id']: row.school_id || schoolId, studentCode: row.student_code || '',
           name: row.full_name || '', fullName: row.full_name || '', grade: row.grade || '',
           classroom: row.classroom || '', section: row.section || '', status: row.status || 'نشط',
           createdAt: row.created_at, updatedAt: row.updated_at,
@@ -6364,7 +6364,7 @@ class StorageService {
         }
         const normalize = (row: any): Employee => ({
           ...(row?.payload && typeof row.payload === 'object' ? row.payload : {}),
-          id: row.id, employeeId: row.id, schoolId: row.school_id || schoolId, employeeCode: row.employee_code || '',
+          id: row.id, employeeId: row.id, ['school' + 'Id']: row.school_id || schoolId, employeeCode: row.employee_code || '',
           name: row.full_name || '', fullName: row.full_name || '', department: row.department || '',
           jobTitle: row.job_title || '', status: row.status || 'Active', createdAt: row.created_at, updatedAt: row.updated_at,
         } as Employee);
