@@ -333,11 +333,16 @@ export const StaffImportModal: React.FC<StaffImportModalProps> = ({
         status: r.status,
       }));
 
-      const res = storageService.bulkSaveEmployees(payload);
+      const res = await storageService.importManagedEmployeesAuthoritative(payload);
+      if (!res.success) {
+        alert(res.message || 'تعذر حفظ بيانات الاستيراد على الخادم المعتمد.');
+        return;
+      }
+
       setStats({
         added: res.added,
         updated: res.updated,
-        skipped: analyzedRows.length - (res.added + res.updated),
+        skipped: (analyzedRows.length - rowsToSave.length) + res.skipped,
       });
 
       setStep('result');
