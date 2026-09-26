@@ -254,7 +254,7 @@ export default function App() {
 
   const handleLogout = () => {
     clearPreviousNavigationState();
-    storageService.setCurrentUser(null);
+    void storageService.logoutStaffSession();
     setCurrentUser(null);
     setActiveTab('dashboard');
     try {
