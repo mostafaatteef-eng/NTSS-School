@@ -6715,8 +6715,9 @@ function hashStringSHA256(text) {
 function computeSaltedHash(password, salt, iterations) {
   var key = password + salt;
   var digest = Utilities.computeHmacSha256Signature(key, salt);
+  var saltBytes = Utilities.newBlob(String(salt)).getBytes();
   for (var i = 1; i < iterations; i++) {
-    digest = Utilities.computeHmacSha256Signature(digest, salt);
+    digest = Utilities.computeHmacSha256Signature(digest, saltBytes);
   }
   return bytesToHex(digest);
 }
