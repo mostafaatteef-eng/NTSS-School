@@ -744,12 +744,27 @@ function doPost(e) {
           updatedAt: getCairoISOString()
         };
         upsertRecord(ss, SHEETS.MASTER_SCHOOLS, 'schoolId', createdSchool);
+
+        // Authoritative audit logging for school creation (no spreadsheetId logged)
+        recordAuthoritativeAudit(
+          ss,
+          requestId,
+          activeSession.email || activeSession.username || authenticatedUserId,
+          authenticatedRole,
+          'SCHOOL_CREATED',
+          'MASTER_SCHOOLS',
+          createdSchool.schoolId,
+          JSON.stringify({ schoolName: createdSchool.schoolName, schoolCode: createdSchool.schoolCode, status: createdSchool.status })
+        );
+
         output.message = 'تم تسجيل المدرسة بنجاح';
         output.school = {
           schoolId: createdSchool.schoolId,
           schoolCode: createdSchool.schoolCode,
           schoolName: createdSchool.schoolName,
-          status: createdSchool.status
+          status: createdSchool.status,
+          createdAt: createdSchool.createdAt,
+          updatedAt: createdSchool.updatedAt
         };
         return createJsonResponse(output, 200);
       }
@@ -757,6 +772,26 @@ function doPost(e) {
       if (action === 'adminUpdateSchool') {
         var updSchoolId = String(postData.schoolId || (payload && payload.schoolId) || '').trim().toUpperCase();
         var updates = (payload && payload.updates) || postData.updates || {};
+
+        if (!updSchoolId) {
+          return createJsonResponse({
+            status: 'error',
+            code: 'INVALID_SCHOOL_ID',
+            message: 'يرجى تحديد معرف المدرسة للتحديث',
+            requestId: requestId
+          }, 400);
+        }
+
+        // Prevent mutation of immutable schoolId
+        if (updates.schoolId && String(updates.schoolId).trim().toUpperCase() !== updSchoolId) {
+          return createJsonResponse({
+            status: 'error',
+            code: 'IMMUTABLE_SCHOOL_ID',
+            message: 'معرف المدرسة (schoolId) ثابت وغير قابل للتعديل',
+            requestId: requestId
+          }, 400);
+        }
+
         var existingSchoolsList = getSheetData(ss, SHEETS.MASTER_SCHOOLS);
         var targetSchool = null;
         for (var sj = 0; sj < existingSchoolsList.length; sj++) {
@@ -773,16 +808,94 @@ function doPost(e) {
             requestId: requestId
           }, 404);
         }
-        if (updates.schoolName) targetSchool.schoolName = updates.schoolName;
-        if (updates.status) targetSchool.status = updates.status;
+
+        var changedFields = {};
+
+        // Update schoolCode if provided with duplicate validation
+        if (updates.schoolCode !== undefined) {
+          var newCode = String(updates.schoolCode || '').trim().toUpperCase();
+          if (!newCode) {
+            return createJsonResponse({
+              status: 'error',
+              code: 'INVALID_SCHOOL_CODE',
+              message: 'رمز المدرسة لا يمكن أن يكون فارغاً',
+              requestId: requestId
+            }, 400);
+          }
+          if (newCode !== String(targetSchool.schoolCode || '').toUpperCase()) {
+            for (var ckIdx = 0; ckIdx < existingSchoolsList.length; ckIdx++) {
+              if (String(existingSchoolsList[ckIdx].schoolId || '').toUpperCase() !== updSchoolId &&
+                  String(existingSchoolsList[ckIdx].schoolCode || '').toUpperCase() === newCode) {
+                return createJsonResponse({
+                  status: 'error',
+                  code: 'DUPLICATE_SCHOOL_CODE',
+                  message: 'رمز المدرسة مسجل مسبقاً لمدرسة أخرى',
+                  requestId: requestId
+                }, 400);
+              }
+            }
+            changedFields.schoolCode = { from: targetSchool.schoolCode, to: newCode };
+            targetSchool.schoolCode = newCode;
+          }
+        }
+
+        // Update schoolName if provided
+        if (updates.schoolName !== undefined) {
+          var newName = String(updates.schoolName || '').trim();
+          if (!newName) {
+            return createJsonResponse({
+              status: 'error',
+              code: 'INVALID_SCHOOL_NAME',
+              message: 'اسم المدرسة لا يمكن أن يكون فارغاً',
+              requestId: requestId
+            }, 400);
+          }
+          if (newName !== targetSchool.schoolName) {
+            changedFields.schoolName = { from: targetSchool.schoolName, to: newName };
+            targetSchool.schoolName = newName;
+          }
+        }
+
+        // Update status if provided with strict enum validation
+        if (updates.status !== undefined) {
+          var newStatus = String(updates.status || '').trim();
+          if (newStatus !== 'Active' && newStatus !== 'Inactive') {
+            return createJsonResponse({
+              status: 'error',
+              code: 'INVALID_SCHOOL_STATUS',
+              message: 'حالة المدرسة يجب أن تكون إما Active أو Inactive',
+              requestId: requestId
+            }, 400);
+          }
+          if (newStatus !== targetSchool.status) {
+            changedFields.status = { from: targetSchool.status, to: newStatus };
+            targetSchool.status = newStatus;
+          }
+        }
+
         targetSchool.updatedAt = getCairoISOString();
         upsertRecord(ss, SHEETS.MASTER_SCHOOLS, 'schoolId', targetSchool);
+
+        // Authoritative audit logging for school updates (no spreadsheetId logged)
+        recordAuthoritativeAudit(
+          ss,
+          requestId,
+          activeSession.email || activeSession.username || authenticatedUserId,
+          authenticatedRole,
+          'SCHOOL_UPDATED',
+          'MASTER_SCHOOLS',
+          targetSchool.schoolId,
+          JSON.stringify(changedFields)
+        );
+
         output.message = 'تم تحديث بيانات المدرسة بنجاح';
         output.school = {
           schoolId: targetSchool.schoolId,
           schoolCode: targetSchool.schoolCode,
           schoolName: targetSchool.schoolName,
-          status: targetSchool.status
+          status: targetSchool.status,
+          createdAt: targetSchool.createdAt,
+          updatedAt: targetSchool.updatedAt
         };
         return createJsonResponse(output, 200);
       }

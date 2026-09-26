@@ -475,6 +475,19 @@ class StorageService {
       return { success: false, code: 'ACCESS_DENIED_SCHOOL_SCOPE', message: 'المدرسة المطلوبة خارج نطاق المدارس المصرح لك بالوصول إليها.' };
     }
 
+    // Client UX guard: verify school is not inactive in local cache
+    const masterSchools = this.getSchools();
+    const targetSchoolObj = masterSchools.find(
+      s => (s.schoolId || '').trim().toUpperCase() === cleanTarget
+    );
+    if (targetSchoolObj && targetSchoolObj.status === 'Inactive') {
+      return {
+        success: false,
+        code: 'SCHOOL_INACTIVE',
+        message: 'المدرسة المطلوبة غير مفعلة حالياً في النظام.',
+      };
+    }
+
     const scriptUrl = this.getBackendUrl();
     const isOnline = typeof navigator === 'undefined' || navigator.onLine !== false;
     if (!scriptUrl || scriptUrl.length < 15 || !isOnline) {
@@ -495,6 +508,16 @@ class StorageService {
       });
 
       if (!response.ok) {
+        try {
+          const errRes = await response.json();
+          if (errRes && errRes.code) {
+            return {
+              success: false,
+              code: errRes.code,
+              message: errRes.message || `خطأ في استجابة الخادم (${response.status}) أثناء تبديل المدرسة.`,
+            };
+          }
+        } catch {}
         return {
           success: false,
           code: 'SWITCH_FAILED',
