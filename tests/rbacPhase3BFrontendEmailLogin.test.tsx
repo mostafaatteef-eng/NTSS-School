@@ -94,7 +94,7 @@ describe('PHASE 3B — FRONTEND EMAIL LOGIN + REMOVE LOGIN SCHOOL AUTHORITY', ()
     expect(container.textContent).not.toContain('اسم المستخدم');
   });
 
-  it('3. LoginView contains email input with type="email" and autocomplete="email"', async () => {
+  it('3. LoginView shows email/password only after choosing an administrative portal', async () => {
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -103,12 +103,26 @@ describe('PHASE 3B — FRONTEND EMAIL LOGIN + REMOVE LOGIN SCHOOL AUTHORITY', ()
       root.render(<LoginView onLoginSuccess={() => {}} />);
     });
 
+    expect(container.querySelector('#input-email')).toBeNull();
+    expect(container.querySelector('#input-password')).toBeNull();
+    expect(container.querySelector('[data-testid="entry-system"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="entry-staff"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="entry-teacher"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="entry-student"]')).not.toBeNull();
+
+    await act(async () => {
+      (container?.querySelector('[data-testid="entry-system"]') as HTMLButtonElement).click();
+    });
+
     const emailInput = container.querySelector('#input-email') as HTMLInputElement | null;
+    const passwordInput = container.querySelector('#input-password') as HTMLInputElement | null;
     expect(emailInput).not.toBeNull();
+    expect(passwordInput).not.toBeNull();
     expect(emailInput?.type).toBe('email');
     expect(emailInput?.getAttribute('autocomplete')).toBe('email');
     expect(emailInput?.placeholder).toBe('name@school.edu.eg');
-    expect(container.textContent).toContain('البريد الإلكتروني');
+    expect(container.querySelector('select')).toBeNull();
+    expect(container.textContent).toContain('دخول مدير النظام');
   });
 
   // --- Storage Service Tests ---
