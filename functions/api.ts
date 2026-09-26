@@ -97,6 +97,42 @@ export default {
         return json({ status: 'success', data: query.rows }, 200, corsOrigin);
       }
 
+      if (request.method === 'GET' && path === '/system-overview') {
+        if (user.role !== 'SystemAdmin' || user.access_scope !== 'GLOBAL') {
+          return json({ status: 'error', code: 'FORBIDDEN' }, 403, corsOrigin);
+        }
+        const result = await pool.query(
+          `SELECT s.id AS "schoolId", s.code AS "schoolCode", s.name AS "schoolName", s.status,
+                  count(DISTINCT st.id)::int AS "studentsCount",
+                  count(DISTINCT e.id)::int AS "employeesCount"
+           FROM schools s
+           LEFT JOIN students st ON st.school_id=s.id
+           LEFT JOIN employees e ON e.school_id=s.id
+           WHERE s.id IN (SELECT school_id FROM user_school_access WHERE user_id=$1)
+           GROUP BY s.id,s.code,s.name,s.status
+           ORDER BY s.name`,
+          [user.user_id]
+        );
+        const schools = result.rows.map((s: any) => ({
+          ...s,
+          status: String(s.status || '').toUpperCase() === 'ACTIVE' ? 'Active' : 'Inactive',
+          dataStatus: String(s.status || '').toUpperCase() === 'ACTIVE' ? 'AVAILABLE' : 'INACTIVE',
+          studentsCount: String(s.status || '').toUpperCase() === 'ACTIVE' ? Number(s.studentsCount || 0) : null,
+          employeesCount: String(s.status || '').toUpperCase() === 'ACTIVE' ? Number(s.employeesCount || 0) : null,
+        }));
+        const available = schools.filter((s: any) => s.dataStatus === 'AVAILABLE');
+        return json({ status: 'success', data: {
+          summary: {
+            studentsTotal: available.reduce((n: number, s: any) => n + s.studentsCount, 0),
+            employeesTotal: available.reduce((n: number, s: any) => n + s.employeesCount, 0),
+            schoolsIncluded: available.length,
+            schoolsUnavailable: schools.length - available.length,
+          },
+          schools,
+          generatedAt: new Date().toISOString(),
+        }}, 200, corsOrigin);
+      }
+
       if (request.method === 'POST' && path === '/switch-school') {
         const body: any = await request.json();
         const schoolId = String(body.schoolId || '');
