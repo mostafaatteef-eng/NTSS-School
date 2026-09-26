@@ -151,19 +151,33 @@ export default {
         return json({ status: 'success', activeSchoolId: schoolId }, 200, corsOrigin);
       }
 
-      if (request.method === 'GET' && path === '/student-attendance') {
+      if (request.method === 'GET' && (path === '/student-attendance' || path === '/employee-attendance')) {
         const schoolId = String(url.searchParams.get('schoolId') || user.active_school_id || user.school_id || '');
         if (!(await canAccessSchool(user, schoolId))) return json({ status: 'error', code: 'FORBIDDEN' }, 403, corsOrigin);
-        const from = String(url.searchParams.get('from') || new Date().toISOString().slice(0, 10));
-        const to = String(url.searchParams.get('to') || from);
-        const data = await pool.query(
-          `SELECT a.id,a.student_id AS "studentId",s.full_name AS "studentName",a.attendance_date AS "attendanceDate",a.status
-           FROM student_attendance a JOIN students s ON s.school_id=a.school_id AND s.id=a.student_id
-           WHERE a.school_id=$1 AND a.attendance_date BETWEEN $2::date AND $3::date
-           ORDER BY a.attendance_date DESC,s.full_name LIMIT 500`,
+        const from = String(url.searchParams.get('from') || new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10));
+        const to = String(url.searchParams.get('to') || new Date().toISOString().slice(0, 10));
+        const page = Math.max(1, Number(url.searchParams.get('page') || 1));
+        const pageSize = Math.min(200, Math.max(10, Number(url.searchParams.get('pageSize') || 100)));
+        const offset = (page - 1) * pageSize;
+        const isStudent = path === '/student-attendance';
+        const table = isStudent ? 'student_attendance' : 'employee_attendance';
+        const personTable = isStudent ? 'students' : 'employees';
+        const personColumn = isStudent ? 'student_id' : 'employee_id';
+        const count = await pool.query(
+          `SELECT count(*)::int total FROM ${table} WHERE school_id=$1 AND attendance_date BETWEEN $2::date AND $3::date`,
           [schoolId, from, to]
         );
-        return json({ status: 'success', data: data.rows }, 200, corsOrigin);
+        const data = await pool.query(
+          `SELECT a.*,p.full_name AS person_name
+           FROM ${table} a JOIN ${personTable} p ON p.school_id=a.school_id AND p.id=a.${personColumn}
+           WHERE a.school_id=$1 AND a.attendance_date BETWEEN $2::date AND $3::date
+           ORDER BY a.attendance_date DESC,p.full_name LIMIT $4 OFFSET $5`,
+          [schoolId, from, to, pageSize, offset]
+        );
+        return json({ status: 'success', data: data.rows, pagination: {
+          page, pageSize, total: Number(count.rows[0]?.total || 0),
+          pages: Math.ceil(Number(count.rows[0]?.total || 0) / pageSize)
+        }}, 200, corsOrigin);
       }
 
       if (request.method === 'GET' && (path === '/students' || path === '/employees')) {
