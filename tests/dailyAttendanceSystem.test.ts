@@ -117,6 +117,24 @@ describe('NTSS Daily Attendance System - Students & Staff', () => {
       vi.spyOn(storageService, 'pushPostDirect').mockResolvedValueOnce({
         success: true,
         message: 'تم حفظ الدفعة بنجاح في السحابة',
+        savedCount: 1,
+        records: [
+          {
+            id: 'EMPATT_20260917_EMP-9002',
+            employeeId: 'EMP-9002',
+            employeeName: 'محمد خالد - من الخادم',
+            department: 'الرياضيات',
+            date: '2026-09-17',
+            dayName: 'الخميس',
+            checkIn: '08:00',
+            checkOut: '14:30',
+            workingHours: 6.5,
+            lateMinutes: 0,
+            earlyLeaveMinutes: 0,
+            overtimeHours: 0,
+            status: 'مأذونية',
+          },
+        ],
       });
 
       const records: AttendanceRecord[] = [
@@ -147,6 +165,43 @@ describe('NTSS Daily Attendance System - Students & Staff', () => {
       expect(saved.length).toBe(1);
       expect(saved[0].employeeId).toBe('EMP-9002');
       expect(saved[0].status).toBe('مأذونية');
+      expect(saved[0].employeeName).toBe('محمد خالد - من الخادم');
+      expect(res.cacheUpdated).toBe(true);
+    });
+
+    it('does not update local cache when backend success omits canonical records', async () => {
+      vi.spyOn(storageService, 'pushPostDirect').mockResolvedValueOnce({
+        success: true,
+        message: 'تم الحفظ في الخادم',
+        savedCount: 1,
+      });
+
+      const records: AttendanceRecord[] = [
+        {
+          id: 'CLIENT-SPOOFED-ID',
+          employeeId: 'EMP-9003',
+          employeeName: 'اسم من المتصفح',
+          department: 'قسم من المتصفح',
+          date: '2026-09-17',
+          dayName: 'الخميس',
+          checkIn: '08:00',
+          checkOut: '14:30',
+          workingHours: 99,
+          lateMinutes: 0,
+          earlyLeaveMinutes: 0,
+          overtimeHours: 0,
+          status: 'حاضر',
+        },
+      ];
+
+      const res = await storageService.saveDailyStaffAttendanceBatchToBackend({
+        date: '2026-09-17',
+        records,
+      });
+
+      expect(res.success).toBe(true);
+      expect(res.cacheUpdated).toBe(false);
+      expect(storageService.getAttendance()).toHaveLength(0);
     });
   });
 });
