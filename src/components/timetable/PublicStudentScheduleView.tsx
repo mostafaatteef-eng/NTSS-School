@@ -152,13 +152,21 @@ export const PublicStudentScheduleView: React.FC<PublicStudentScheduleViewProps>
 
   const days = useMemo(() => {
     const preferred = ['الأحد', 'الإثنين', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الاربعاء', 'الخميس'];
-    const found = Array.from(new Set((scheduleData?.schedule || []).map(item => item.dayOfWeek).filter(Boolean)));
+    const found: string[] = Array.from(
+      new Set<string>(
+        (scheduleData?.schedule || [])
+          .map(item => String(item.dayOfWeek || '').trim())
+          .filter(Boolean)
+      )
+    );
     return preferred.filter(day => found.includes(day)).concat(found.filter(day => !preferred.includes(day)));
   }, [scheduleData]);
 
   const periods = useMemo(() => {
-    return Array.from(new Set((scheduleData?.schedule || []).map(item => Number(item.periodNumber) || 0)))
-      .filter(Boolean)
+    return Array.from(
+      new Set<number>((scheduleData?.schedule || []).map(item => Number(item.periodNumber) || 0))
+    )
+      .filter(period => period > 0)
       .sort((a, b) => a - b);
   }, [scheduleData]);
 
