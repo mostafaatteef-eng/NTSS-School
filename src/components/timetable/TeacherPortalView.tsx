@@ -943,6 +943,7 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ onBackToLo
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
           <MyRequestsView
             currentUser={teacherPortalUser}
+            authMode="teacher"
           />
         </div>
       )}
