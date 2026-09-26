@@ -105,6 +105,21 @@ export default {
         return json({ status: 'success', activeSchoolId: schoolId }, 200, corsOrigin);
       }
 
+      if (request.method === 'GET' && path === '/student-attendance') {
+        const schoolId = String(url.searchParams.get('schoolId') || user.active_school_id || user.school_id || '');
+        if (!(await canAccessSchool(user, schoolId))) return json({ status: 'error', code: 'FORBIDDEN' }, 403, corsOrigin);
+        const from = String(url.searchParams.get('from') || new Date().toISOString().slice(0, 10));
+        const to = String(url.searchParams.get('to') || from);
+        const data = await pool.query(
+          `SELECT a.id,a.student_id AS "studentId",s.full_name AS "studentName",a.attendance_date AS "attendanceDate",a.status
+           FROM student_attendance a JOIN students s ON s.school_id=a.school_id AND s.id=a.student_id
+           WHERE a.school_id=$1 AND a.attendance_date BETWEEN $2::date AND $3::date
+           ORDER BY a.attendance_date DESC,s.full_name LIMIT 500`,
+          [schoolId, from, to]
+        );
+        return json({ status: 'success', data: data.rows }, 200, corsOrigin);
+      }
+
       if (request.method === 'GET' && (path === '/students' || path === '/employees')) {
         const schoolId = String(url.searchParams.get('schoolId') || user.active_school_id || user.school_id || '');
         if (!(await canAccessSchool(user, schoolId))) return json({ status: 'error', code: 'FORBIDDEN' }, 403, corsOrigin);
