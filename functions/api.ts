@@ -259,6 +259,40 @@ export default {
         return json({status:'success',message:'تم تحديث الحساب.',user:await project(u.rows[0])},200,corsOrigin);
       }
 
+      if (request.method === 'POST' && path === '/academic-years/manage') {
+        const body: any=await request.json(); const action=String(body.action||''); const data:any=body.data||{};
+        const schoolId=String(body.schoolId||user.active_school_id||user.school_id||'').trim();
+        if(!(await canAccessSchool(user,schoolId)))return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);
+        const allowedRoles=new Set(['SystemAdmin','Admin','SchoolAdmin','SchoolDirector']);
+        if(!allowedRoles.has(String(user.role||'')))return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);
+        const toClient=(r:any)=>({...(r.payload||{}),id:(r.payload&&r.payload.id)||String(r.id).replace(schoolId+'::',''),schoolId:r.school_id,name:r.name,startDate:r.start_date?String(r.start_date).slice(0,10):undefined,endDate:r.end_date?String(r.end_date).slice(0,10):undefined,status:r.is_active?'ACTIVE':((r.payload&&r.payload.status)||'CLOSED'),isDefault:Boolean(r.is_active)});
+        if(action==='getAcademicYears'){
+          const rows=await pool.query('SELECT * FROM academic_years WHERE school_id=$1 ORDER BY start_date DESC NULLS LAST,name DESC',[schoolId]);
+          return json({status:'success',data:rows.rows.map(toClient)},200,corsOrigin);
+        }
+        const clientId=String(data.id||'').trim()||('AY-'+Date.now()); const dbId=schoolId+'::'+clientId;
+        if(action==='deleteAcademicYear'){
+          const used=await pool.query('SELECT 1 FROM schedule WHERE school_id=$1 AND academic_year_id=$2 LIMIT 1',[schoolId,dbId]);
+          if(used.rowCount)return json({status:'error',code:'ACADEMIC_YEAR_IN_USE',message:'لا يمكن حذف عام دراسي مرتبط بجدول دراسي.'},409,corsOrigin);
+          const d=await pool.query('DELETE FROM academic_years WHERE school_id=$1 AND id=$2 RETURNING id',[schoolId,dbId]);
+          return d.rowCount?json({status:'success'},200,corsOrigin):json({status:'error',code:'NOT_FOUND'},404,corsOrigin);
+        }
+        if(action!=='saveAcademicYear')return json({status:'error',code:'ACTION_NOT_MIGRATED'},400,corsOrigin);
+        const active=String(data.status||'').toUpperCase()==='ACTIVE'||data.isDefault===true;
+        if(active)await pool.query('UPDATE academic_years SET is_active=false,payload=jsonb_set(payload,\'{status}\',\'"CLOSED"\'::jsonb,true) WHERE school_id=$1 AND id<>$2',[schoolId,dbId]);
+        const payload=JSON.stringify({...data,id:clientId,status:active?'ACTIVE':String(data.status||'CLOSED'),isDefault:active});
+        const saved=await pool.query(
+          `INSERT INTO academic_years(id,school_id,name,start_date,end_date,is_active,payload)
+           VALUES($1,$2,$3,NULLIF($4,'')::date,NULLIF($5,'')::date,$6,$7::jsonb)
+           ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name,start_date=EXCLUDED.start_date,end_date=EXCLUDED.end_date,is_active=EXCLUDED.is_active,payload=EXCLUDED.payload
+           WHERE academic_years.school_id=EXCLUDED.school_id RETURNING *`,
+          [dbId,schoolId,String(data.name||clientId),String(data.startDate||''),String(data.endDate||''),active,payload]
+        );
+        if(!saved.rowCount)return json({status:'error',code:'ACADEMIC_YEAR_WRITE_REJECTED'},409,corsOrigin);
+        await pool.query('INSERT INTO audit_logs(school_id,user_id,username,role,action,entity,target_id,details) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[schoolId,user.user_id,user.email,user.role,'UPSERT','ACADEMIC_YEAR',clientId,'Saved through Neon API']);
+        return json({status:'success',data:toClient(saved.rows[0])},200,corsOrigin);
+      }
+
       if (request.method === 'POST' && path === '/schedule/manage') {
         const body: any = await request.json();
         const action = String(body.action || '');
@@ -287,7 +321,7 @@ export default {
            VALUES($1,$2,NULLIF($3,''),NULLIF($4,''),$5,$6,$7,$8,$9::jsonb)
            ON CONFLICT(id) DO UPDATE SET academic_year_id=EXCLUDED.academic_year_id,teacher_id=EXCLUDED.teacher_id,grade=EXCLUDED.grade,classroom=EXCLUDED.classroom,weekday=EXCLUDED.weekday,period_no=EXCLUDED.period_no,payload=EXCLUDED.payload,updated_at=now()
            WHERE schedule.school_id=EXCLUDED.school_id RETURNING *`,
-          [id,schoolId,String(data.academicYearId||''),String(data.teacherId||''),String(data.grade||''),String(data.classroom||''),String(data.weekday||data.day||''),Number(data.periodNo||data.period||0)||null,payload]
+          [id,schoolId,data.academicYearId ? schoolId+'::'+String(data.academicYearId) : '',String(data.teacherId||''),String(data.grade||''),String(data.classroom||''),String(data.weekday||data.day||''),Number(data.periodNo||data.period||0)||null,payload]
         );
         if(!saved.rowCount)return json({status:'error',code:'SCHEDULE_WRITE_REJECTED'},409,corsOrigin);
         await pool.query('INSERT INTO audit_logs(school_id,user_id,username,role,action,entity,target_id,details) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[schoolId,user.user_id,user.email,user.role,'UPSERT','SCHEDULE',id,'Saved through Neon API']);
