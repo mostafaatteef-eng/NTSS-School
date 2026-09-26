@@ -7,7 +7,7 @@ import { Employee, User, ScheduleItem } from '../types';
 describe('NTSS ERP - Security, Login Numbers, First Login & Timetable Integration Tests', () => {
   beforeEach(() => {
     localStorage.clear();
-    sessionStorage.clear();
+    if (typeof sessionStorage !== 'undefined') sessionStorage.clear();
     vi.restoreAllMocks();
   });
 
