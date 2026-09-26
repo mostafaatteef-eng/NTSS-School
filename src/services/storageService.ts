@@ -5206,202 +5206,259 @@ class StorageService {
     employee?: Employee;
     mustChangePassword?: boolean;
   }> {
-    const cleanUsername = (rawUsername || '').trim();
-    const cleanPassword = (rawPassword || '').trim();
-    const cleanSchoolId = (schoolId || this.getActiveSchoolId()).trim();
+    const cleanUsername = String(rawUsername || '').trim();
+    const cleanPassword = String(rawPassword || '').trim();
+    const cleanSchoolId = String(schoolId || this.getActiveSchoolId() || '').trim().toUpperCase();
 
     if (!cleanUsername || !cleanPassword) {
-      return { success: false, message: 'يرجى إدخال اسم المستخدم وكلمة المرور' };
+      return { success: false, code: 'INVALID_CREDENTIALS', message: 'يرجى إدخال اسم المستخدم وكلمة المرور' };
     }
 
-    const normUser = cleanUsername.toLowerCase();
-    const accounts = this.getTeacherAccounts();
-    const accountIndex = accounts.findIndex(
-      t => t.username.trim().toLowerCase() === normUser || t.employeeId === cleanUsername || (t.teacherCode && t.teacherCode.toUpperCase() === cleanUsername.toUpperCase())
-    );
-
-    const account = accountIndex >= 0 ? accounts[accountIndex] : null;
-
-    // Check 15-minute lock
-    if (account?.lockedUntil) {
-      const lockTime = new Date(account.lockedUntil).getTime();
-      const now = Date.now();
-      if (lockTime > now) {
-        const remainingMinutes = Math.ceil((lockTime - now) / 60000);
-        return {
-          success: false,
-          code: 'ACCOUNT_LOCKED',
-          message: `تم تجميد الحساب مؤقتاً لمدة 15 دقيقة بسبب تكرار المحاولات الخاطئة. تبقى ${remainingMinutes} دقيقة.`,
-        };
-      } else {
-        // Lock expired
-        account.lockedUntil = null;
-        account.failedLoginAttempts = 0;
-        this.saveTeacherAccountsLocal(accounts);
-      }
+    if (!cleanSchoolId) {
+      return { success: false, code: 'SCHOOL_ID_REQUIRED', message: 'يرجى تحديد المدرسة لتسجيل الدخول.' };
     }
 
-    // Check PasswordResetRequired / Needs Setup first so proper error is returned
-    if (
-      account &&
-      (account.status === 'PasswordResetRequired' ||
-        account.status === 'Needs Setup' ||
-        account.accountStatus === 'PasswordResetRequired' ||
-        account.accountStatus === 'Needs Setup')
-    ) {
+    const scriptUrl = this.getBackendUrl();
+    const isOnline = typeof navigator === 'undefined' || navigator.onLine !== false;
+    if (!scriptUrl || scriptUrl.length < 15 || !isOnline) {
       return {
         success: false,
-        code: 'PASSWORD_RESET_REQUIRED',
-        message: 'الحساب يتطلب تعيين كلمة مرور من قبل إدارة المدرسة قبل تسجيل الدخول.',
+        code: 'SERVICE_UNAVAILABLE',
+        message: 'تسجيل دخول المعلم يتطلب الاتصال بالخادم المعتمد.',
       };
     }
 
-    // Check disabled status
-    if (account && (account.status === 'Disabled' || account.status === 'Suspended' || account.status === 'Inactive' || account.isActive === false)) {
-      return {
-        success: false,
-        code: 'ACCOUNT_DISABLED',
-        message: 'حساب المعلم معطل حالياً. يرجى التواصل مع إدارة المدرسة.',
-      };
-    }
+    try {
+      const response = await fetch(scriptUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'teacherLogin',
+          username: cleanUsername,
+          password: cleanPassword,
+          schoolId: cleanSchoolId,
+        }),
+      });
 
-    const settings = this.getSettings();
-    const scriptUrl = settings.googleAppsScriptUrl || DEFAULT_BACKEND_URL;
-
-    // 1. Try Authoritative Backend Login
-    if (scriptUrl && scriptUrl.length > 15 && navigator.onLine) {
+      let res: any = null;
       try {
-        const response = await fetch(scriptUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({
-            action: 'teacherLogin',
-            username: cleanUsername,
-            password: cleanPassword,
-            schoolId: cleanSchoolId,
-          }),
-        });
-
-        if (response.ok) {
-          const res = await response.json();
-          if (res.status === 'success' && res.teacherSessionToken) {
-            // Login successful
-            if (account) {
-              account.failedLoginAttempts = 0;
-              account.lockedUntil = null;
-              account.lastLoginAt = new Date().toISOString();
-              this.saveTeacherAccountsLocal(accounts);
-            }
-
-            const emp = res.teacher || res.employee || this.getEmployees().find(e => e.id === account?.employeeId);
-            const session: TeacherSession = {
-              teacherSessionToken: res.teacherSessionToken,
-              schoolId: cleanSchoolId,
-              employeeId: emp?.id || account?.employeeId || '',
-              teacherCode: emp?.teacherCode || account?.teacherCode || '',
-              teacherName: emp?.name || account?.teacherName || cleanUsername,
-              username: account?.username || cleanUsername,
-              department: emp?.department || account?.department,
-              expiresAt: res.expiresAt || new Date(Date.now() + 12 * 3600 * 1000).toISOString(),
-              createdAt: new Date().toISOString(),
-            };
-
-            this.setTeacherSession(session);
-
-            return {
-              success: true,
-              teacherSessionToken: res.teacherSessionToken,
-              employee: emp,
-              mustChangePassword: res.mustChangePassword || account?.mustChangePassword,
-            };
-          } else if (res.status === 'error') {
-            // Record failed attempt
-            if (account) {
-              account.failedLoginAttempts = (Number(account.failedLoginAttempts) || 0) + 1;
-              if (account.failedLoginAttempts >= 5) {
-                account.lockedUntil = new Date(Date.now() + 15 * 60 * 1000).toISOString();
-                this.saveTeacherAccountsLocal(accounts);
-                return {
-                  success: false,
-                  code: 'ACCOUNT_LOCKED',
-                  message: 'تم تجميد الحساب مؤقتاً لمدة 15 دقيقة بسبب 5 محاولات فاشلة. يرجى الانتظار أو مراجعة الإدارة.',
-                };
-              }
-              this.saveTeacherAccountsLocal(accounts);
-            }
-            return {
-              success: false,
-              code: res.code || 'INVALID_CREDENTIALS',
-              message: res.message || 'اسم المستخدم أو كلمة المرور غير صحيحة.',
-            };
-          }
-        }
-      } catch (err) {
-        console.warn('Backend teacher login failed, checking fallback...', err);
+        res = await response.json();
+      } catch {
+        res = null;
       }
-    }
 
-    // 2. Standalone / Offline Fallback Validation
-    if (account) {
-      if (cleanPassword.length >= 8) {
-        account.failedLoginAttempts = 0;
-        account.lockedUntil = null;
-        account.lastLoginAt = new Date().toISOString();
-        this.saveTeacherAccountsLocal(accounts);
-
-        const emp = this.getEmployees().find(e => e.id === account.employeeId) || ({
-          id: account.employeeId,
-          name: account.teacherName,
-          teacherCode: account.teacherCode,
-          department: account.department,
-          jobTitle: 'معلم',
-          status: 'Active',
-          isTeachingStaff: true,
-        } as Employee);
-
-        const fakeToken = `TSESS_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
-        const session: TeacherSession = {
-          teacherSessionToken: fakeToken,
-          schoolId: this.getActiveSchoolId(),
-          employeeId: account.employeeId,
-          teacherCode: account.teacherCode,
-          teacherName: account.teacherName,
-          username: account.username,
-          department: account.department,
-          expiresAt: new Date(Date.now() + 12 * 3600 * 1000).toISOString(),
-          createdAt: new Date().toISOString(),
-        };
-
-        this.setTeacherSession(session);
-
-        return {
-          success: true,
-          teacherSessionToken: fakeToken,
-          employee: emp,
-          mustChangePassword: account.mustChangePassword,
-        };
-      }
-    }
-
-    // Failed attempt handling
-    if (account) {
-      account.failedLoginAttempts = (Number(account.failedLoginAttempts) || 0) + 1;
-      if (account.failedLoginAttempts >= 5) {
-        account.lockedUntil = new Date(Date.now() + 15 * 60 * 1000).toISOString();
-        this.saveTeacherAccountsLocal(accounts);
+      if (!response.ok || res?.status === 'error' || !res?.teacherSessionToken) {
         return {
           success: false,
-          code: 'ACCOUNT_LOCKED',
-          message: 'تم تجميد الحساب مؤقتاً لمدة 15 دقيقة بسبب تجاوز 5 محاولات خاطئة.',
+          code: res?.code || (response.status === 401 ? 'INVALID_CREDENTIALS' : 'TEACHER_AUTH_FAILED'),
+          message: res?.message || 'تعذر تسجيل الدخول باستخدام بيانات الاعتماد المقدمة.',
         };
       }
-      this.saveTeacherAccountsLocal(accounts);
+
+      const teacher = res.teacher || {};
+      const employee: Employee = {
+        id: String(teacher.employeeId || teacher.teacherId || '').trim(),
+        name: String(teacher.teacherName || cleanUsername).trim(),
+        teacherCode: String(teacher.teacherCode || teacher.employeeId || '').trim(),
+        department: teacher.department ? String(teacher.department).trim() : 'الهيئة التعليمية',
+        jobTitle: 'معلم',
+        status: 'Active',
+        isTeachingStaff: true,
+        teachingSubjects: Array.isArray(teacher.teachingSubjects) ? teacher.teachingSubjects : [],
+        weeklyPeriodLimit: Number(teacher.weeklyPeriodLimit) || 30,
+      };
+
+      const mustChangePassword = res.mustChangePassword === true;
+      const session: TeacherSession = {
+        teacherSessionToken: String(res.teacherSessionToken),
+        schoolId: String(res.schoolId || cleanSchoolId).trim().toUpperCase(),
+        employeeId: employee.id,
+        teacherCode: employee.teacherCode || employee.id,
+        teacherName: employee.name,
+        username: cleanUsername,
+        department: employee.department,
+        mustChangePassword,
+        expiresAt: String(res.expiresAt || new Date(Date.now() + 12 * 3600 * 1000).toISOString()),
+        createdAt: new Date().toISOString(),
+      };
+
+      this.setTeacherSession(session);
+
+      return {
+        success: true,
+        teacherSessionToken: session.teacherSessionToken,
+        employee,
+        mustChangePassword,
+      };
+    } catch {
+      return {
+        success: false,
+        code: 'NETWORK_ERROR',
+        message: 'تعذر الاتصال بالخادم المعتمد لتسجيل دخول المعلم.',
+      };
+    }
+  }
+
+  public async validateTeacherPortalSession(): Promise<{
+    success: boolean;
+    code?: string;
+    message?: string;
+    employee?: Employee;
+    data?: any;
+    mustChangePassword?: boolean;
+  }> {
+    const session = this.getTeacherSession();
+    if (!session?.teacherSessionToken) {
+      return { success: false, code: 'TEACHER_SESSION_REQUIRED', message: 'لا توجد جلسة معلم نشطة.' };
     }
 
-    return {
-      success: false,
-      message: 'اسم المستخدم أو كلمة المرور غير صحيحة.',
-    };
+    const scriptUrl = this.getBackendUrl();
+    const isOnline = typeof navigator === 'undefined' || navigator.onLine !== false;
+    if (!scriptUrl || scriptUrl.length < 15 || !isOnline) {
+      return { success: false, code: 'SERVICE_UNAVAILABLE', message: 'يلزم الاتصال بالخادم للتحقق من جلسة المعلم.' };
+    }
+
+    try {
+      const response = await fetch(scriptUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'getTeacherPortalData',
+          teacherSessionToken: session.teacherSessionToken,
+        }),
+      });
+
+      let res: any = null;
+      try {
+        res = await response.json();
+      } catch {
+        res = null;
+      }
+
+      if (!response.ok || res?.status === 'error') {
+        if (response.status === 401 || [
+          'TEACHER_SESSION_REQUIRED',
+          'TEACHER_SESSION_INVALID',
+          'SESSION_EXPIRED',
+          'SESSION_REVOKED',
+          'INVALID_SESSION',
+        ].includes(String(res?.code || ''))) {
+          this.setTeacherSession(null);
+        }
+        return {
+          success: false,
+          code: res?.code || 'TEACHER_SESSION_INVALID',
+          message: res?.message || 'تعذر التحقق من جلسة المعلم.',
+        };
+      }
+
+      const teacher = res?.data?.teacher || {};
+      const employee: Employee = {
+        id: String(teacher.id || session.employeeId).trim(),
+        name: String(teacher.name || session.teacherName).trim(),
+        teacherCode: String(teacher.teacherCode || session.teacherCode).trim(),
+        department: session.department || 'الهيئة التعليمية',
+        jobTitle: 'معلم',
+        status: 'Active',
+        isTeachingStaff: true,
+      };
+
+      const refreshedSession: TeacherSession = {
+        ...session,
+        employeeId: employee.id,
+        teacherCode: employee.teacherCode || employee.id,
+        teacherName: employee.name,
+        department: employee.department,
+      };
+      this.setTeacherSession(refreshedSession);
+
+      return {
+        success: true,
+        employee,
+        data: res.data,
+        mustChangePassword: refreshedSession.mustChangePassword === true,
+      };
+    } catch {
+      return {
+        success: false,
+        code: 'NETWORK_ERROR',
+        message: 'تعذر الاتصال بالخادم للتحقق من جلسة المعلم.',
+      };
+    }
+  }
+
+  public async changeTeacherPassword(newPassword: string): Promise<{
+    success: boolean;
+    code?: string;
+    message?: string;
+    teacherSessionToken?: string;
+  }> {
+    const session = this.getTeacherSession();
+    const cleanPassword = String(newPassword || '').trim();
+
+    if (!session?.teacherSessionToken) {
+      return { success: false, code: 'TEACHER_SESSION_REQUIRED', message: 'لا توجد جلسة معلم نشطة.' };
+    }
+    if (cleanPassword.length < 8) {
+      return { success: false, code: 'INVALID_PASSWORD', message: 'كلمة المرور الجديدة يجب ألا تقل عن 8 أحرف.' };
+    }
+
+    const scriptUrl = this.getBackendUrl();
+    const isOnline = typeof navigator === 'undefined' || navigator.onLine !== false;
+    if (!scriptUrl || scriptUrl.length < 15 || !isOnline) {
+      return { success: false, code: 'SERVICE_UNAVAILABLE', message: 'تغيير كلمة المرور يتطلب الاتصال بالخادم.' };
+    }
+
+    try {
+      const response = await fetch(scriptUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'changeTeacherPassword',
+          teacherSessionToken: session.teacherSessionToken,
+          newPassword: cleanPassword,
+        }),
+      });
+
+      let res: any = null;
+      try {
+        res = await response.json();
+      } catch {
+        res = null;
+      }
+
+      if (!response.ok || res?.status === 'error' || !res?.teacherSessionToken) {
+        if (response.status === 401 || ['INVALID_SESSION', 'SESSION_EXPIRED', 'SESSION_REVOKED'].includes(String(res?.code || ''))) {
+          this.setTeacherSession(null);
+        }
+        return {
+          success: false,
+          code: res?.code || 'CHANGE_PASSWORD_FAILED',
+          message: res?.message || 'تعذر تغيير كلمة المرور.',
+        };
+      }
+
+      const rotatedSession: TeacherSession = {
+        ...session,
+        teacherSessionToken: String(res.teacherSessionToken),
+        expiresAt: String(res.expiresAt || session.expiresAt),
+        mustChangePassword: false,
+        createdAt: new Date().toISOString(),
+      };
+      this.setTeacherSession(rotatedSession);
+
+      return {
+        success: true,
+        message: res?.message || 'تم تغيير كلمة المرور بنجاح.',
+        teacherSessionToken: rotatedSession.teacherSessionToken,
+      };
+    } catch {
+      return {
+        success: false,
+        code: 'NETWORK_ERROR',
+        message: 'تعذر الاتصال بالخادم لتغيير كلمة المرور.',
+      };
+    }
   }
 
   /**
@@ -5437,6 +5494,7 @@ class StorageService {
         teacherName: session.teacherName,
         username: session.username,
         department: session.department,
+        mustChangePassword: session.mustChangePassword === true,
         expiresAt: session.expiresAt,
         createdAt: session.createdAt,
       };
@@ -5459,9 +5517,15 @@ class StorageService {
 
   public logoutTeacher(): void {
     const session = this.getTeacherSession();
-    if (session) {
-      this.pushPostDirect('revokeTeacherSession', {
-        teacherSessionToken: session.teacherSessionToken,
+    const scriptUrl = this.getBackendUrl();
+    if (session?.teacherSessionToken && scriptUrl && scriptUrl.length > 15 && (typeof navigator === 'undefined' || navigator.onLine !== false)) {
+      fetch(scriptUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'teacherLogout',
+          teacherSessionToken: session.teacherSessionToken,
+        }),
       }).catch(() => {});
     }
     this.setTeacherSession(null);
