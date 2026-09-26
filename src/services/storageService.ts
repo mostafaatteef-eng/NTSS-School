@@ -5265,7 +5265,6 @@ class StorageService {
         status: 'Active',
         isTeachingStaff: true,
         teachingSubjects: Array.isArray(teacher.teachingSubjects) ? teacher.teachingSubjects : [],
-        weeklyPeriodLimit: Number(teacher.weeklyPeriodLimit) || 30,
       };
 
       const mustChangePassword = res.mustChangePassword === true;
