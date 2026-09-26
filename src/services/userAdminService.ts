@@ -1,6 +1,7 @@
 import { CanonicalStaffRole, PermissionKey, User } from '../types';
 import { hasPermission } from '../utils/permissions';
 import { storageService } from './storageService';
+import { isPostgresBackendEnabled, postgresApiRequest } from './backend/postgresRuntime';
 
 export interface UserAdminResult<T = undefined> {
   success: boolean;
@@ -75,9 +76,27 @@ class UserAdminService {
   }
 
   private async request(action: string, data: Record<string, any> | undefined, user: User): Promise<UserAdminResult<any>> {
-    const url = storageService.getBackendUrl();
     const online = typeof navigator === 'undefined' || navigator.onLine !== false;
-    if (!url || url.length < 15 || !online) {
+    if (!online) return { success: false, code: 'SERVICE_UNAVAILABLE', message: 'تعذر الاتصال بالخادم الرئيسي.' };
+    if (isPostgresBackendEnabled()) {
+      try {
+        const pg = await postgresApiRequest<any>('/users/manage', user.sessionToken || '', {
+          method: 'POST',
+          body: JSON.stringify({ action, data }),
+        });
+        const body = pg.body || {};
+        const code = body?.code || (!pg.ok ? 'HTTP_' + pg.status : undefined);
+        if (SESSION_CODES.has(String(code || '')) || pg.status === 401) storageService.setCurrentUser(null);
+        if (!pg.ok || body?.status === 'error') {
+          return { success: false, code: code || 'USER_ADMIN_REQUEST_FAILED', message: body?.message || 'تعذر تنفيذ العملية.' };
+        }
+        return { success: true, code: body?.code, message: body?.message || 'تمت العملية بنجاح.', data: body };
+      } catch (err: any) {
+        return { success: false, code: 'NETWORK_ERROR', message: err?.message || 'حدث خطأ في الاتصال بالخادم.' };
+      }
+    }
+    const url = storageService.getBackendUrl();
+    if (!url || url.length < 15) {
       return { success: false, code: 'SERVICE_UNAVAILABLE', message: 'تعذر الاتصال بالخادم الرئيسي.' };
     }
     try {
