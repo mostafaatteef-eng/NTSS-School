@@ -607,4 +607,191 @@ describe('NTSS ERP - Security, Login Numbers, First Login & Timetable Integratio
     expect(storageService.getTeacherSession()).toBeNull();
   });
 
+
+  it('Test 24: Teacher self-service read uses TeacherSession token and returns only authoritative self bundle', async () => {
+    storageService.setTeacherSession({
+      teacherSessionToken: 'SELF_REQUESTS_TOKEN_123',
+      employeeId: 'EMP-SELF-1',
+      teacherCode: 'T-SELF-1',
+      teacherName: 'معلم الخدمة الذاتية',
+      username: 'teacher.self1',
+      schoolId: 'SCH-BADR',
+      expiresAt: new Date(Date.now() + 3600000).toISOString(),
+      createdAt: new Date().toISOString(),
+    });
+
+    vi.spyOn(storageService, 'getBackendUrl').mockReturnValue('https://example.com/teacher');
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        status: 'success',
+        data: {
+          profile: {
+            employeeId: 'EMP-SELF-1',
+            employeeName: 'معلم الخدمة الذاتية',
+            department: 'التعليم',
+            teacherCode: 'T-SELF-1',
+          },
+          leaves: [{ id: 'LEV-1', employeeId: 'EMP-SELF-1', leaveType: 'سنوية', startDate: '2026-09-27', endDate: '2026-09-27', daysCount: 1, status: 'معلقة', reason: 'سبب' }],
+          permissions: [],
+        },
+      }),
+    } as Response);
+
+    const result = await storageService.getTeacherSelfRequestsAuthoritative();
+
+    expect(result.success).toBe(true);
+    expect(result.profile?.employeeId).toBe('EMP-SELF-1');
+    expect(result.leaves?.length).toBe(1);
+
+    const request = JSON.parse(String((fetchSpy.mock.calls[0][1] as RequestInit).body));
+    expect(request.action).toBe('getTeacherSelfRequests');
+    expect(request.teacherSessionToken).toBe('SELF_REQUESTS_TOKEN_123');
+    expect(request.sessionToken).toBeUndefined();
+    expect(request.schoolId).toBeUndefined();
+    expect(request.employeeId).toBeUndefined();
+  });
+
+  it('Test 25: Teacher leave request sends content only and cannot choose identity, status, school, or id', async () => {
+    storageService.setTeacherSession({
+      teacherSessionToken: 'SELF_LEAVE_TOKEN_123',
+      employeeId: 'EMP-SELF-2',
+      teacherCode: 'T-SELF-2',
+      teacherName: 'معلم',
+      username: 'teacher.self2',
+      schoolId: 'SCH-BADR',
+      expiresAt: new Date(Date.now() + 3600000).toISOString(),
+      createdAt: new Date().toISOString(),
+    });
+
+    vi.spyOn(storageService, 'getBackendUrl').mockReturnValue('https://example.com/teacher');
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        status: 'success',
+        message: 'created',
+        leave: {
+          id: 'LEV-SERVER-1',
+          employeeId: 'EMP-SELF-2',
+          employeeName: 'معلم',
+          department: 'التعليم',
+          leaveType: 'سنوية',
+          startDate: '2026-09-27',
+          endDate: '2026-09-28',
+          daysCount: 2,
+          status: 'معلقة',
+          reason: 'ظرف شخصي',
+          createdAt: new Date().toISOString(),
+        },
+      }),
+    } as Response);
+
+    const result = await storageService.createTeacherLeaveRequestAuthoritative({
+      leaveType: 'سنوية',
+      startDate: '2026-09-27',
+      endDate: '2026-09-28',
+      reason: 'ظرف شخصي',
+      notes: 'ملاحظة',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.leave?.status).toBe('معلقة');
+
+    const request = JSON.parse(String((fetchSpy.mock.calls[0][1] as RequestInit).body));
+    expect(request.action).toBe('createTeacherLeaveRequest');
+    expect(request.teacherSessionToken).toBe('SELF_LEAVE_TOKEN_123');
+    expect(request.data.employeeId).toBeUndefined();
+    expect(request.data.employeeName).toBeUndefined();
+    expect(request.data.schoolId).toBeUndefined();
+    expect(request.data.status).toBeUndefined();
+    expect(request.data.id).toBeUndefined();
+    expect(request.data.daysCount).toBeUndefined();
+  });
+
+  it('Test 26: Teacher permission request leaves duration and approval authority to the backend', async () => {
+    storageService.setTeacherSession({
+      teacherSessionToken: 'SELF_PERMISSION_TOKEN_123',
+      employeeId: 'EMP-SELF-3',
+      teacherCode: 'T-SELF-3',
+      teacherName: 'معلم',
+      username: 'teacher.self3',
+      schoolId: 'SCH-BADR',
+      expiresAt: new Date(Date.now() + 3600000).toISOString(),
+      createdAt: new Date().toISOString(),
+    });
+
+    vi.spyOn(storageService, 'getBackendUrl').mockReturnValue('https://example.com/teacher');
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        status: 'success',
+        permission: {
+          id: 'PERM-SERVER-1',
+          employeeId: 'EMP-SELF-3',
+          employeeName: 'معلم',
+          department: 'التعليم',
+          date: '2026-09-27',
+          permissionType: 'إذن خروج مؤقت',
+          startTime: '10:00',
+          endTime: '12:00',
+          durationHours: 2,
+          reason: 'سبب',
+          status: 'معلقة',
+          createdAt: new Date().toISOString(),
+        },
+      }),
+    } as Response);
+
+    const result = await storageService.createTeacherPermissionRequestAuthoritative({
+      date: '2026-09-27',
+      permissionType: 'إذن خروج مؤقت',
+      startTime: '10:00',
+      endTime: '12:00',
+      reason: 'سبب',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.permission?.durationHours).toBe(2);
+
+    const request = JSON.parse(String((fetchSpy.mock.calls[0][1] as RequestInit).body));
+    expect(request.action).toBe('createTeacherPermissionRequest');
+    expect(request.data.employeeId).toBeUndefined();
+    expect(request.data.schoolId).toBeUndefined();
+    expect(request.data.status).toBeUndefined();
+    expect(request.data.id).toBeUndefined();
+    expect(request.data.durationHours).toBeUndefined();
+    expect(request.data.approvedBy).toBeUndefined();
+  });
+
+  it('Test 27: Invalid TeacherSession on self-service request clears teacher session', async () => {
+    storageService.setTeacherSession({
+      teacherSessionToken: 'INVALID_SELF_TOKEN_123',
+      employeeId: 'EMP-SELF-4',
+      teacherCode: 'T-SELF-4',
+      teacherName: 'معلم',
+      username: 'teacher.self4',
+      schoolId: 'SCH-BADR',
+      expiresAt: new Date(Date.now() + 3600000).toISOString(),
+      createdAt: new Date().toISOString(),
+    });
+
+    vi.spyOn(storageService, 'getBackendUrl').mockReturnValue('https://example.com/teacher');
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: false,
+      status: 401,
+      json: async () => ({
+        status: 'error',
+        code: 'TEACHER_SESSION_INVALID',
+        message: 'invalid',
+      }),
+    } as Response);
+
+    const result = await storageService.getTeacherSelfRequestsAuthoritative();
+    expect(result.success).toBe(false);
+    expect(storageService.getTeacherSession()).toBeNull();
+  });
+
 });
