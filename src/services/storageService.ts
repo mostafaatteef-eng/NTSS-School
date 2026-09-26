@@ -924,7 +924,19 @@ class StorageService {
     const headers = new Headers(init.headers || {});
     if (init.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
     if (user?.sessionToken) headers.set('Authorization', 'Bearer ' + user.sessionToken);
-    return fetch(base + path, { ...init, headers });
+    const target = base + path;
+    try {
+      return await fetch(target, { ...init, headers });
+    } catch (error: any) {
+      const details = [
+        error?.name,
+        error?.message,
+        error?.cause?.code,
+        error?.cause?.message,
+        target,
+      ].filter(Boolean).join(' | ');
+      throw new Error(details || 'NETWORK_FETCH_FAILED');
+    }
   }
 
   public async login(
