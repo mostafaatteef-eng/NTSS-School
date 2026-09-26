@@ -5464,9 +5464,25 @@ class StorageService {
    * Teacher Session Management: Relies on teacherSessionToken ONLY.
    */
   public getTeacherSession(): TeacherSession | null {
+    let raw: string | null = null;
+
     try {
-      const raw = sessionStorage.getItem(STORAGE_KEYS.TEACHER_SESSION) || localStorage.getItem(STORAGE_KEYS.TEACHER_SESSION);
-      if (!raw) return null;
+      if (typeof sessionStorage !== 'undefined') {
+        raw = sessionStorage.getItem(STORAGE_KEYS.TEACHER_SESSION);
+      }
+    } catch {}
+
+    if (!raw) {
+      try {
+        if (typeof localStorage !== 'undefined') {
+          raw = localStorage.getItem(STORAGE_KEYS.TEACHER_SESSION);
+        }
+      } catch {}
+    }
+
+    if (!raw) return null;
+
+    try {
       const session: TeacherSession = JSON.parse(raw);
       if (!session || !session.teacherSessionToken || session.teacherSessionToken.length < 10) {
         this.setTeacherSession(null);
@@ -5497,14 +5513,30 @@ class StorageService {
         expiresAt: session.expiresAt,
         createdAt: session.createdAt,
       };
+      const serialized = JSON.stringify(safeSession);
+
       try {
-        sessionStorage.setItem(STORAGE_KEYS.TEACHER_SESSION, JSON.stringify(safeSession));
-        localStorage.setItem(STORAGE_KEYS.TEACHER_SESSION, JSON.stringify(safeSession));
+        if (typeof sessionStorage !== 'undefined') {
+          sessionStorage.setItem(STORAGE_KEYS.TEACHER_SESSION, serialized);
+        }
+      } catch {}
+
+      try {
+        if (typeof localStorage !== 'undefined') {
+          localStorage.setItem(STORAGE_KEYS.TEACHER_SESSION, serialized);
+        }
       } catch {}
     } else {
       try {
-        sessionStorage.removeItem(STORAGE_KEYS.TEACHER_SESSION);
-        localStorage.removeItem(STORAGE_KEYS.TEACHER_SESSION);
+        if (typeof sessionStorage !== 'undefined') {
+          sessionStorage.removeItem(STORAGE_KEYS.TEACHER_SESSION);
+        }
+      } catch {}
+
+      try {
+        if (typeof localStorage !== 'undefined') {
+          localStorage.removeItem(STORAGE_KEYS.TEACHER_SESSION);
+        }
       } catch {}
     }
     this.notifyChange();
