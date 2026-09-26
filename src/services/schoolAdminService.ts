@@ -116,7 +116,7 @@ export class SchoolAdminService {
 
     const apiUrl = ((typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_POSTGRES_API_URL) as string) || '';
     if (!apiUrl || !user.sessionToken) {
-      return { success: false, code: 'SERVICE_UNAVAILABLE', message: 'تعذر الاتصال بخادم PostgreSQL لإدارة المدارس.' };
+      return { success: false, code: 'SERVICE_UNAVAILABLE', message: 'تعذر الاتصال بالخادم الرئيسي.' };
     }
 
     try {
@@ -125,15 +125,17 @@ export class SchoolAdminService {
       });
       const res = await response.json().catch(() => ({}));
       if (!response.ok || res.status !== 'success' || !Array.isArray(res.data)) {
-        return { success: false, code: res.code || `HTTP_${response.status}`, message: 'تعذر تحميل سجل المدارس من PostgreSQL.' };
+        return { success: false, code: res.code || `HTTP_${response.status}`, message: 'تعذر الاتصال بالخادم الرئيسي.' };
       }
-      const safeSchools = res.data.map((s: any) => this.sanitizeSchoolDto({
-        schoolId: s.id, schoolCode: s.code, schoolName: s.name, status: s.status,
-      }));
+      const safeSchools = res.data
+        .map((s: any) => this.sanitizeSchoolDto({
+          schoolId: s.id, schoolCode: s.code, schoolName: s.name, status: s.status,
+        }))
+        .filter((s: School) => !Array.isArray(user.allowedSchoolIds) || user.allowedSchoolIds.length === 0 || user.allowedSchoolIds.includes(s.schoolId));
       this.syncClientSchoolsCache(safeSchools);
       return { success: true, message: 'تم استرجاع قائمة المدارس بنجاح.', data: safeSchools };
     } catch (err: any) {
-      return { success: false, code: 'NETWORK_ERROR', message: err?.message || 'حدث خطأ في الاتصال بخادم PostgreSQL.' };
+      return { success: false, code: 'NETWORK_ERROR', message: 'تعذر الاتصال بالخادم الرئيسي.' };
     }
   }
 
