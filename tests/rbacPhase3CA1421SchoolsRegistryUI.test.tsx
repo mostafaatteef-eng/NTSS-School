@@ -452,7 +452,7 @@ describe('PHASE 3C-A14.2.1 — SYSTEMADMIN SCHOOLS REGISTRY READ-ONLY UI', () =>
       expect(html.includes('SHEET_ID')).toBe(false);
     });
 
-    it('Strictly Read-Only: NO Create, Edit, Delete, Bind, or Status Toggle buttons in DOM', async () => {
+    it('Strictly Read-Only for non-authorized users: NO Create, Edit, Delete, Bind, or Status Toggle buttons in DOM', async () => {
       vi.spyOn(schoolAdminService, 'getManagedSchools').mockResolvedValue({
         success: true,
         message: 'نجاح',
@@ -473,7 +473,7 @@ describe('PHASE 3C-A14.2.1 — SYSTEMADMIN SCHOOLS REGISTRY READ-ONLY UI', () =>
       });
 
       await act(async () => {
-        root.render(<SchoolsManagementView currentUser={sysAdminUser} />);
+        root.render(<SchoolsManagementView currentUser={schoolAdminUser} />);
       });
 
       const text = container?.textContent || '';
