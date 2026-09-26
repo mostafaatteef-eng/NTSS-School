@@ -4879,10 +4879,14 @@ class StorageService {
           : '';
       if (!path) return { success: false, code: 'LEGACY_GAS_MUTATION_BLOCKED', message: 'هذه العملية لم تُنقل بعد إلى PostgreSQL وتم منع إرسال جلسة Neon إلى Google Apps Script.' };
       try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
         const pg = await postgresApiRequest<any>(path, currentUser.sessionToken, {
           method: 'POST',
           body: JSON.stringify({ ...(payload || {}), schoolId }),
-        }, timeoutMs);
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
         const res = pg.body || {};
         if (!pg.ok || res.status !== 'success') {
           if (pg.status === 401) this.setCurrentUser(null);
