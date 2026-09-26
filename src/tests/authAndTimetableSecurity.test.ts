@@ -794,4 +794,205 @@ describe('NTSS ERP - Security, Login Numbers, First Login & Timetable Integratio
     expect(storageService.getTeacherSession()).toBeNull();
   });
 
+
+  it('Test 28: Staff self-service read uses staff session only and no client identity authority', async () => {
+    const staff: User = {
+      id: 'USR-SELF-STAFF-1',
+      username: 'staff.self1',
+      fullName: 'موظف خدمة ذاتية',
+      role: 'AdministrativeEmployee',
+      accessScope: 'SELF',
+      schoolId: 'SCH-BADR',
+      activeSchoolId: 'SCH-BADR',
+      allowedSchoolIds: ['SCH-BADR'],
+      employeeId: 'EMP-SELF-STAFF-1',
+      sessionToken: 'STAFF_SELF_SESSION_123',
+    };
+    storageService.setCurrentUser(staff);
+
+    vi.spyOn(storageService, 'getBackendUrl').mockReturnValue('https://example.com/staff');
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        status: 'success',
+        data: {
+          profile: {
+            employeeId: 'EMP-SELF-STAFF-1',
+            employeeName: 'موظف خدمة ذاتية',
+            department: 'الإدارة',
+            employeeNumber: 'E-001',
+          },
+          leaves: [],
+          permissions: [],
+        },
+      }),
+    } as Response);
+
+    const result = await storageService.getStaffSelfRequestsAuthoritative();
+
+    expect(result.success).toBe(true);
+    expect(result.profile?.employeeId).toBe('EMP-SELF-STAFF-1');
+    const request = JSON.parse(String((fetchSpy.mock.calls[0][1] as RequestInit).body));
+    expect(request.action).toBe('getMyRequests');
+    expect(request.sessionToken).toBe('STAFF_SELF_SESSION_123');
+    expect(request.employeeId).toBeUndefined();
+    expect(request.schoolId).toBeUndefined();
+  });
+
+  it('Test 29: Staff leave request cannot choose employee, school, id, status or days count', async () => {
+    storageService.setCurrentUser({
+      id: 'USR-SELF-STAFF-2',
+      username: 'staff.self2',
+      fullName: 'موظف',
+      role: 'AdministrativeEmployee',
+      accessScope: 'SELF',
+      schoolId: 'SCH-BADR',
+      activeSchoolId: 'SCH-BADR',
+      allowedSchoolIds: ['SCH-BADR'],
+      employeeId: 'EMP-SELF-STAFF-2',
+      sessionToken: 'STAFF_LEAVE_SESSION_123',
+    });
+
+    vi.spyOn(storageService, 'getBackendUrl').mockReturnValue('https://example.com/staff');
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        status: 'success',
+        leave: {
+          id: 'LEV-SERVER-STAFF-1',
+          employeeId: 'EMP-SELF-STAFF-2',
+          leaveType: 'سنوية',
+          startDate: '2026-09-27',
+          endDate: '2026-09-28',
+          daysCount: 2,
+          reason: 'سبب',
+          status: 'معلقة',
+        },
+      }),
+    } as Response);
+
+    const result = await storageService.createStaffLeaveRequestAuthoritative({
+      leaveType: 'سنوية',
+      startDate: '2026-09-27',
+      endDate: '2026-09-28',
+      reason: 'سبب',
+    });
+
+    expect(result.success).toBe(true);
+    const request = JSON.parse(String((fetchSpy.mock.calls[0][1] as RequestInit).body));
+    expect(request.action).toBe('createMyLeaveRequest');
+    expect(request.sessionToken).toBe('STAFF_LEAVE_SESSION_123');
+    expect(request.data.employeeId).toBeUndefined();
+    expect(request.data.employeeName).toBeUndefined();
+    expect(request.data.schoolId).toBeUndefined();
+    expect(request.data.id).toBeUndefined();
+    expect(request.data.status).toBeUndefined();
+    expect(request.data.daysCount).toBeUndefined();
+  });
+
+  it('Test 30: Staff permission request leaves duration and approval fields to the backend', async () => {
+    storageService.setCurrentUser({
+      id: 'USR-SELF-STAFF-3',
+      username: 'staff.self3',
+      fullName: 'موظف',
+      role: 'AdministrativeEmployee',
+      accessScope: 'SELF',
+      schoolId: 'SCH-BADR',
+      activeSchoolId: 'SCH-BADR',
+      allowedSchoolIds: ['SCH-BADR'],
+      employeeId: 'EMP-SELF-STAFF-3',
+      sessionToken: 'STAFF_PERMISSION_SESSION_123',
+    });
+
+    vi.spyOn(storageService, 'getBackendUrl').mockReturnValue('https://example.com/staff');
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        status: 'success',
+        permission: {
+          id: 'PERM-SERVER-STAFF-1',
+          employeeId: 'EMP-SELF-STAFF-3',
+          date: '2026-09-27',
+          permissionType: 'إذن خروج مؤقت',
+          startTime: '10:00',
+          endTime: '11:30',
+          durationHours: 1.5,
+          reason: 'سبب',
+          status: 'معلقة',
+        },
+      }),
+    } as Response);
+
+    const result = await storageService.createStaffPermissionRequestAuthoritative({
+      date: '2026-09-27',
+      permissionType: 'إذن خروج مؤقت',
+      startTime: '10:00',
+      endTime: '11:30',
+      reason: 'سبب',
+    });
+
+    expect(result.success).toBe(true);
+    const request = JSON.parse(String((fetchSpy.mock.calls[0][1] as RequestInit).body));
+    expect(request.action).toBe('createMyPermissionRequest');
+    expect(request.data.employeeId).toBeUndefined();
+    expect(request.data.schoolId).toBeUndefined();
+    expect(request.data.id).toBeUndefined();
+    expect(request.data.status).toBeUndefined();
+    expect(request.data.durationHours).toBeUndefined();
+    expect(request.data.approvedBy).toBeUndefined();
+  });
+
+  it('Test 31: Staff self-service fails closed before network when account lacks employee link', async () => {
+    storageService.setCurrentUser({
+      id: 'USR-NO-EMPLOYEE',
+      username: 'no.employee',
+      fullName: 'حساب غير مربوط',
+      role: 'AdministrativeEmployee',
+      accessScope: 'SELF',
+      schoolId: 'SCH-BADR',
+      allowedSchoolIds: ['SCH-BADR'],
+      sessionToken: 'STAFF_NO_EMPLOYEE_SESSION',
+    });
+
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    const result = await storageService.getStaffSelfRequestsAuthoritative();
+
+    expect(result.success).toBe(false);
+    expect(result.code).toBe('EMPLOYEE_CONTEXT_REQUIRED');
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('Test 32: Staff session failure during self-service clears current staff session', async () => {
+    storageService.setCurrentUser({
+      id: 'USR-EXPIRED-SELF',
+      username: 'expired.self',
+      fullName: 'موظف',
+      role: 'AdministrativeEmployee',
+      accessScope: 'SELF',
+      schoolId: 'SCH-BADR',
+      allowedSchoolIds: ['SCH-BADR'],
+      employeeId: 'EMP-EXPIRED-SELF',
+      sessionToken: 'EXPIRED_STAFF_SELF_SESSION',
+    });
+
+    vi.spyOn(storageService, 'getBackendUrl').mockReturnValue('https://example.com/staff');
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: false,
+      status: 401,
+      json: async () => ({
+        status: 'error',
+        code: 'SESSION_EXPIRED',
+        message: 'expired',
+      }),
+    } as Response);
+
+    const result = await storageService.getStaffSelfRequestsAuthoritative();
+
+    expect(result.success).toBe(false);
+    expect(storageService.getCurrentUser()).toBeNull();
+  });
+
 });
