@@ -111,31 +111,71 @@ export class SchoolAdminService {
    */
   public async getManagedSchools(caller?: User | null): Promise<SchoolAdminOperationResult<School[]>> {
     const check = this.validateSystemAdminCaller(caller);
-    if (!check.allowed || !check.user) return check.error!;
+    if (!check.allowed || !check.user) {
+      return check.error!;
+    }
     const user = check.user;
 
-    const apiUrl = ((typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_POSTGRES_API_URL) as string) || '';
-    if (!apiUrl || !user.sessionToken) {
-      return { success: false, code: 'SERVICE_UNAVAILABLE', message: 'تعذر الاتصال بالخادم الرئيسي.' };
+    const scriptUrl = storageService.getBackendUrl();
+    const isOnline = typeof navigator === 'undefined' || navigator.onLine !== false;
+    if (!scriptUrl || scriptUrl.length < 15 || !isOnline) {
+      return {
+        success: false,
+        code: 'SERVICE_UNAVAILABLE',
+        message: 'تعذر الاتصال بالخادم الرئيسي لإدارة المدارس.',
+      };
     }
 
     try {
-      const response = await fetch(`${apiUrl.replace(/\/$/, '')}/api/schools`, {
-        headers: { Authorization: `Bearer ${user.sessionToken}` },
+      const response = await fetch(scriptUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'adminGetSchools',
+          sessionToken: user.sessionToken,
+        }),
       });
-      const res = await response.json().catch(() => ({}));
-      if (!response.ok || res.status !== 'success' || !Array.isArray(res.data)) {
-        return { success: false, code: res.code || `HTTP_${response.status}`, message: 'تعذر الاتصال بالخادم الرئيسي.' };
+
+      if (!response.ok) {
+        try {
+          const errRes = await response.json();
+          if (errRes && errRes.code) {
+            return {
+              success: false,
+              code: errRes.code,
+              message: errRes.message || `خطأ في استجابة الخادم (${response.status}) أثناء جلب المدارس.`,
+            };
+          }
+        } catch {}
+        return {
+          success: false,
+          code: `HTTP_${response.status}`,
+          message: `خطأ في استجابة الخادم (${response.status}) أثناء جلب المدارس.`,
+        };
       }
-      const safeSchools = res.data
-        .map((s: any) => this.sanitizeSchoolDto({
-          schoolId: s.id, schoolCode: s.code, schoolName: s.name, status: s.status,
-        }))
-        .filter((s: School) => !Array.isArray(user.allowedSchoolIds) || user.allowedSchoolIds.length === 0 || user.allowedSchoolIds.includes(s.schoolId));
-      this.syncClientSchoolsCache(safeSchools);
-      return { success: true, message: 'تم استرجاع قائمة المدارس بنجاح.', data: safeSchools };
+
+      const res = await response.json();
+      if (res.status === 'success' && Array.isArray(res.schools)) {
+        const safeSchools: School[] = res.schools.map((s: any) => this.sanitizeSchoolDto(s));
+        this.syncClientSchoolsCache(safeSchools);
+        return {
+          success: true,
+          message: 'تم استرجاع قائمة المدارس بنجاح.',
+          data: safeSchools,
+        };
+      }
+
+      return {
+        success: false,
+        code: res.code || 'GET_SCHOOLS_FAILED',
+        message: res.message || 'فشل استرجاع قائمة المدارس من الخادم.',
+      };
     } catch (err: any) {
-      return { success: false, code: 'NETWORK_ERROR', message: 'تعذر الاتصال بالخادم الرئيسي.' };
+      return {
+        success: false,
+        code: 'NETWORK_ERROR',
+        message: err?.message || 'حدث خطأ في الاتصال بالخادم أثناء استرجاع المدارس.',
+      };
     }
   }
 
