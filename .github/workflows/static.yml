@@ -39,7 +39,7 @@ jobs:
 
       - name: Build application
         env:
-          VITE_POSTGRES_API_URL: https://br-tiny-surf-b5mnc6n0-api.compute.c-7.us-east-2.aws.neon.tech
+          VITE_POSTGRES_API_URL: https://ntss-school.vercel.app
         run: npm run build
       - name: Build Neon Function bundle
         run: |
