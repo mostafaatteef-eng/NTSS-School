@@ -3712,12 +3712,20 @@ class StorageService {
         const today = new Date();
         const to = today.toISOString().slice(0, 10);
         const from = new Date(today.getTime() - 90 * 86400000).toISOString().slice(0, 10);
-        const [studentRows, employeeRows, studentAttendanceRows, employeeAttendanceRows] = await Promise.all([
+        const academicYearsRequest = postgresApiRequest<any>('/academic-years/manage', currentUser.sessionToken || '', {
+          method: 'POST',
+          body: JSON.stringify({ action: 'getAcademicYears', schoolId }),
+        });
+        const [studentRows, employeeRows, studentAttendanceRows, employeeAttendanceRows, academicYearsResponse] = await Promise.all([
           fetchAll('/students'),
           fetchAll('/employees'),
           fetchAll(`/student-attendance?from=${from}&to=${to}`),
           fetchAll(`/employee-attendance?from=${from}&to=${to}`),
+          academicYearsRequest,
         ]);
+        const academicYears = academicYearsResponse.ok && academicYearsResponse.body?.status === 'success' && Array.isArray(academicYearsResponse.body?.data)
+          ? academicYearsResponse.body.data
+          : [];
         const students = studentRows.map((row: any) => ({
           ...(row.payload && typeof row.payload === 'object' ? row.payload : {}),
           id: row.id,
@@ -3770,11 +3778,12 @@ class StorageService {
         localStorage.setItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify(employees));
         localStorage.setItem(STORAGE_KEYS.STUDENT_ATTENDANCE, JSON.stringify(studentAttendance));
         localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify(employeeAttendance));
+        if (academicYears.length > 0) localStorage.setItem(STORAGE_KEYS.ACADEMIC_YEARS, JSON.stringify(academicYears));
         this.setSyncStatus({
           lastSyncTime: getCairoNowISO(),
           status: 'success',
           connectedToGoogleSheets: false,
-          syncedRecordsCount: students.length + employees.length + studentAttendance.length + employeeAttendance.length,
+          syncedRecordsCount: students.length + employees.length + studentAttendance.length + employeeAttendance.length + academicYears.length,
         });
         this.notifyChange();
         return true;
