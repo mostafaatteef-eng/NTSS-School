@@ -288,6 +288,117 @@ export class ImportCenterService {
     const totalValid = diffs.length;
     let processed = 0;
 
+    if (entityType === 'STUDENTS') {
+      const operations: Array<{
+        operation: 'NEW' | 'UPDATE';
+        targetId?: string;
+        rowNumber?: number;
+        data: Partial<Student>;
+      }> = [];
+
+      for (const diff of diffs) {
+        processed++;
+        if (onProgress && processed % 10 === 0) {
+          onProgress(Math.round((processed / Math.max(totalValid, 1)) * 50));
+        }
+
+        if (diff.classification === 'ERROR' || diff.classification === 'CONFLICT') {
+          errorCount++;
+          failedRows.push({
+            rowNumber: diff.rowNumber,
+            data: diff.incomingData,
+            reason: (diff.issues || []).join('; ') || 'خطأ في التحقق من صحة السطر',
+          });
+          continue;
+        }
+
+        if (diff.classification === 'NO_CHANGE') {
+          skippedCount++;
+          continue;
+        }
+
+        if (diff.classification === 'NEW') {
+          operations.push({
+            operation: 'NEW',
+            rowNumber: diff.rowNumber,
+            data: { ...diff.incomingData },
+          });
+          continue;
+        }
+
+        if (diff.classification === 'UPDATE' && diff.targetId) {
+          const updateData: Record<string, any> = {};
+          Object.entries(diff.incomingData).forEach(([key, value]) => {
+            if (!allowedUpdateFields || allowedUpdateFields.includes(key)) {
+              updateData[key] = value;
+            }
+          });
+          operations.push({
+            operation: 'UPDATE',
+            targetId: diff.targetId,
+            rowNumber: diff.rowNumber,
+            data: updateData as Partial<Student>,
+          });
+        }
+      }
+
+      if (operations.length > 0) {
+        const backendResult = await storageService.importManagedStudentsAuthoritative(operations);
+        addedCount = backendResult.added;
+        updatedCount = backendResult.updated;
+        skippedCount += backendResult.skipped;
+
+        if (!backendResult.success && backendResult.errors.length === 0) {
+          errorCount++;
+          failedRows.push({
+            rowNumber: 0,
+            data: {},
+            reason: backendResult.message || 'فشل الاستيراد في الخادم المعتمد',
+          });
+        }
+
+        backendResult.errors.forEach(err => {
+          errorCount++;
+          failedRows.push({
+            rowNumber: err.row,
+            data: {},
+            reason: err.message,
+          });
+        });
+      }
+
+      if (onProgress) onProgress(100);
+
+      const batchRecord: ImportBatchRecord = {
+        id: batchId,
+        entityType,
+        fileName,
+        mode,
+        totalRows: diffs.length,
+        addedCount,
+        updatedCount,
+        skippedCount,
+        errorCount,
+        conflictCount: 0,
+        selectedUpdateFields: allowedUpdateFields,
+        affectedIds,
+        rollbackPossible: false,
+        createdBy: currentUser?.name || currentUser?.username || 'مدير النظام',
+        createdAt: getCairoNowISO(),
+        status: errorCount > 0 ? (addedCount > 0 || updatedCount > 0 ? 'PARTIAL_SUCCESS' : 'FAILED') : 'SUCCESS',
+        failedRows: failedRows.length > 0 ? failedRows : undefined,
+      };
+
+      this.saveBatchRecord(batchRecord);
+      storageService.logAudit(
+        'IMPORT',
+        'STUDENT',
+        `عملية استيراد طلاب معتمدة: ${fileName} - تم إضافة ${addedCount} وتحديث ${updatedCount}`
+      );
+      await storageService.getStudentManagementDataAuthoritative();
+      return batchRecord;
+    }
+
     for (const diff of diffs) {
       processed++;
       if (onProgress && processed % 10 === 0) {
@@ -310,38 +421,7 @@ export class ImportCenterService {
       }
 
       try {
-        if (entityType === 'STUDENTS') {
-          if (diff.classification === 'NEW') {
-            const newStudent: Student = {
-              id: diff.incomingData.studentCode || `STU-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-              studentCode: diff.incomingData.studentCode || `STU-${Math.floor(10000 + Math.random() * 90000)}`,
-              name: diff.incomingData.name,
-              nationalId: diff.incomingData.nationalId || '',
-              grade: diff.incomingData.grade,
-              classroom: diff.incomingData.classroom,
-              gender: (diff.incomingData.gender as any) || 'ذكر',
-              status: (diff.incomingData.status as any) || 'نشط',
-              parentName: diff.incomingData.parentName || '',
-              parentPhone: diff.incomingData.parentPhone || '',
-            };
-            storageService.saveStudent(newStudent);
-            affectedIds.push(newStudent.id);
-            addedCount++;
-          } else if (diff.classification === 'UPDATE' && diff.targetId) {
-            const current = storageService.getStudents().find(s => s.id === diff.targetId);
-            if (current) {
-              const updatedData: Record<string, any> = { ...current };
-              Object.entries(diff.incomingData).forEach(([k, v]) => {
-                if (!allowedUpdateFields || allowedUpdateFields.includes(k)) {
-                  updatedData[k] = v;
-                }
-              });
-              storageService.saveStudent(updatedData as Student);
-              affectedIds.push(current.id);
-              updatedCount++;
-            }
-          }
-        } else if (entityType === 'EMPLOYEES' || entityType === 'TEACHERS') {
+        if (entityType === 'EMPLOYEES' || entityType === 'TEACHERS') {
           if (diff.classification === 'NEW') {
             const isTeacher = entityType === 'TEACHERS' || (diff.incomingData.jobTitle || '').includes('معلم');
             const newEmp: Employee = {
