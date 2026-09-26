@@ -1450,6 +1450,9 @@ export function getDashboardForUser(user: User | null): string {
   if (!user) return 'AdminDashboard';
 
   switch (user.role as string) {
+    case 'SystemAdmin':
+      return 'SystemAdminDashboard';
+    case 'SchoolAdmin':
     case 'Admin':
     case 'SchoolDirector':
     case 'QualityOfficer':

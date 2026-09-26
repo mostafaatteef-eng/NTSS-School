@@ -7,6 +7,7 @@ import { TeacherAffairsDashboard } from './TeacherAffairsDashboard';
 import { TeacherDashboard } from './TeacherDashboard';
 import { SocialSpecialistDashboard } from './SocialSpecialistDashboard';
 import { ParentDashboard } from './ParentDashboard';
+import { SystemAdminDashboard } from './SystemAdminDashboard';
 
 interface DashboardViewProps {
   employees: Employee[];
@@ -35,6 +36,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const dashboardType = getDashboardForUser(currentUser);
 
   switch (dashboardType) {
+    case 'SystemAdminDashboard':
+      return (
+        <SystemAdminDashboard
+          currentUser={currentUser}
+          onNavigate={handleNavigate}
+        />
+      );
+
     case 'StudentAffairsDashboard':
       return (
         <StudentAffairsDashboard
