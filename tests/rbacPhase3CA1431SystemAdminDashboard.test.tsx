@@ -510,11 +510,10 @@ describe('PHASE 3C-A14.3.1 — SYSTEMADMIN CENTRAL DASHBOARD SHELL', () => {
       });
 
       const text = container?.textContent || '';
-      // Ensure central dashboard only displays school counts, not local employee/student counts
-      expect(text).not.toContain('إجمالي الطلاب');
-      expect(text).not.toContain('إجمالي الموظفين');
+      // Ensure central dashboard does not display school-scoped local attendance, leaves, or daily metrics
       expect(text).not.toContain('حضور اليوم');
       expect(text).not.toContain('نسبة الحضور');
+      expect(text).not.toContain('طلبات الإجازات');
     });
   });
 });

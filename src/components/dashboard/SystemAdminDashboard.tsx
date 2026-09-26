@@ -3,6 +3,7 @@ import {
   Building2,
   RefreshCw,
   AlertCircle,
+  AlertTriangle,
   CheckCircle2,
   XCircle,
   School as SchoolIcon,
@@ -12,9 +13,12 @@ import {
   Check,
   X,
   ExternalLink,
+  GraduationCap,
+  Clock,
 } from 'lucide-react';
-import { School, User } from '../../types';
+import { School, User, SystemOverviewResponse, SchoolDataStatus } from '../../types';
 import { schoolAdminService } from '../../services/schoolAdminService';
+import { systemAdminOverviewService } from '../../services/systemAdminOverviewService';
 import { storageService } from '../../services/storageService';
 import { canAccessTab } from '../../utils/navigation';
 
@@ -27,12 +31,18 @@ export const SystemAdminDashboard: React.FC<SystemAdminDashboardProps> = ({
   currentUser,
   onNavigate,
 }) => {
+  // Registry state
   const [schools, setSchools] = useState<School[] | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [switchingSchoolId, setSwitchingSchoolId] = useState<string | null>(null);
   const [switchError, setSwitchError] = useState<string | null>(null);
   const [switchSuccess, setSwitchSuccess] = useState<string | null>(null);
+
+  // Overview state (authoritative cross-school aggregate metrics)
+  const [overview, setOverview] = useState<SystemOverviewResponse | null>(null);
+  const [isLoadingOverview, setIsLoadingOverview] = useState<boolean>(true);
+  const [overviewError, setOverviewError] = useState<string | null>(null);
 
   const effectiveUser = currentUser !== undefined ? currentUser : storageService.getCurrentUser();
   const [currentActiveSchoolId, setCurrentActiveSchoolId] = useState<string>(
@@ -60,15 +70,37 @@ export const SystemAdminDashboard: React.FC<SystemAdminDashboardProps> = ({
     }
   }, [effectiveUser]);
 
+  const fetchOverview = useCallback(async () => {
+    setIsLoadingOverview(true);
+    setOverviewError(null);
+    try {
+      const res = await systemAdminOverviewService.getSystemOverview(effectiveUser);
+      if (res.success && res.data) {
+        setOverview(res.data);
+      } else {
+        setOverviewError(res.message || 'تعذر تحميل مؤشرات البيانات التشغيلية.');
+      }
+    } catch {
+      setOverviewError('تعذر تحميل مؤشرات البيانات التشغيلية.');
+    } finally {
+      setIsLoadingOverview(false);
+    }
+  }, [effectiveUser]);
+
   useEffect(() => {
     fetchSchools();
-  }, [fetchSchools]);
+    fetchOverview();
+  }, [fetchSchools, fetchOverview]);
 
   // Keep active school ID in sync if effectiveUser updates
   useEffect(() => {
     const active = effectiveUser?.activeSchoolId || storageService.getActiveSchoolId() || '';
     setCurrentActiveSchoolId(active);
   }, [effectiveUser?.activeSchoolId]);
+
+  const handleRefreshAll = async () => {
+    await Promise.allSettled([fetchSchools(), fetchOverview()]);
+  };
 
   const handleSwitchSchool = async (school: School) => {
     if (school.status !== 'Active') return;
@@ -90,6 +122,58 @@ export const SystemAdminDashboard: React.FC<SystemAdminDashboardProps> = ({
       setSwitchError(err?.message || 'حدث خطأ أثناء الاتصال بالخادم للتبديل.');
     } finally {
       setSwitchingSchoolId(null);
+    }
+  };
+
+  const formatDataStatus = (status: SchoolDataStatus): { label: string; badgeClass: string } => {
+    switch (status) {
+      case 'AVAILABLE':
+        return {
+          label: 'متاحة',
+          badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200/60',
+        };
+      case 'INACTIVE':
+        return {
+          label: 'غير نشطة',
+          badgeClass: 'bg-slate-100 text-slate-600 border-slate-200/80',
+        };
+      case 'NOT_ALLOWED':
+        return {
+          label: 'خارج نطاق الوصول',
+          badgeClass: 'bg-amber-50 text-amber-700 border-amber-200/60',
+        };
+      case 'UNBOUND':
+        return {
+          label: 'غير مربوطة',
+          badgeClass: 'bg-purple-50 text-purple-700 border-purple-200/60',
+        };
+      case 'UNAVAILABLE':
+        return {
+          label: 'تعذر الوصول',
+          badgeClass: 'bg-rose-50 text-rose-700 border-rose-200/60',
+        };
+      default:
+        return {
+          label: 'تعذر الوصول',
+          badgeClass: 'bg-slate-100 text-slate-600 border-slate-200/80',
+        };
+    }
+  };
+
+  const formatGeneratedAt = (isoString?: string): string => {
+    if (!isoString) return '';
+    try {
+      const d = new Date(isoString);
+      if (isNaN(d.getTime())) return isoString;
+      return d.toLocaleString('ar-EG', {
+        hour: '2-digit',
+        minute: '2-digit',
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+      });
+    } catch {
+      return isoString;
     }
   };
 
@@ -134,12 +218,16 @@ export const SystemAdminDashboard: React.FC<SystemAdminDashboardProps> = ({
 
           <button
             type="button"
-            onClick={fetchSchools}
-            disabled={isLoading}
+            onClick={handleRefreshAll}
+            disabled={isLoading && isLoadingOverview}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-xs"
             title="تحديث البيانات"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin text-[#008e8b]' : 'text-slate-500'}`} />
+            <RefreshCw
+              className={`w-3.5 h-3.5 ${
+                isLoading || isLoadingOverview ? 'animate-spin text-[#008e8b]' : 'text-slate-500'
+              }`}
+            />
             <span>تحديث</span>
           </button>
         </div>
@@ -180,7 +268,7 @@ export const SystemAdminDashboard: React.FC<SystemAdminDashboardProps> = ({
         </div>
       )}
 
-      {/* Central Metrics Summary */}
+      {/* 1. Central Metrics Summary (School Registry) */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* Total Schools */}
         <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-xs flex items-center justify-between">
@@ -222,7 +310,222 @@ export const SystemAdminDashboard: React.FC<SystemAdminDashboardProps> = ({
         </div>
       </div>
 
-      {/* Quick Central Management Actions */}
+      {/* 2. System Indicators Section (مؤشرات المنظومة) */}
+      <div className="space-y-3.5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <h2 className="text-sm font-black text-slate-800">مؤشرات المنظومة</h2>
+            <p className="text-[11px] text-slate-500 font-semibold mt-0.5">
+              إحصائيات مجمعة ومحدثة لحظياً عبر المدارس المعتمدة في النظام
+            </p>
+          </div>
+          {overview?.generatedAt && (
+            <div className="text-[11px] text-slate-500 font-medium flex items-center gap-1.5">
+              <Clock className="w-3.5 h-3.5 text-slate-400" />
+              <span>آخر تحديث للبيانات:</span>
+              <span className="font-semibold text-slate-700">
+                {formatGeneratedAt(overview.generatedAt)}
+              </span>
+            </div>
+          )}
+        </div>
+
+        {/* Overview Error Card (Isolated from Registry) */}
+        {overviewError && (
+          <div className="p-4 rounded-xl border border-rose-200 bg-rose-50 text-rose-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-xs font-bold">
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+              <span>تعذر تحميل مؤشرات البيانات التشغيلية.</span>
+            </div>
+            <button
+              type="button"
+              onClick={fetchOverview}
+              disabled={isLoadingOverview}
+              className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-colors cursor-pointer disabled:opacity-50 shadow-2xs"
+            >
+              إعادة المحاولة
+            </button>
+          </div>
+        )}
+
+        {/* Partial Data Warning */}
+        {overview && overview.summary.schoolsUnavailable > 0 && (
+          <div className="p-3.5 rounded-xl border border-amber-200 bg-amber-50 text-amber-900 text-xs font-semibold flex items-center gap-2.5">
+            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>
+              بعض المدارس لم تتوفر بياناتها وقت التحديث، لذلك قد تكون الإجماليات أقل من القيم الفعلية.
+            </span>
+          </div>
+        )}
+
+        {/* 4 KPI Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Total Students */}
+          <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-xs flex items-center justify-between">
+            <div>
+              <div className="text-[11px] font-bold text-slate-500">إجمالي الطلاب</div>
+              <div className="text-2xl font-black text-slate-800 mt-1">
+                {isLoadingOverview && !overview
+                  ? '—'
+                  : overview
+                  ? overview.summary.studentsTotal.toLocaleString('ar-EG')
+                  : '—'}
+              </div>
+            </div>
+            <div className="w-10 h-10 rounded-xl bg-teal-50 border border-teal-100 flex items-center justify-center text-[#008e8b]">
+              <GraduationCap className="w-5 h-5" />
+            </div>
+          </div>
+
+          {/* Total Employees */}
+          <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-xs flex items-center justify-between">
+            <div>
+              <div className="text-[11px] font-bold text-slate-500">إجمالي العاملين</div>
+              <div className="text-2xl font-black text-slate-800 mt-1">
+                {isLoadingOverview && !overview
+                  ? '—'
+                  : overview
+                  ? overview.summary.employeesTotal.toLocaleString('ar-EG')
+                  : '—'}
+              </div>
+            </div>
+            <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600">
+              <Users className="w-5 h-5" />
+            </div>
+          </div>
+
+          {/* Schools Included */}
+          <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-xs flex items-center justify-between">
+            <div>
+              <div className="text-[11px] font-bold text-emerald-600">المدارس المتاحة للبيانات</div>
+              <div className="text-2xl font-black text-emerald-700 mt-1">
+                {isLoadingOverview && !overview
+                  ? '—'
+                  : overview
+                  ? overview.summary.schoolsIncluded.toLocaleString('ar-EG')
+                  : '—'}
+              </div>
+            </div>
+            <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600">
+              <CheckCircle2 className="w-5 h-5" />
+            </div>
+          </div>
+
+          {/* Schools Unavailable */}
+          <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-xs flex items-center justify-between">
+            <div>
+              <div className="text-[11px] font-bold text-rose-600">
+                المدارس التي تعذر تحميل بياناتها
+              </div>
+              <div className="text-2xl font-black text-rose-700 mt-1">
+                {isLoadingOverview && !overview
+                  ? '—'
+                  : overview
+                  ? overview.summary.schoolsUnavailable.toLocaleString('ar-EG')
+                  : '—'}
+              </div>
+            </div>
+            <div className="w-10 h-10 rounded-xl bg-rose-50 border border-rose-100 flex items-center justify-center text-rose-600">
+              <AlertCircle className="w-5 h-5" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 3. School Operational Breakdown Section (تفاصيل البيانات حسب المدرسة) */}
+      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
+        <div className="p-4 md:p-5 border-b border-slate-100 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <SchoolIcon className="w-4 h-4 text-[#008e8b]" />
+            <h2 className="text-sm font-black text-slate-800">تفاصيل البيانات حسب المدرسة</h2>
+          </div>
+          {overview?.schools && (
+            <span className="text-xs text-slate-500 font-semibold">
+              {overview.schools.length} مدارس
+            </span>
+          )}
+        </div>
+
+        {isLoadingOverview && !overview ? (
+          <div className="py-12 px-4 flex flex-col items-center justify-center text-center">
+            <div className="w-10 h-10 rounded-xl bg-teal-50 border border-teal-100 flex items-center justify-center text-[#008e8b] mb-3">
+              <RefreshCw className="w-5 h-5 animate-spin" />
+            </div>
+            <h3 className="text-xs font-bold text-slate-700">جارٍ جلب المؤشرات التشغيلية للمدارس...</h3>
+          </div>
+        ) : overview?.schools && overview.schools.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-right text-xs">
+              <thead className="bg-slate-50/80 border-b border-slate-200/80 text-slate-600 font-bold">
+                <tr>
+                  <th className="py-3.5 px-4 font-bold">اسم المدرسة</th>
+                  <th className="py-3.5 px-4 font-bold">كود المدرسة</th>
+                  <th className="py-3.5 px-4 font-bold text-center">إجمالي الطلاب</th>
+                  <th className="py-3.5 px-4 font-bold text-center">إجمالي العاملين</th>
+                  <th className="py-3.5 px-4 font-bold text-center">حالة البيانات</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 text-slate-700">
+                {overview.schools.map(sc => {
+                  const statusInfo = formatDataStatus(sc.dataStatus);
+                  return (
+                    <tr key={sc.schoolId} className="hover:bg-slate-50/60 transition-colors">
+                      <td className="py-3.5 px-4 font-bold text-slate-900">
+                        <div className="flex items-center gap-2">
+                          <div className="w-6 h-6 rounded-lg bg-teal-50 flex items-center justify-center text-[#008e8b] shrink-0">
+                            <SchoolIcon className="w-3.5 h-3.5" />
+                          </div>
+                          <span>{sc.schoolName}</span>
+                        </div>
+                      </td>
+
+                      <td className="py-3.5 px-4 font-mono font-bold text-slate-700">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[11px]">
+                          {sc.schoolCode}
+                        </span>
+                      </td>
+
+                      <td className="py-3.5 px-4 text-center font-bold text-slate-800">
+                        {sc.studentsCount !== null ? (
+                          <span>{sc.studentsCount.toLocaleString('ar-EG')}</span>
+                        ) : (
+                          <span className="text-slate-400 font-semibold">—</span>
+                        )}
+                      </td>
+
+                      <td className="py-3.5 px-4 text-center font-bold text-slate-800">
+                        {sc.employeesCount !== null ? (
+                          <span>{sc.employeesCount.toLocaleString('ar-EG')}</span>
+                        ) : (
+                          <span className="text-slate-400 font-semibold">—</span>
+                        )}
+                      </td>
+
+                      <td className="py-3.5 px-4 text-center">
+                        <span
+                          className={`inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold border ${statusInfo.badgeClass}`}
+                        >
+                          {statusInfo.label}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : overviewError ? (
+          <div className="py-8 px-4 text-center text-xs text-slate-500 font-semibold">
+            تعذر عرض تفاصيل المدارس نظراً لعدم توفر بيانات المؤشرات التشغيلية.
+          </div>
+        ) : (
+          <div className="py-8 px-4 text-center text-xs text-slate-400 font-semibold">
+            لا توجد بيانات متاحة للمدارس حالياً.
+          </div>
+        )}
+      </div>
+
+      {/* 4. Quick Central Management Actions */}
       <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs">
         <h2 className="text-sm font-black text-slate-800 mb-3.5 flex items-center gap-2">
           <span>الإجراءات الإدارية السريعة</span>
@@ -293,7 +596,7 @@ export const SystemAdminDashboard: React.FC<SystemAdminDashboardProps> = ({
         </div>
       </div>
 
-      {/* Schools Central List */}
+      {/* 5. Schools Central Registry List */}
       <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
         <div className="p-4 md:p-5 border-b border-slate-100 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -453,3 +756,4 @@ export const SystemAdminDashboard: React.FC<SystemAdminDashboardProps> = ({
     </div>
   );
 };
+
