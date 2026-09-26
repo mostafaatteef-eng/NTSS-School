@@ -75,7 +75,7 @@ export class SystemAdminOverviewService {
     const user = check.user;
     const apiUrl = ((typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_POSTGRES_API_URL) as string) || '';
     if (!apiUrl || !user.sessionToken) {
-      return { success: false, code: 'SERVICE_UNAVAILABLE', message: 'تعذر الاتصال بخادم PostgreSQL لاسترجاع النظرة العامة.' };
+      return { success: false, code: 'SERVICE_UNAVAILABLE', message: 'تعذر الاتصال بالخادم الرئيسي لاسترجاع النظرة العامة.' };
     }
 
     try {
@@ -84,7 +84,7 @@ export class SystemAdminOverviewService {
       const schoolsResponse = await fetch(`${base}/api/schools`, { headers });
       const schoolsPayload = await schoolsResponse.json().catch(() => ({}));
       if (!schoolsResponse.ok || schoolsPayload.status !== 'success' || !Array.isArray(schoolsPayload.data)) {
-        return { success: false, code: schoolsPayload.code || `HTTP_${schoolsResponse.status}`, message: 'تعذر تحميل مؤشرات المدارس من PostgreSQL.' };
+        return { success: false, code: schoolsPayload.code || `HTTP_${schoolsResponse.status}`, message: 'تعذر الاتصال بالخادم الرئيسي لاسترجاع النظرة العامة.' };
       }
 
       const rows = await Promise.all(schoolsPayload.data.map(async (s: any) => {
@@ -127,7 +127,7 @@ export class SystemAdminOverviewService {
       };
       return { success: true, message: 'تم استرجاع النظرة العامة للمنظومة بنجاح.', data };
     } catch (err: any) {
-      return { success: false, code: 'NETWORK_ERROR', message: err?.message || 'حدث خطأ في الاتصال بخادم PostgreSQL.' };
+      return { success: false, code: 'NETWORK_ERROR', message: 'تعذر الاتصال بالخادم الرئيسي لاسترجاع النظرة العامة.' };
     }
   }
 
