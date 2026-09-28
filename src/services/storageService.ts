@@ -8459,6 +8459,13 @@ class StorageService {
     return result.data;
   }
 
+  public async deleteAuthoritativeQualityRecord(id:string,schoolId?:string):Promise<void>{
+    const target=(schoolId||this.getActiveSchoolId()).trim();
+    const response=await this.postgresRequest('/api/quality/manage',{method:'POST',body:JSON.stringify({action:'delete',schoolId:target,data:{id}})});
+    const result=await response.json().catch(()=>({}));
+    if(!response.ok||result.status!=='success') throw new Error(result.code||'QUALITY_DELETE_FAILED');
+  }
+
   // --- Corrective Actions ---
   public getCorrectiveActions(schoolId?: string): CorrectiveAction[] {
     const activeSchoolId = (schoolId || this.getActiveSchoolId()).trim();
