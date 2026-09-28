@@ -42,17 +42,12 @@ const plan = (id: string, subject: string, grade: string, classroom: string): Cu
     expect(before).toHaveLength(3);
     const second = before.find(d => d.scheduleItemId === 'M2');
     expect(second).toBeTruthy();
-
-    const moved = curriculumPlanService.linkPlanItemToSchedule({
-      planId:'MULTI', planItemId:'MULTI-I1', scheduleItemId:'M4', user:teacher,
-      replaceExisting:true, replaceDistributionId:second!.id,
-    });
+    const moved = curriculumPlanService.linkPlanItemToSchedule({ planId:'MULTI', planItemId:'MULTI-I1', scheduleItemId:'M4', user:teacher, replaceExisting:true, replaceDistributionId:second!.id });
     expect(moved.success).toBe(true);
     const after = storageService.getCurriculumDistributions('SCH-1').filter(d => d.status !== 'Cancelled');
     expect(after).toHaveLength(3);
     expect(new Set(after.map(d => d.scheduleItemId))).toEqual(new Set(['M1','M3','M4']));
   });
-
 });
 
 describe('Curriculum behavioral authorization and classroom coverage', () => {
