@@ -7662,14 +7662,18 @@ class StorageService {
     if (!plan || plan.schoolId !== activeSchoolId) {
       return { success: false, message: 'خطة المنهج غير موجودة في المدرسة الحالية.' };
     }
-    if (plan.status !== 'Approved') {
+    const isCancellation = dist.status === 'Cancelled';
+    // Cancellation is cleanup, not a new curriculum assignment. It must remain
+    // possible after the plan is no longer Approved or the timetable slot was
+    // removed; otherwise stale active links can become impossible to clear.
+    if (!isCancellation && plan.status !== 'Approved') {
       return { success: false, message: 'لا يمكن حفظ توزيع حصة إلا لخطة منهج معتمدة.' };
     }
     const planItem = plan.items.find(item => item.id === dist.planItemId);
     if (!planItem) {
       return { success: false, message: 'عنصر خطة المنهج غير موجود.' };
     }
-    if (dist.scheduleItemId) {
+    if (dist.scheduleItemId && !isCancellation) {
       const scheduleItem = this.getSchedule().find(item => item.id === dist.scheduleItemId);
       const norm = (value?: string) => String(value || '').trim().toLowerCase();
       if (!scheduleItem || (scheduleItem.schoolId && scheduleItem.schoolId !== activeSchoolId)) {
