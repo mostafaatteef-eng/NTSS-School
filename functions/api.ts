@@ -306,12 +306,33 @@ export default {
         const action=String(body.action||''); const data: any=body.data||{};
         const project = async (row: any) => {
           const access=await pool.query('SELECT school_id FROM user_school_access WHERE user_id=$1 ORDER BY school_id',[row.id]);
-          return {id:row.id,email:row.email,username:row.username,fullName:row.full_name,role:row.role,accessScope:row.access_scope,schoolId:row.school_id||'',employeeId:row.employee_id||undefined,status:row.status,allowedSchoolIds:access.rows.map((x:any)=>x.school_id),createdAt:row.created_at,updatedAt:row.updated_at,lastLogin:row.last_login_at};
+          return {id:row.id,email:row.email,username:row.username,fullName:row.full_name,role:row.role,accessScope:row.access_scope,schoolId:row.school_id||'',employeeId:row.employee_id||undefined,studentId:row.student_id||undefined,status:row.status,allowedSchoolIds:access.rows.map((x:any)=>x.school_id),createdAt:row.created_at,updatedAt:row.updated_at,lastLogin:row.last_login_at};
         };
         if(action==='adminGetUsers'){
           const rows=await pool.query('SELECT * FROM users ORDER BY full_name');
           const out=[]; for(const row of rows.rows) out.push(await project(row));
           return json({status:'success',data:out},200,corsOrigin);
+        }
+        if(action==='activateStudentAccount'){
+          const studentId=String(data.studentId||'').trim();
+          const schoolId=String(data.schoolId||'').trim().toUpperCase();
+          const password=String(data.password||'');
+          if(!studentId||!schoolId||password.length<8)return json({status:'error',code:'INVALID_STUDENT_ACCOUNT'},400,corsOrigin);
+          const studentResult=await pool.query('SELECT id,student_code,full_name FROM students WHERE school_id=$1 AND id=$2 LIMIT 1',[schoolId,studentId]);
+          if(!studentResult.rowCount)return json({status:'error',code:'STUDENT_NOT_FOUND'},404,corsOrigin);
+          const student=studentResult.rows[0];
+          if(!String(student.student_code||'').trim())return json({status:'error',code:'STUDENT_CODE_REQUIRED'},409,corsOrigin);
+          const bound=await pool.query('SELECT id FROM users WHERE school_id=$1 AND student_id=$2 LIMIT 1',[schoolId,studentId]);
+          if(bound.rowCount)return json({status:'error',code:'STUDENT_ACCOUNT_EXISTS'},409,corsOrigin);
+          const id='STU-'+crypto.randomBytes(8).toString('hex').toUpperCase();
+          const salt=crypto.randomBytes(16).toString('hex'); const iterations=10000; const hash=legacyPasswordHash(password,salt,iterations);
+          const syntheticEmail=`${id.toLowerCase()}@student.local`;
+          const created=await pool.query(
+            `INSERT INTO users(id,email,username,full_name,role,access_scope,school_id,student_id,password_hash,password_salt,password_iterations,status,is_active)
+             VALUES($1,$2,$3,$4,'Student','SELF',$5,$6,$7,$8,$9,'Active',true) RETURNING *`,
+            [id,syntheticEmail,String(student.student_code).trim().toLowerCase(),student.full_name,schoolId,studentId,hash,salt,iterations]
+          );
+          return json({status:'success',message:'تم تفعيل حساب الطالب.',user:await project(created.rows[0])},201,corsOrigin);
         }
         const targetId=String(data.id||data.userId||'').trim();
         if(action==='deleteUser'){
