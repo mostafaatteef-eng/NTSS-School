@@ -7439,10 +7439,20 @@ class StorageService {
       currentUser?.role === 'TeacherAffairs' ||
       (currentUser?.permissions && currentUser.permissions.includes('settings.manage' as any));
 
-    if (!isCurriculumAdmin) {
+    const isTeacher = currentUser?.role === 'Teacher';
+    const teacherId = currentUser?.employeeId || currentUser?.id;
+    const requestedStatus = plan.status || 'Draft';
+
+    if (!isCurriculumAdmin && !isTeacher) {
       return {
         success: false,
-        message: 'غير مصرح لك بإنشاء أو تعديل خطة المنهج الرئيسية. هذه الصلاحية مخصصة لمسؤول المناهج والإدارة.',
+        message: 'غير مصرح لك بإنشاء أو تعديل خطة المنهج.',
+      };
+    }
+    if (isTeacher && requestedStatus !== 'Draft' && requestedStatus !== 'Submitted') {
+      return {
+        success: false,
+        message: 'المعلم يمكنه حفظ الخطة كمسودة أو إرسالها للمراجعة فقط.',
       };
     }
 
@@ -7454,6 +7464,12 @@ class StorageService {
 
     if (existingIndex >= 0) {
       const existing = plans[existingIndex];
+      if (isTeacher && existing.uploadedBy !== teacherId) {
+        return { success: false, message: 'غير مصرح لك بتعديل خطة تخص معلمًا آخر.' };
+      }
+      if (isTeacher && existing.status === 'Approved') {
+        return { success: false, message: 'لا يمكن للمعلم تعديل خطة تم اعتمادها.' };
+      }
       // Multi-school check
       if (existing.schoolId !== activeSchoolId && currentUser?.role !== 'Admin') {
         return {
@@ -7482,7 +7498,7 @@ class StorageService {
         subjectId: plan.subjectId,
         version: 1,
         status: plan.status || 'Draft',
-        uploadedBy: currentUser?.id || 'admin',
+        uploadedBy: teacherId || currentUser?.id || 'admin',
         uploadedByName: currentUser?.fullName || currentUser?.username || 'مدير المناهج',
         uploadedAt: now,
         updatedAt: now,
