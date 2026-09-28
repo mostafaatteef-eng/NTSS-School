@@ -26,6 +26,33 @@ const plan = (id: string, subject: string, grade: string, classroom: string): Cu
   id, schoolId: 'SCH-1', academicYear: '2026-2027', term: 'T1', grade, classroom, subject,
   version: 1, status: 'Approved', uploadedBy: 'EMP-T1', uploadedAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(), items: [{ id: id+'-I1', planId: id, week: 1, unit: 'U', lessonTitle: 'L', estimatedPeriods: 1, order: 1 }],
+  it('creates all estimated periods and relinks one period without cancelling siblings', () => {
+    const p = plan('MULTI','Math','G1','A');
+    p.items[0].estimatedPeriods = 3;
+    localStorage.setItem('ntss_curriculum_plans_v3', JSON.stringify([p]));
+    storageService.saveSchedule([
+      { id:'M1', academicYear:'2026-2027', grade:'G1', classroom:'A', dayOfWeek:'الأحد', periodNumber:1, startTime:'08:00', endTime:'08:50', subject:'Math', teacherId:'EMP-T1', teacherName:'Teacher One', isActive:true },
+      { id:'M2', academicYear:'2026-2027', grade:'G1', classroom:'A', dayOfWeek:'الإثنين', periodNumber:1, startTime:'08:00', endTime:'08:50', subject:'Math', teacherId:'EMP-T1', teacherName:'Teacher One', isActive:true },
+      { id:'M3', academicYear:'2026-2027', grade:'G1', classroom:'A', dayOfWeek:'الثلاثاء', periodNumber:1, startTime:'08:00', endTime:'08:50', subject:'Math', teacherId:'EMP-T1', teacherName:'Teacher One', isActive:true },
+      { id:'M4', academicYear:'2026-2027', grade:'G1', classroom:'A', dayOfWeek:'الأربعاء', periodNumber:1, startTime:'08:00', endTime:'08:50', subject:'Math', teacherId:'EMP-T1', teacherName:'Teacher One', isActive:true },
+    ]);
+    const linked = curriculumPlanService.autoLinkPlanWeekToSchedule({ planId:'MULTI', week:1, user:teacher });
+    expect(linked.linked).toBe(3);
+    const before = storageService.getCurriculumDistributions('SCH-1').filter(d => d.status !== 'Cancelled');
+    expect(before).toHaveLength(3);
+    const second = before.find(d => d.scheduleItemId === 'M2');
+    expect(second).toBeTruthy();
+
+    const moved = curriculumPlanService.linkPlanItemToSchedule({
+      planId:'MULTI', planItemId:'MULTI-I1', scheduleItemId:'M4', user:teacher,
+      replaceExisting:true, replaceDistributionId:second!.id,
+    });
+    expect(moved.success).toBe(true);
+    const after = storageService.getCurriculumDistributions('SCH-1').filter(d => d.status !== 'Cancelled');
+    expect(after).toHaveLength(3);
+    expect(new Set(after.map(d => d.scheduleItemId))).toEqual(new Set(['M1','M3','M4']));
+  });
+
 });
 
 describe('Curriculum behavioral authorization and classroom coverage', () => {
