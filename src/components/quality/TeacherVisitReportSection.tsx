@@ -558,7 +558,7 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
                         </div>
                         <div className="space-y-3 p-3">
                     {domainStandards.map((std) => {
-                      const curScore = scores[std.id]?.score ?? 4;
+                      const curScore = scores[std.id]?.score ?? 0;
                       const curNotes = scores[std.id]?.notes ?? '';
                       return (
                         <div
