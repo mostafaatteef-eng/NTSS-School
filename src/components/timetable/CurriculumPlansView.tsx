@@ -205,6 +205,21 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
     });
   }, [allSchedule, selectedPlan]);
 
+  const handleAutoLinkWeek = (week: number) => {
+    if (!selectedPlan) return;
+    const res = curriculumPlanService.autoLinkPlanWeekToSchedule({
+      planId: selectedPlan.id,
+      week,
+      user: currentUser,
+    });
+    if (!res.success) {
+      alert(res.message);
+      return;
+    }
+    loadData();
+    alert(res.message);
+  };
+
   const handleLinkItem = (e: React.FormEvent) => {
     e.preventDefault();
     if (readOnly || !linkingItem || !selectedScheduleId) return;
