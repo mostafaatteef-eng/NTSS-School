@@ -37,11 +37,11 @@ describe('Curriculum behavioral integrity',()=>{
     expect(result.success).toBe(false);expect(result.message).toContain('مقفلة');
   });
 
-  it('creates estimated periods and relinks only the selected period',()=>{
+  it('creates estimated periods and relinks only the selected period',async()=>{
     const p=plan('MULTI','Math','G1','A');p.items[0].estimatedPeriods=3;
     localStorage.setItem('ntss_curriculum_plans_v3',JSON.stringify([p]));
     storageService.saveSchedule([slot('M1','الأحد'),slot('M2','الإثنين'),slot('M3','الثلاثاء'),slot('M4','الأربعاء')]);
-    const linked=curriculumPlanService.autoLinkPlanWeekToSchedule({planId:'MULTI',week:1,user:teacher});expect(linked.linked).toBe(3);
+    const linked=await curriculumPlanService.autoLinkPlanWeekToSchedule({planId:'MULTI',week:1,user:teacher});expect(linked.linked).toBe(3);
     const before=storageService.getCurriculumDistributions('SCH-1').filter(d=>d.status!=='Cancelled');expect(before).toHaveLength(3);
     const second=before.find(d=>d.scheduleItemId==='M2');expect(second).toBeTruthy();
     const moved=await curriculumPlanService.linkPlanItemToSchedule({planId:'MULTI',planItemId:'MULTI-I1',scheduleItemId:'M4',user:teacher,replaceExisting:true,replaceDistributionId:second!.id});
@@ -49,11 +49,11 @@ describe('Curriculum behavioral integrity',()=>{
     const after=storageService.getCurriculumDistributions('SCH-1').filter(d=>d.status!=='Cancelled');expect(after).toHaveLength(3);
     expect(new Set(after.map(d=>d.scheduleItemId))).toEqual(new Set(['M1','M3','M4']));
   });
-  it('can cancel a stale distribution after its timetable slot is deleted',()=>{
+  it('can cancel a stale distribution after its timetable slot is deleted',async()=>{
     const p=plan('STALE','Math','G1','A');
     localStorage.setItem('ntss_curriculum_plans_v3',JSON.stringify([p]));
     storageService.saveSchedule([slot('OLD','الأحد')]);
-    const linked=curriculumPlanService.linkPlanItemToSchedule({planId:'STALE',planItemId:'STALE-I1',scheduleItemId:'OLD',user:teacher});
+    const linked=await curriculumPlanService.linkPlanItemToSchedule({planId:'STALE',planItemId:'STALE-I1',scheduleItemId:'OLD',user:teacher});
     expect(linked.success).toBe(true);
     storageService.saveSchedule([]);
     const cancelled=storageService.saveCurriculumDistribution({...linked.distribution!,status:'Cancelled'},teacher);
