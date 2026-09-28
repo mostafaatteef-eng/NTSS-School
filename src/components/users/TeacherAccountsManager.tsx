@@ -281,7 +281,7 @@ export const TeacherAccountsManager: React.FC<TeacherAccountsManagerProps> = ({ 
       <PageHeader
         title="حسابات بوابة المعلمين"
         description="إدارة حسابات دخول المعلمين داخل نطاق المدرسة الحالية."
-        icon={<span className="rounded-xl bg-indigo-50 p-2 text-indigo-600"><GraduationCap className="h-5 w-5" /></span>}
+        icon={<span className="rounded-xl bg-teal-50 p-2 text-[#008e8b]"><GraduationCap className="h-5 w-5" /></span>}
         meta={<>نطاق المدرسة: {effectiveSchoolId || (isSystemAdmin ? currentUser?.activeSchoolId || 'لم يتم اختيار مدرسة' : currentUser?.schoolId || '—')}</>}
         actions={<>
 
@@ -299,7 +299,7 @@ export const TeacherAccountsManager: React.FC<TeacherAccountsManagerProps> = ({ 
               type="button"
               onClick={openCreate}
               disabled={loading || saving || !effectiveSchoolId}
-              className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-xl bg-[#008e8b] px-4 py-2 text-xs font-bold text-white hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Plus className="h-4 w-4" />
               إنشاء حساب معلم
@@ -323,7 +323,7 @@ export const TeacherAccountsManager: React.FC<TeacherAccountsManagerProps> = ({ 
         <Summary label="المجمدة مؤقتًا" value={loading ? null : lockedCount} />
       </div>
 
-      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white ">
         <div className="flex flex-col gap-3 border-b border-slate-200 p-4 sm:flex-row sm:items-center sm:justify-between">
           <label className="relative w-full sm:max-w-sm">
             <Search className="absolute right-3 top-3 h-4 w-4 text-slate-400" />
@@ -331,12 +331,12 @@ export const TeacherAccountsManager: React.FC<TeacherAccountsManagerProps> = ({ 
               value={searchQuery}
               onChange={event => setSearchQuery(event.target.value)}
               placeholder="بحث بالاسم أو اسم المستخدم أو كود المعلم"
-              className="w-full rounded-xl border border-slate-200 py-2.5 pr-9 pl-3 text-sm outline-none focus:border-indigo-500"
+              className="w-full rounded-xl border border-slate-200 py-2.5 pr-9 pl-3 text-sm outline-none focus:border-[#008e8b]"
             />
           </label>
           <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
             <label className="sr-only" htmlFor="teacher-account-status-filter">تصفية حسب الحالة</label>
-            <select id="teacher-account-status-filter" value={statusFilter} onChange={e=>setStatusFilter(e.target.value as any)} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-bold text-slate-700 outline-none focus:border-indigo-500">
+            <select id="teacher-account-status-filter" value={statusFilter} onChange={e=>setStatusFilter(e.target.value as any)} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-bold text-slate-700 outline-none focus:border-[#008e8b]">
               <option value="ALL">كل الحالات</option>
               <option value="ACTIVE">نشط</option>
               <option value="INACTIVE">غير نشط</option>
@@ -350,10 +350,10 @@ export const TeacherAccountsManager: React.FC<TeacherAccountsManagerProps> = ({ 
           <LoadingState label="جارٍ تحميل حسابات المعلمين" />
         ) : !pageError && filteredAccounts.length === 0 ? (
           <div className="flex min-h-60 flex-col items-center justify-center px-6 text-center">
-            <span className="mb-3 rounded-2xl bg-indigo-50 p-3 text-indigo-600"><GraduationCap className="h-6 w-6" /></span>
+            <span className="mb-3 rounded-2xl bg-teal-50 p-3 text-[#008e8b]"><GraduationCap className="h-6 w-6" /></span>
             <h3 className="font-bold text-slate-900">{searchQuery || statusFilter!=='ALL' ? 'لا توجد نتائج مطابقة' : 'لا توجد حسابات معلمين حتى الآن'}</h3>
             <p className="mt-1 max-w-md text-xs leading-6 text-slate-500">{searchQuery || statusFilter!=='ALL' ? 'جرّب تعديل البحث أو فلتر الحالة.' : 'يمكنك إنشاء حساب للمعلم بعد إضافته إلى سجل العاملين.'}</p>
-            {!searchQuery && statusFilter==='ALL' && availableTeachers.length>0 && <button type="button" onClick={openCreate} className="mt-4 inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-indigo-700"><Plus className="h-4 w-4" />إنشاء حساب معلم</button>}
+            {!searchQuery && statusFilter==='ALL' && availableTeachers.length>0 && <button type="button" onClick={openCreate} className="mt-4 inline-flex items-center gap-2 rounded-xl bg-[#008e8b] px-4 py-2.5 text-xs font-bold text-white hover:bg-teal-700"><Plus className="h-4 w-4" />إنشاء حساب معلم</button>}
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -456,7 +456,7 @@ export const TeacherAccountsManager: React.FC<TeacherAccountsManagerProps> = ({ 
               <button
                 type="button"
                 onClick={() => setTemporaryPassword(generateTemporaryPassword())}
-                className="mt-2 text-xs font-bold text-indigo-600"
+                className="mt-2 text-xs font-bold text-[#008e8b]"
               >
                 توليد كلمة مرور جديدة
               </button>
@@ -500,7 +500,7 @@ export const TeacherAccountsManager: React.FC<TeacherAccountsManagerProps> = ({ 
             <button
               type="button"
               onClick={() => setCredentialSummary(null)}
-              className="mt-5 w-full rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white"
+              className="mt-5 w-full rounded-xl bg-[#008e8b] px-4 py-2.5 text-sm font-bold text-white"
             >
               إغلاق وحذف العرض المؤقت
             </button>
@@ -512,7 +512,7 @@ export const TeacherAccountsManager: React.FC<TeacherAccountsManagerProps> = ({ 
 };
 
 const Summary: React.FC<{ label: string; value: number | null }> = ({ label, value }) => (
-  <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+  <div className="rounded-2xl border border-slate-200 bg-white p-4 ">
     <div className="text-[11px] font-bold text-slate-500">{label}</div>
     <div className="mt-2 text-2xl font-black text-slate-900">{value === null ? '' : value.toLocaleString('ar-EG')}</div>
   </div>
@@ -589,7 +589,7 @@ const ModalActions: React.FC<{ saving: boolean; onCancel: () => void }> = ({ sav
     <button type="button" onClick={onCancel} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-bold text-slate-600">
       إلغاء
     </button>
-    <button type="submit" disabled={saving} className="rounded-xl bg-indigo-600 px-5 py-2 text-sm font-bold text-white disabled:opacity-50">
+    <button type="submit" disabled={saving} className="rounded-xl bg-[#008e8b] px-5 py-2 text-sm font-bold text-white disabled:opacity-50">
       {saving ? 'جارٍ التنفيذ...' : 'حفظ'}
     </button>
   </div>
