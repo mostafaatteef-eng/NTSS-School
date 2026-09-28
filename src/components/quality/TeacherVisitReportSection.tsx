@@ -195,7 +195,7 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
     };
 
     try {
-      await storageService.saveAuthoritativeQualityRecord('TEACHER_VISIT',newReport as any,schoolId);
+      await storageService.saveAuthoritativeQualityRecord('TEACHER_VISIT',{...newReport,status: newReport.status || 'DRAFT'},schoolId);
       onRefresh();
       setShowForm(false);
     } catch (error:any) { alert(error?.message || 'تعذر حفظ زيارة المعلم'); }
