@@ -35,4 +35,12 @@ describe('Curriculum week-aware timetable regression guards', () => {
     expect(matrix).toContain('if (distributionWeek === curriculumWeek)');
     expect(matrix).toContain('أسبوع المنهج');
   });
+
+  it('preserves multiple timetable slots for curriculum items that need multiple periods', () => {
+    expect(serviceSource).toContain('replaceExisting?: boolean');
+    expect(serviceSource).toContain('if (params.replaceExisting !== false)');
+    expect(serviceSource).toContain('replaceExisting: false');
+    expect(serviceSource).toContain('const requestedPeriods = Math.max(1, Number(item.estimatedPeriods || 1))');
+  });
+
 });
