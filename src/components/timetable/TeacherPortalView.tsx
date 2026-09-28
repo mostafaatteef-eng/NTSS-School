@@ -778,7 +778,7 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ onBackToLo
       {/* TAB: CURRICULUM PLANS & DISTRIBUTION */}
       {portalTab === 'curriculum' && (
         <div>
-          <CurriculumPlansView currentUser={teacherPortalUser} readOnly />
+          <CurriculumPlansView currentUser={teacherPortalUser} />
         </div>
       )}
 
