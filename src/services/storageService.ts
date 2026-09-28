@@ -939,6 +939,33 @@ class StorageService {
     }
   }
 
+  public async loginStudent(
+    studentCode: string,
+    password: string
+  ): Promise<{ success: boolean; message?: string; user?: User; code?: string }> {
+    const code = String(studentCode || '').trim();
+    const secret = String(password || '');
+    if (!code || !secret) return { success:false, code:'INVALID_CREDENTIALS', message:'يرجى إدخال كود الطالب وكلمة المرور' };
+    try {
+      const response = await this.postgresRequest('/api/student/login', {
+        method:'POST',
+        headers:{ 'Content-Type':'text/plain;charset=UTF-8' },
+        body:JSON.stringify({ studentCode:code, password:secret }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || result.status !== 'success' || !result.user || !result.sessionToken) {
+        return { success:false, code:result.code || 'INVALID_CREDENTIALS', message:result.message || 'كود الطالب أو كلمة المرور غير صحيحة.' };
+      }
+      const userWithToken: User = { ...result.user, role:'Student', accessScope:'SELF', sessionToken:String(result.sessionToken).trim(), sessionExpiresAt:result.expiresAt };
+      this.setActiveSchoolId(userWithToken.schoolId || '');
+      this.setCurrentUser(userWithToken);
+      this.sessionValidationCache[userWithToken.sessionToken || ''] = { result:true, timestamp:Date.now() };
+      return { success:true, user:userWithToken };
+    } catch {
+      return { success:false, code:'AUTH_SERVICE_UNAVAILABLE', message:'تعذر الاتصال بخادم تسجيل دخول الطلاب.' };
+    }
+  }
+
   public async login(
     email: string,
     password: string
