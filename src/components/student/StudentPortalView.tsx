@@ -14,6 +14,12 @@ export const StudentPortalView: React.FC<Props> = ({ currentUser, onLogout }) =>
   const [data,setData]=useState<PortalData|null>(null);
   const [loading,setLoading]=useState(true);
   const [error,setError]=useState('');
+  const [refreshing,setRefreshing]=useState(false);
+  const loadPortal=async()=>{
+    const response=await storageService.requestCurrentStudentPortal();
+    setData(response);
+    setError('');
+  };
   useEffect(()=>{ let active=true; (async()=>{
     try {
       const response=await storageService.requestCurrentStudentPortal();
@@ -23,6 +29,7 @@ export const StudentPortalView: React.FC<Props> = ({ currentUser, onLogout }) =>
   })(); return()=>{active=false}; },[]);
   if(loading) return <div dir="rtl" className="min-h-screen bg-slate-50 grid place-items-center"><div className="text-sm font-bold text-slate-600">جارٍ تحميل بياناتك...</div></div>;
   if(error||!data) return <div dir="rtl" className="min-h-screen bg-slate-50 grid place-items-center p-4"><div className="max-w-md w-full rounded-3xl bg-white border p-6 text-center"><p className="text-rose-700 font-bold">{error||'لا توجد بيانات متاحة.'}</p><button onClick={onLogout} className="mt-4 text-sm font-bold text-slate-600">تسجيل الخروج</button></div></div>;
+  const refresh=async()=>{ setRefreshing(true); try{ await loadPortal(); } catch { setError('تعذر تحديث بيانات الطالب. حاول مرة أخرى.'); } finally { setRefreshing(false); } };
   const s=data.student, m=data.attendanceSummary;
   const pct=m.total ? Math.round((m.present/m.total)*100) : 0;
   const cards=[
@@ -34,7 +41,7 @@ export const StudentPortalView: React.FC<Props> = ({ currentUser, onLogout }) =>
   return <div dir="rtl" className="min-h-screen bg-slate-50 text-slate-900">
     <header className="sticky top-0 z-10 border-b bg-white/95 backdrop-blur"><div className="mx-auto max-w-5xl px-4 py-3 flex items-center justify-between">
       <div><div className="text-xs font-bold text-[#008e8b]">بوابة الطالب</div><div className="font-black">{s.full_name}</div></div>
-      <button onClick={onLogout} className="flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-bold"><LogOut className="h-4 w-4"/>خروج</button>
+      <div className="flex items-center gap-2"><button onClick={refresh} disabled={refreshing} className="rounded-xl border px-3 py-2 text-xs font-bold disabled:opacity-50">{refreshing?'جارٍ التحديث...':'تحديث'}</button><button onClick={onLogout} className="flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-bold"><LogOut className="h-4 w-4"/>خروج</button></div>
     </div></header>
     <main className="mx-auto max-w-5xl p-4 sm:p-6 space-y-5">
       <section className="rounded-3xl bg-white border p-5">
