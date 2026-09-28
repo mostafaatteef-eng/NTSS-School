@@ -396,7 +396,7 @@ export default {
         const email=String(data.email||'').trim().toLowerCase(); const username=String(data.username||'').trim().toLowerCase();
         const role=String(data.role||'').trim(); const fullName=String(data.fullName||'').trim();
         if(role==='SystemAdmin' && user.role!=='SystemAdmin')return json({status:'error',code:'ROLE_ESCALATION_DENIED'},403,corsOrigin);
-        const allowed=Array.isArray(data.allowedSchoolIds)?[...new Set(data.allowedSchoolIds.map((x:any)=>String(x||'').trim().toUpperCase()).filter(Boolean))]:[];
+        const allowed: string[]=Array.isArray(data.allowedSchoolIds)?[...new Set<string>(data.allowedSchoolIds.map((x:any)=>String(x||'').trim().toUpperCase()).filter(Boolean))]:[];
         const requestedSchoolId=String(data.schoolId||'').trim().toUpperCase();
         if(requestedSchoolId && !(await canAccessSchool(user,requestedSchoolId)))return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);
         for(const sid of allowed) if(!(await canAccessSchool(user,sid)))return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);
