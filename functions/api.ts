@@ -14,6 +14,25 @@ const isAllowedOrigin = (origin: string) => allowedOrigins.has(origin.replace(/\
 const tokenHash = (value: string) => crypto.createHash('sha256').update(value).digest('hex');
 const dummyPasswordSalt = 'ntss-login-timing-equalizer';
 const consumeDummyPasswordHash = (password: string) => legacyPasswordHash(password, dummyPasswordSalt, 10000);
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_MAX_ATTEMPTS = 10;
+const loginAttempts = new Map<string, { count: number; resetAt: number }>();
+const loginKey = (request: Request, identifier: string) => {
+  const forwarded = String(request.headers.get('x-forwarded-for') || '').split(',')[0].trim();
+  return tokenHash(`${forwarded || 'unknown'}|${identifier.toLowerCase()}`);
+};
+const consumeLoginAttempt = (key: string) => {
+  const now = Date.now();
+  const current = loginAttempts.get(key);
+  if (!current || current.resetAt <= now) {
+    loginAttempts.set(key, { count: 1, resetAt: now + LOGIN_WINDOW_MS });
+    return { allowed: true, retryAfter: 0 };
+  }
+  if (current.count >= LOGIN_MAX_ATTEMPTS) return { allowed: false, retryAfter: Math.max(1, Math.ceil((current.resetAt - now) / 1000)) };
+  current.count += 1;
+  return { allowed: true, retryAfter: 0 };
+};
+const clearLoginAttempts = (key: string) => loginAttempts.delete(key);
 
 const legacyPasswordHash = (password: string, salt: string, iterations: number) => {
   let digest = crypto.createHmac('sha256', salt).update(password + salt).digest();
@@ -96,6 +115,9 @@ export default {
         const studentCode = String(body.studentCode || '').trim();
         const password = String(body.password || '');
         if (!studentCode || !password) return json({ status: 'error', code: 'INVALID_CREDENTIALS' }, 401, corsOrigin);
+        const studentLoginKey = loginKey(request, studentCode);
+        const studentRate = consumeLoginAttempt(studentLoginKey);
+        if (!studentRate.allowed) return json({ status:'error', code:'RATE_LIMITED', retryAfter:studentRate.retryAfter },429,corsOrigin);
         const result = await pool.query(
           `SELECT u.id,u.full_name,u.role,u.access_scope,u.school_id,u.student_id,u.password_hash,u.password_salt,u.password_iterations,u.is_active,u.status,s.student_code
            FROM users u JOIN students s ON s.school_id=u.school_id AND s.id=u.student_id
@@ -123,6 +145,7 @@ export default {
           pool.query('INSERT INTO sessions(id,user_id,token_hash,active_school_id,expires_at) VALUES($1,$2,$3,$4,$5)', [sessionId,user.id,tokenHash(token),user.school_id,expiresAt]),
           pool.query('UPDATE users SET last_login_at=now(), updated_at=now() WHERE id=$1', [user.id])
         ]);
+        clearLoginAttempts(studentLoginKey);
         console.log(JSON.stringify({ marker: 'NTSS_STUDENT_LOGIN_SUCCESS', requestId, userId:user.id, totalMs:Math.round(performance.now()-startedAt) }));
         return json({ status:'success', sessionToken:token, expiresAt:expiresAt.toISOString(), user:{
           id:user.id, fullName:user.full_name, role:'Student', accessScope:'SELF', schoolId:user.school_id,
@@ -137,6 +160,9 @@ export default {
         const email = String(body.email || '').trim().toLowerCase();
         const password = String(body.password || '');
         if (!email || !password) return json({ status: 'error', code: 'INVALID_CREDENTIALS' }, 401, corsOrigin);
+        const staffLoginKey = loginKey(request, email);
+        const staffRate = consumeLoginAttempt(staffLoginKey);
+        if (!staffRate.allowed) return json({ status:'error', code:'RATE_LIMITED', retryAfter:staffRate.retryAfter },429,corsOrigin);
         const dbStartedAt = performance.now();
         const query = await pool.query(
           `SELECT id,email,full_name,role,access_scope,school_id,employee_id,password_hash,password_salt,password_iterations,is_active,status
@@ -171,6 +197,7 @@ export default {
         ]);
         const sessionMs = Math.round(performance.now() - sessionStartedAt);
         const totalMs = Math.round(performance.now() - loginStartedAt);
+        clearLoginAttempts(staffLoginKey);
         console.log(JSON.stringify({ marker: 'NTSS_LOGIN_SUCCESS', requestId, userId: user.id, dbMs, authMs, sessionMs, totalMs }));
         return json({ status: 'success', sessionToken: token, expiresAt: expiresAt.toISOString(), user: {
           id: user.id, email: user.email, fullName: user.full_name, role: user.role, accessScope: user.access_scope,
@@ -737,6 +764,55 @@ export default {
           return json({status:'success',message:'تم إرسال طلب الإذن بنجاح.',permission:mapPermission(q.rows[0])},201,corsOrigin);
         }
         return json({status:'error',code:'ACTION_NOT_MIGRATED'},400,corsOrigin);
+      }
+
+      if (request.method === 'POST' && path === '/quality/manage') {
+        const body:any=await request.json();
+        const action=String(body.action||'');
+        const data:any=body.data||{};
+        const schoolId=String(body.schoolId||user.active_school_id||user.school_id||'').trim();
+        if(!(await canAccessSchool(user,schoolId))) return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);
+        const canRead=new Set(['SystemAdmin','Admin','SchoolAdmin','SchoolDirector','QualityOfficer','Supervisor']);
+        const canWrite=new Set(['SystemAdmin','Admin','SchoolAdmin','SchoolDirector','QualityOfficer','Supervisor']);
+        const canApprove=new Set(['SystemAdmin','Admin','SchoolAdmin','SchoolDirector']);
+        if(!canRead.has(String(user.role||''))) return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);
+        const allowedTypes=new Set(['TEACHER_VISIT','DAILY_REPORT','COMPREHENSIVE_EVALUATION','CORRECTIVE_ACTION']);
+        const recordType=String(data.recordType||body.recordType||'').toUpperCase();
+        if(action==='list'){
+          const params:any[]=[schoolId]; let sql='SELECT * FROM quality_records WHERE school_id=$1';
+          if(recordType){if(!allowedTypes.has(recordType))return json({status:'error',code:'INVALID_RECORD_TYPE'},400,corsOrigin);params.push(recordType);sql+=' AND record_type=$2';}
+          sql+=' ORDER BY updated_at DESC';
+          const q=await pool.query(sql,params);
+          return json({status:'success',data:q.rows.map((r:any)=>({...r.payload,id:r.id,schoolId:r.school_id,recordType:r.record_type,status:r.status,createdAt:r.created_at,updatedAt:r.updated_at,approvedAt:r.approved_at}))},200,corsOrigin);
+        }
+        if(!canWrite.has(String(user.role||''))) return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);
+        const id=String(data.id||'').trim()||('QLT-'+crypto.randomBytes(8).toString('hex').toUpperCase());
+        if(action==='delete'){
+          const existing=await pool.query('SELECT status FROM quality_records WHERE school_id=$1 AND id=$2',[schoolId,id]);
+          if(!existing.rowCount)return json({status:'error',code:'NOT_FOUND'},404,corsOrigin);
+          if(String(existing.rows[0].status).toUpperCase()!=='DRAFT')return json({status:'error',code:'FINALIZED_RECORD_LOCKED'},409,corsOrigin);
+          await pool.query('DELETE FROM quality_records WHERE school_id=$1 AND id=$2',[schoolId,id]);
+          return json({status:'success'},200,corsOrigin);
+        }
+        if(action==='approve'){
+          if(!canApprove.has(String(user.role||'')))return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);
+          const q=await pool.query("UPDATE quality_records SET status='APPROVED',approved_by=$3,approved_at=now(),updated_at=now() WHERE school_id=$1 AND id=$2 AND upper(status)='SUBMITTED' RETURNING *",[schoolId,id,user.user_id]);
+          if(!q.rowCount)return json({status:'error',code:'INVALID_STATUS_TRANSITION'},409,corsOrigin);
+          await pool.query('INSERT INTO audit_logs(school_id,user_id,username,role,action,entity,target_id,details) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[schoolId,user.user_id,user.email,user.role,'APPROVE','QUALITY',id,'Approved quality record']);
+          return json({status:'success',data:{...q.rows[0].payload,id,status:'APPROVED'}},200,corsOrigin);
+        }
+        if(action!=='save'||!allowedTypes.has(recordType))return json({status:'error',code:'INVALID_ACTION'},400,corsOrigin);
+        const existing=await pool.query('SELECT status FROM quality_records WHERE school_id=$1 AND id=$2',[schoolId,id]);
+        if(existing.rowCount&&['APPROVED','FINALIZED'].includes(String(existing.rows[0].status).toUpperCase()))return json({status:'error',code:'FINALIZED_RECORD_LOCKED'},409,corsOrigin);
+        const status=String(data.status||'DRAFT').toUpperCase();
+        if(!['DRAFT','SUBMITTED','REQUIRES_REVISION'].includes(status))return json({status:'error',code:'INVALID_STATUS'},400,corsOrigin);
+        const payload=JSON.stringify({...data,id,schoolId,recordType});
+        const q=await pool.query(`INSERT INTO quality_records(id,school_id,record_type,status,payload,created_by) VALUES($1,$2,$3,$4,$5::jsonb,$6)
+          ON CONFLICT(id) DO UPDATE SET status=EXCLUDED.status,payload=EXCLUDED.payload,updated_at=now()
+          WHERE quality_records.school_id=EXCLUDED.school_id RETURNING *`,[id,schoolId,recordType,status,payload,user.user_id]);
+        if(!q.rowCount)return json({status:'error',code:'QUALITY_WRITE_REJECTED'},409,corsOrigin);
+        await pool.query('INSERT INTO audit_logs(school_id,user_id,username,role,action,entity,target_id,details) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[schoolId,user.user_id,user.email,user.role,'UPSERT','QUALITY',id,recordType]);
+        return json({status:'success',data:{...q.rows[0].payload,id,status:q.rows[0].status}},200,corsOrigin);
       }
 
       if (request.method === 'POST' && path === '/leave-management') {
