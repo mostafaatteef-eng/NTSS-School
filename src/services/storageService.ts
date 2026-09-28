@@ -7616,7 +7616,20 @@ class StorageService {
     dist: Partial<CurriculumLessonDistribution> & { planId: string; planItemId: string; teacherId: string },
     user?: User | null
   ): { success: boolean; data?: CurriculumLessonDistribution; message: string } {
-    const activeSchoolId = (dist.schoolId || user?.schoolId || this.getActiveSchoolId()).trim();
+    const caller = user || this.getCurrentUser();
+    const activeSchoolId = (dist.schoolId || caller?.schoolId || this.getActiveSchoolId()).trim();
+    const isCurriculumAdmin =
+      caller?.role === 'Admin' ||
+      caller?.role === 'SchoolDirector' ||
+      caller?.role === 'TeacherAffairs' ||
+      (caller?.permissions && caller.permissions.includes('settings.manage' as any));
+    const actorTeacherId = caller?.employeeId || caller?.id;
+    if (caller?.role === 'Teacher' && (!actorTeacherId || dist.teacherId !== actorTeacherId)) {
+      return { success: false, message: 'لا يمكن للمعلم تحديث توزيع حصة تخص معلمًا آخر.' };
+    }
+    if (caller && caller.role !== 'Teacher' && !isCurriculumAdmin) {
+      return { success: false, message: 'غير مصرح لك بتعديل توزيع المنهج.' };
+    }
     const now = getCairoNowISO();
     const raw = localStorage.getItem(STORAGE_KEYS.CURRICULUM_DISTRIBUTIONS);
     let list: CurriculumLessonDistribution[] = [];
