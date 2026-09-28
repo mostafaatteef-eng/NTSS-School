@@ -366,7 +366,7 @@ export const LeavesView: React.FC<LeavesViewProps> = ({
           ) : (
             <button
               onClick={handleOpenPermModal}
-              className="text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl transition-colors flex items-center gap-1.5"
+              className="text-xs font-bold bg-[#008e8b] hover:bg-teal-700 text-white px-4 py-2.5 rounded-xl transition-colors flex items-center gap-1.5"
             >
               <Plus className="w-4 h-4" />
               <span>تقديم طلب إذن / تصريح</span>
@@ -411,7 +411,7 @@ export const LeavesView: React.FC<LeavesViewProps> = ({
           onClick={() => setActiveSubTab('permissions')}
           className={`px-5 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 ${
             activeSubTab === 'permissions'
-              ? 'bg-indigo-600 text-white shadow-sm'
+              ? 'bg-[#008e8b] text-white shadow-sm'
               : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
           }`}
         >
@@ -569,7 +569,7 @@ export const LeavesView: React.FC<LeavesViewProps> = ({
                         <div className="text-[10px] text-slate-400">{perm.department}</div>
                       </td>
                       <td className="py-3.5 px-4">
-                        <span className="inline-block px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 font-bold text-[11px]">
+                        <span className="inline-block px-2.5 py-1 rounded-lg bg-teal-50 text-teal-800 font-bold text-[11px]">
                           {perm.permissionType}
                         </span>
                       </td>
@@ -755,7 +755,7 @@ export const LeavesView: React.FC<LeavesViewProps> = ({
           <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden my-8">
             <div className="p-6 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
               <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
-                <Clock className="w-5 h-5 text-indigo-600" />
+                <Clock className="w-5 h-5 text-[#008e8b]" />
                 <span>تقديم طلب إذن / تصريح عمل</span>
               </h3>
               <button onClick={() => setIsPermModalOpen(false)} className="text-slate-400 hover:text-slate-700">
@@ -883,7 +883,7 @@ export const LeavesView: React.FC<LeavesViewProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-md"
+                  className="px-6 py-2 bg-[#008e8b] hover:bg-teal-700 text-white rounded-xl text-xs font-bold shadow-md"
                 >
                   حفظ وتقديم الإذن
                 </button>
