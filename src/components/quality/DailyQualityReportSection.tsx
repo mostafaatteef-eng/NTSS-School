@@ -7,7 +7,6 @@ import {
 } from '../../types';
 import { storageService } from '../../services/storageService';
 import {
-  FileText,
   Plus,
   CheckCircle2,
   Clock,
@@ -15,7 +14,6 @@ import {
   Eye,
   Trash2,
   Sparkles,
-  AlertTriangle,
 } from 'lucide-react';
 
 interface Props {
