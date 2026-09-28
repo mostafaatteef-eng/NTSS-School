@@ -13,3 +13,7 @@ for(const relation of [
   const [child,parent]=relation;
   if(!new RegExp('CREATE TABLE IF NOT EXISTS\\s+'+child+'[\\s\\S]*?REFERENCES\\s+'+parent+'\\b','i').test(sql)) throw new Error('Missing curriculum relation: '+child+' -> '+parent);
 }
+
+const curriculumPlanBlock=(sql.match(/CREATE TABLE IF NOT EXISTS\s+curriculum_plans\s*\(([\s\S]*?)\);/i)||[])[1]||'';
+if(!/\bclassroom\s+text\s+NOT\s+NULL\b/i.test(curriculumPlanBlock)) throw new Error('curriculum_plans.classroom must be a canonical required column');
+if(/FOREIGN KEY\s*\(school_id\s*,\s*employee_id\)[\s\S]{0,160}?ON DELETE SET NULL/i.test(sql)) throw new Error('Composite employee FK must not null required school_id');
