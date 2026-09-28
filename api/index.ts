@@ -636,7 +636,7 @@ const ntssHandler = {
           const id=String(data.id||('DIST-'+crypto.randomBytes(8).toString('hex').toUpperCase()));
           const q=await pool.query(`INSERT INTO curriculum_distributions(id,school_id,plan_id,plan_item_id,schedule_item_id,teacher_id,teacher_name,grade,classroom,subject,day_of_week,period_number,target_date,status,notes)
             VALUES($1,$2,$3,$4,NULLIF($5,''),$6,$7,$8,$9,$10,$11,$12,NULLIF($13,'')::date,$14,$15)
-            ON CONFLICT(id) DO UPDATE SET schedule_item_id=EXCLUDED.schedule_item_id,status=EXCLUDED.status,target_date=EXCLUDED.target_date,notes=EXCLUDED.notes,updated_at=now()
+            ON CONFLICT(id) DO UPDATE SET schedule_item_id=EXCLUDED.schedule_item_id,teacher_id=EXCLUDED.teacher_id,teacher_name=EXCLUDED.teacher_name,grade=EXCLUDED.grade,classroom=EXCLUDED.classroom,subject=EXCLUDED.subject,day_of_week=EXCLUDED.day_of_week,period_number=EXCLUDED.period_number,status=EXCLUDED.status,target_date=EXCLUDED.target_date,notes=EXCLUDED.notes,updated_at=now()
             WHERE curriculum_distributions.school_id=EXCLUDED.school_id AND curriculum_distributions.teacher_id=EXCLUDED.teacher_id RETURNING *`,
             [id,schoolId,planId,planItemId,scheduleItemId,teacherId,String(data.teacherName||''),String(data.grade||''),String(data.classroom||''),String(data.subject||''),String(data.dayOfWeek||''),Number(data.periodNumber||0),String(data.targetDate||''),String(data.status||'Planned'),String(data.notes||'')]);
           if(!q.rowCount)return json({status:'error',code:'WRITE_REJECTED'},409,corsOrigin);return json({status:'success',data:{id:q.rows[0].id}},200,corsOrigin);
@@ -647,7 +647,8 @@ const ntssHandler = {
           const existing=await pool.query('SELECT * FROM curriculum_plans WHERE id=$1',[id]);
           if(existing.rowCount){
             const e=existing.rows[0];
-            if(e.school_id!==schoolId||(isTeacher&&(e.uploaded_by!==actorTeacherId||e.status==='Approved')))return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);
+            if(e.school_id!==schoolId||(isTeacher&&e.uploaded_by!==actorTeacherId))return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);
+            if(e.status==='Approved')return json({status:'error',code:'PLAN_LOCKED',message:'الخطة المعتمدة مقفلة ولا يمكن تعديل محتواها مباشرة؛ أنشئ نسخة جديدة للتعديل.'},409,corsOrigin);
             if(isTeacher&&e.status==='Submitted')return json({status:'error',code:'PLAN_UNDER_REVIEW',message:'الخطة مرسلة للمراجعة ولا يمكن تعديل محتواها أو حالتها حتى تعتمدها الإدارة أو ترفضها.'},409,corsOrigin);
             if(isAdmin&&status==='Submitted'&&!['Draft','Rejected'].includes(String(e.status)))return json({status:'error',code:'INVALID_PLAN_TRANSITION'},409,corsOrigin);
             if(isAdmin&&['Approved','Rejected'].includes(status)&&e.status!=='Submitted')return json({status:'error',code:'INVALID_PLAN_TRANSITION',message:'يجب إرسال الخطة للمراجعة قبل اعتمادها أو رفضها.'},409,corsOrigin);
