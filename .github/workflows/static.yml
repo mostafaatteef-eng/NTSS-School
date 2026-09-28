@@ -51,6 +51,9 @@ jobs:
           path: ./dist
 
   deploy-vercel:
+    # Temporarily disabled while Vercel Hobby daily API deployment quota is exhausted.
+    # Re-enable after the quota window resets; CI/Pages continue normally.
+    if: ${{ false }}
     needs: build
     runs-on: ubuntu-latest
     steps:
