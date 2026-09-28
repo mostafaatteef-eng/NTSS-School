@@ -7636,6 +7636,12 @@ class StorageService {
     try { list = raw ? JSON.parse(raw) : []; } catch { list = []; }
 
     const idx = list.findIndex(d => d.id === dist.id && d.schoolId === activeSchoolId);
+    if (dist.id && idx < 0) {
+      const foreignRecord = list.find(d => d.id === dist.id);
+      if (foreignRecord) {
+        return { success: false, message: 'لا يمكن تعديل توزيع منهج تابع لمدرسة أخرى.' };
+      }
+    }
 
     const record: CurriculumLessonDistribution = {
       id: dist.id || `DIST-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
