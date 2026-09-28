@@ -459,7 +459,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                       <span
                         className={`inline-block px-2.5 py-1 rounded-lg font-bold text-[11px] ${
                           emp.employeeType === 'Teacher'
-                            ? 'bg-indigo-50 text-indigo-700'
+                            ? 'bg-teal-50 text-teal-800'
                             : 'bg-slate-100 text-slate-700'
                         }`}
                       >
@@ -472,7 +472,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                         {emp.specialization || 'عام'}
                       </span>
                     </td>
-                    <td className="py-3.5 px-4 font-mono font-bold text-indigo-600">
+                    <td className="py-3.5 px-4 font-mono font-bold text-[#008e8b]">
                       {emp.teacherCode || '-'}
                     </td>
                     <td className="py-3.5 px-4">
@@ -502,7 +502,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                               <button
                                 disabled={employeeAction !== null}
                                 onClick={() => openEditModal(emp)}
-                                className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors disabled:opacity-40"
+                                className="p-1.5 text-slate-500 hover:text-[#008e8b] hover:bg-teal-50 rounded-lg transition-colors disabled:opacity-40"
                                 title="تعديل البيانات"
                               >
                                 <Edit2 className="w-4 h-4" />
