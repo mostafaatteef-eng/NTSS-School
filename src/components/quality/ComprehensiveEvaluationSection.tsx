@@ -171,10 +171,10 @@ export const ComprehensiveEvaluationSection: React.FC<Props> = ({
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+      <div className="bg-white p-5 rounded-xl border border-slate-200  flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
           <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-            <Layers className="w-6 h-6 text-indigo-600" />
+            <Layers className="w-6 h-6 text-[#008e8b]" />
             التقييم المؤسسي الشامل (Comprehensive Evaluation)
           </h2>
           <p className="text-sm text-slate-500 mt-1">
@@ -186,7 +186,7 @@ export const ComprehensiveEvaluationSection: React.FC<Props> = ({
           <button
             id="create-comprehensive-eval-btn"
             onClick={handleOpenNew}
-            className="px-4 py-2 text-sm bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg flex items-center gap-2 transition-colors shadow-sm"
+            className="px-4 py-2 text-sm bg-[#008e8b] hover:bg-teal-700 text-white font-medium rounded-lg flex items-center gap-2 transition-colors "
           >
             <Plus className="w-4 h-4" />
             إجراء تقييم شامل جديد
@@ -195,7 +195,7 @@ export const ComprehensiveEvaluationSection: React.FC<Props> = ({
       </div>
 
       {/* Evaluations Table */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-xl border border-slate-200  overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-right border-collapse text-sm">
             <thead>
@@ -313,7 +313,7 @@ export const ComprehensiveEvaluationSection: React.FC<Props> = ({
           <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[92vh] overflow-y-auto shadow-2xl border border-slate-200">
             <div className="p-5 border-b border-slate-200 flex items-center justify-between sticky top-0 bg-white z-10">
               <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <Layers className="w-5 h-5 text-indigo-600" />
+                <Layers className="w-5 h-5 text-[#008e8b]" />
                 إجراء تقييم مؤسسي شامل جديد
               </h3>
               <button
@@ -336,7 +336,7 @@ export const ComprehensiveEvaluationSection: React.FC<Props> = ({
                     required
                     value={academicYear}
                     onChange={(e) => setAcademicYear(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#008e8b]/30"
                   />
                 </div>
                 <div>
@@ -346,7 +346,7 @@ export const ComprehensiveEvaluationSection: React.FC<Props> = ({
                   <select
                     value={term}
                     onChange={(e) => setTerm(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#008e8b]/30"
                   >
                     <option value="الفصل الدراسي الأول">الفصل الدراسي الأول</option>
                     <option value="الفصل الدراسي الثاني">الفصل الدراسي الثاني</option>
@@ -363,7 +363,7 @@ export const ComprehensiveEvaluationSection: React.FC<Props> = ({
                     required
                     value={evaluationDate}
                     onChange={(e) => setEvaluationDate(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#008e8b]/30"
                   />
                 </div>
               </div>
@@ -376,7 +376,7 @@ export const ComprehensiveEvaluationSection: React.FC<Props> = ({
                   <select
                     value={scope}
                     onChange={(e) => setScope(e.target.value as EvaluationScope)}
-                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#008e8b]/30"
                   >
                     <option value="SCHOOL_WIDE">شامل لكامل المدرسة والمرافق</option>
                     <option value="DEPARTMENT">قسم أكاديمي / إداري محدد</option>
@@ -393,7 +393,7 @@ export const ComprehensiveEvaluationSection: React.FC<Props> = ({
                     value={targetEntityName}
                     onChange={(e) => setTargetEntityName(e.target.value)}
                     placeholder="مثال: المدرسة بالكامل، قسم العلوم، المرحلة المتوسطة..."
-                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#008e8b]/30"
                   />
                 </div>
               </div>
@@ -408,7 +408,7 @@ export const ComprehensiveEvaluationSection: React.FC<Props> = ({
                     required
                     value={leadEvaluatorName}
                     onChange={(e) => setLeadEvaluatorName(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#008e8b]/30"
                   />
                 </div>
                 <div>
@@ -420,7 +420,7 @@ export const ComprehensiveEvaluationSection: React.FC<Props> = ({
                     value={committeeMembers}
                     onChange={(e) => setCommitteeMembers(e.target.value)}
                     placeholder="أدخل الأسماء مفصولة بفواصل..."
-                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#008e8b]/30"
                   />
                 </div>
               </div>
@@ -429,7 +429,7 @@ export const ComprehensiveEvaluationSection: React.FC<Props> = ({
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <h4 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 text-indigo-600" />
+                    <Sparkles className="w-4 h-4 text-[#008e8b]" />
                     تقييم معايير إتقان الشاملة ({compStandards.length} معيار)
                   </h4>
                   <span className="text-xs text-slate-400">
@@ -454,7 +454,7 @@ export const ComprehensiveEvaluationSection: React.FC<Props> = ({
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                             <div>
                               <div className="flex items-center gap-2">
-                                <span className="font-mono text-xs font-bold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded">
+                                <span className="font-mono text-xs font-bold text-teal-800 bg-teal-50 px-1.5 py-0.5 rounded">
                                   {std.code}
                                 </span>
                                 <span className="text-xs font-medium text-slate-500 bg-slate-200/60 px-1.5 py-0.5 rounded">
@@ -481,7 +481,7 @@ export const ComprehensiveEvaluationSection: React.FC<Props> = ({
                                       onClick={() => handleScoreChange(std.id, val)}
                                       className={`w-7 h-7 text-xs font-bold rounded-md transition-colors ${
                                         curScore === val
-                                          ? 'bg-indigo-600 text-white shadow-sm'
+                                          ? 'bg-[#008e8b] text-white '
                                           : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
                                       }`}
                                     >
@@ -498,7 +498,7 @@ export const ComprehensiveEvaluationSection: React.FC<Props> = ({
                             value={curNotes}
                             onChange={(e) => handleNotesChange(std.id, e.target.value)}
                             placeholder="الشواهد والأدلة الوثائقية المعتمدة لهذا المعيار..."
-                            className="w-full px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:ring-1 focus:ring-indigo-500"
+                            className="w-full px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:ring-1 focus:ring-[#008e8b]/30"
                           />
                         </div>
                       );
@@ -545,7 +545,7 @@ export const ComprehensiveEvaluationSection: React.FC<Props> = ({
                   value={strategicRecommendations}
                   onChange={(e) => setStrategicRecommendations(e.target.value)}
                   placeholder="التوصيات المعتمدة للرفع للإدارة العامة ومتابعة الأثر..."
-                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#008e8b]/30"
                 />
               </div>
 
@@ -570,7 +570,7 @@ export const ComprehensiveEvaluationSection: React.FC<Props> = ({
                   <button
                     type="button"
                     onClick={() => handleSaveEvaluation(false)}
-                    className="px-5 py-2 text-sm bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors font-semibold shadow-sm flex items-center gap-2"
+                    className="px-5 py-2 text-sm bg-[#008e8b] hover:bg-teal-700 text-white rounded-lg transition-colors font-semibold  flex items-center gap-2"
                   >
                     <Send className="w-4 h-4" />
                     تقديم التقييم للاعتماد
@@ -589,7 +589,7 @@ export const ComprehensiveEvaluationSection: React.FC<Props> = ({
             <div className="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50 rounded-t-2xl">
               <div>
                 <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                  <Layers className="w-5 h-5 text-indigo-600" />
+                  <Layers className="w-5 h-5 text-[#008e8b]" />
                   تقرير التقييم المؤسسي الشامل - {viewingEval.targetEntityName}
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
@@ -606,18 +606,18 @@ export const ComprehensiveEvaluationSection: React.FC<Props> = ({
 
             <div className="p-6 space-y-6">
               {/* Score Highlight */}
-              <div className="bg-gradient-to-r from-indigo-50 to-purple-50 p-4 rounded-xl border border-indigo-100 flex items-center justify-between">
+              <div className="bg-gradient-to-r from-indigo-50 to-purple-50 p-4 rounded-xl border border-teal-100 flex items-center justify-between">
                 <div>
-                  <div className="text-xs font-bold text-indigo-800">الدرجة الموزونة المؤسسية</div>
+                  <div className="text-xs font-bold text-teal-900">الدرجة الموزونة المؤسسية</div>
                   <div className="text-2xl font-black text-indigo-950 mt-0.5">
                     {viewingEval.earnedScore.toFixed(1)}{' '}
-                    <span className="text-sm font-normal text-indigo-600">
+                    <span className="text-sm font-normal text-[#008e8b]">
                       / {viewingEval.totalScore.toFixed(1)}
                     </span>
                   </div>
                 </div>
                 <div className="text-right">
-                  <div className="text-xs font-bold text-indigo-800">النسبة المئوية الإجمالية</div>
+                  <div className="text-xs font-bold text-teal-900">النسبة المئوية الإجمالية</div>
                   <span
                     className={`inline-block px-3 py-1 text-sm font-bold rounded-full mt-1 ${
                       viewingEval.percentage >= 85
@@ -646,7 +646,7 @@ export const ComprehensiveEvaluationSection: React.FC<Props> = ({
                       >
                         <div className="flex items-center justify-between">
                           <span className="text-xs font-bold text-slate-800">{ds.domain}</span>
-                          <span className="text-xs font-bold text-indigo-700">
+                          <span className="text-xs font-bold text-teal-800">
                             {ds.percentage.toFixed(1)}%
                           </span>
                         </div>
@@ -691,7 +691,7 @@ export const ComprehensiveEvaluationSection: React.FC<Props> = ({
                     <tbody className="divide-y divide-slate-100">
                       {viewingEval.standardScores.map((sc, i) => (
                         <tr key={i}>
-                          <td className="p-2.5 font-mono font-bold text-indigo-600">{sc.standardCode}</td>
+                          <td className="p-2.5 font-mono font-bold text-[#008e8b]">{sc.standardCode}</td>
                           <td className="p-2.5 text-slate-800">
                             {standards.find((s) => s.id === sc.standardId)?.standard || 'معيار'}
                           </td>
@@ -758,7 +758,7 @@ export const ComprehensiveEvaluationSection: React.FC<Props> = ({
                   <button
                     type="button"
                     onClick={() => handleApprove(viewingEval)}
-                    className="px-5 py-2 text-sm bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors font-semibold shadow-sm flex items-center gap-2"
+                    className="px-5 py-2 text-sm bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors font-semibold  flex items-center gap-2"
                   >
                     <CheckCircle2 className="w-4 h-4" />
                     اعتماد التقييم المؤسسي
