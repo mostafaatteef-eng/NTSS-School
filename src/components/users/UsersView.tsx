@@ -172,6 +172,10 @@ export const UsersView: React.FC<UsersViewProps> = ({ currentUser }) => {
   };
 
   const openEdit = (user: User) => {
+    if (user.role === 'Student') {
+      setPageError('حساب الطالب مرتبط بالسجل المدرسي ولا يمكن تعديله من نموذج حسابات العاملين.');
+      return;
+    }
     const role = ADMINISTRATIVE_ROLES.includes(user.role as CanonicalStaffRole)
       ? (user.role as CanonicalStaffRole)
       : 'TeacherAffairs';
@@ -435,6 +439,7 @@ export const UsersView: React.FC<UsersViewProps> = ({ currentUser }) => {
               <select value={roleFilter} onChange={e => setRoleFilter(e.target.value)} className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm">
                 <option value="">كل الأدوار</option>
                 {ADMINISTRATIVE_ROLES.map(r => <option key={r} value={r}>{ROLE_DISPLAY_NAMES[r]}</option>)}
+                <option value="Student">طالب</option>
               </select>
               <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm">
                 <option value="">كل الحالات</option>
@@ -491,7 +496,7 @@ export const UsersView: React.FC<UsersViewProps> = ({ currentUser }) => {
                         <td className="px-4 py-3 text-xs text-slate-500">{user.lastLogin || '—'}</td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-1">
-                            {canEdit && (
+                            {canEdit && user.role !== 'Student' && (
                               <button type="button" onClick={() => openEdit(user)} title="تعديل" className="rounded-lg p-2 text-slate-600 hover:bg-slate-100"><Edit2 className="h-4 w-4" /></button>
                             )}
                             {canReset && (
