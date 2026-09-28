@@ -192,9 +192,14 @@ export default {
       }
 
       if (request.method === 'POST' && path === '/validate-session') {
-        const access = await pool.query("SELECT usa.school_id FROM user_school_access usa JOIN schools s ON s.id=usa.school_id WHERE usa.user_id=$1 AND s.status='ACTIVE' ORDER BY usa.school_id", [user.user_id]);
+        const isSelfScopedStudent = user.role === 'Student' && user.access_scope === 'SELF';
+        const access = isSelfScopedStudent
+          ? { rows: user.school_id ? [{ school_id: user.school_id }] : [] }
+          : await pool.query("SELECT usa.school_id FROM user_school_access usa JOIN schools s ON s.id=usa.school_id WHERE usa.user_id=$1 AND s.status='ACTIVE' ORDER BY usa.school_id", [user.user_id]);
         const allowedSchoolIds = access.rows.map((x: any) => x.school_id);
-        const activeSchoolId = user.active_school_id && allowedSchoolIds.includes(user.active_school_id) ? user.active_school_id : (user.school_id && allowedSchoolIds.includes(user.school_id) ? user.school_id : '');
+        const activeSchoolId = isSelfScopedStudent
+          ? (user.school_id || '')
+          : (user.active_school_id && allowedSchoolIds.includes(user.active_school_id) ? user.active_school_id : (user.school_id && allowedSchoolIds.includes(user.school_id) ? user.school_id : ''));
         return json({ status: 'success', valid: true, expiresAt: user.expires_at, user: {
           id: user.user_id, email: user.email, fullName: user.full_name, role: user.role, accessScope: user.access_scope,
           schoolId: user.school_id || '', activeSchoolId, allowedSchoolIds, employeeId: user.employee_id || '', studentId: user.student_id || ''
