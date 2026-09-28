@@ -518,8 +518,26 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
                         )}
                       </td>
                       <td className="p-3">
-                        {linkedDist ? (
-                          readOnly ? (
+                        {linkedDists.length > 0 ? (
+                          linkedDists.length > 1 ? (
+                            <div className="space-y-1">
+                              {linkedDists.map(dist => (
+                                <div key={dist.id} className="flex items-center gap-1">
+                                  <span className="text-[10px] font-bold text-slate-500">{dist.dayOfWeek} ح{dist.periodNumber}</span>
+                                  {readOnly ? (
+                                    <span className="text-[10px] font-bold rounded border px-1.5 py-0.5">{dist.status === 'Delivered' ? 'تم التدريس' : dist.status === 'Deferred' ? 'مؤجل' : 'مجدول'}</span>
+                                  ) : (
+                                    <select value={dist.status} onChange={e => handleUpdateStatus(dist.id, e.target.value as CurriculumDistributionStatus)} className="text-[10px] font-bold rounded border px-1 py-0.5">
+                                      <option value="Planned">مجدول</option>
+                                      <option value="Delivered">تم التدريس</option>
+                                      <option value="Deferred">مؤجل</option>
+                                      <option value="Cancelled">ملغي</option>
+                                    </select>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          ) : readOnly ? (
                             <span className={`inline-flex text-xs font-bold rounded-lg border px-2 py-1 ${
                               linkedDist.status === 'Delivered'
                                 ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
