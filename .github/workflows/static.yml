@@ -50,6 +50,17 @@ jobs:
         with:
           path: ./dist
 
+  deploy-vercel:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Vercel Production deployment
+        env:
+          VERCEL_DEPLOY_HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK }}
+        run: |
+          test -n "$VERCEL_DEPLOY_HOOK" || { echo "VERCEL_DEPLOY_HOOK secret is missing"; exit 1; }
+          curl --fail-with-body --retry 3 --retry-all-errors --silent --show-error -X POST "$VERCEL_DEPLOY_HOOK"
+
   deploy:
     needs: build
     runs-on: ubuntu-latest
