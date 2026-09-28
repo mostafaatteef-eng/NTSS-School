@@ -243,18 +243,16 @@ export class CurriculumPlanService {
       };
     }
 
-    // Manual re-linking replaces prior active links. Auto-linking can deliberately
-    // keep multiple active slots when estimatedPeriods requires more than one period.
+    // Safe re-link: create the replacement first. Only after the server accepts it
+    // do we cancel the old link(s). If cancellation fails, cancel the new link as
+    // compensation so a failed re-link never leaves two active assignments.
+    let linksToReplace: CurriculumLessonDistribution[] = [];
     if (params.replaceDistributionId) {
       const previous = previousItemLinks.find(d => d.id === params.replaceDistributionId);
       if (!previous) return { success: false, message: 'رابط الحصة المطلوب تعديله غير موجود أو لم يعد نشطًا.' };
-      const cancelResult = await storageService.saveCurriculumDistributionAuthoritative({ ...previous, status: 'Cancelled' }, params.user);
-      if (!cancelResult.success) return { success: false, message: cancelResult.message };
+      linksToReplace = [previous];
     } else if (params.replaceExisting !== false) {
-      for (const previous of previousItemLinks) {
-        const cancelResult = await storageService.saveCurriculumDistributionAuthoritative({ ...previous, status: 'Cancelled' }, params.user);
-        if (!cancelResult.success) return { success: false, message: cancelResult.message };
-      }
+      linksToReplace = previousItemLinks;
     }
 
     const res = await storageService.saveCurriculumDistributionAuthoritative(
@@ -277,6 +275,15 @@ export class CurriculumPlanService {
       },
       params.user
     );
+    if (!res.success || !res.data) return { success: false, message: res.message };
+
+    for (const previous of linksToReplace) {
+      const cancelResult = await storageService.saveCurriculumDistributionAuthoritative({ ...previous, status: 'Cancelled' }, params.user);
+      if (!cancelResult.success) {
+        await storageService.saveCurriculumDistributionAuthoritative({ ...res.data, status: 'Cancelled' }, params.user);
+        return { success: false, message: `تعذر إكمال إعادة الربط بأمان: ${cancelResult.message}` };
+      }
+    }
 
     return {
       success: res.success,
