@@ -16,23 +16,24 @@ const dummyPasswordSalt = 'ntss-login-timing-equalizer';
 const consumeDummyPasswordHash = (password: string) => legacyPasswordHash(password, dummyPasswordSalt, 10000);
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_MAX_ATTEMPTS = 10;
-const loginAttempts = new Map<string, { count: number; resetAt: number }>();
 const loginKey = (request: Request, identifier: string) => {
   const forwarded = String(request.headers.get('x-forwarded-for') || '').split(',')[0].trim();
   return tokenHash(`${forwarded || 'unknown'}|${identifier.toLowerCase()}`);
 };
-const consumeLoginAttempt = (key: string) => {
-  const now = Date.now();
-  const current = loginAttempts.get(key);
-  if (!current || current.resetAt <= now) {
-    loginAttempts.set(key, { count: 1, resetAt: now + LOGIN_WINDOW_MS });
-    return { allowed: true, retryAfter: 0 };
-  }
-  if (current.count >= LOGIN_MAX_ATTEMPTS) return { allowed: false, retryAfter: Math.max(1, Math.ceil((current.resetAt - now) / 1000)) };
-  current.count += 1;
-  return { allowed: true, retryAfter: 0 };
+const consumeLoginAttempt = async (key: string) => {
+  const windowSeconds=Math.floor(LOGIN_WINDOW_MS/1000);
+  const q=await pool.query(`INSERT INTO login_rate_limits(key_hash,attempts,window_started_at,updated_at)
+    VALUES($1,1,now(),now())
+    ON CONFLICT(key_hash) DO UPDATE SET
+      attempts=CASE WHEN login_rate_limits.window_started_at <= now()-($2::int * interval '1 second') THEN 1 ELSE login_rate_limits.attempts+1 END,
+      window_started_at=CASE WHEN login_rate_limits.window_started_at <= now()-($2::int * interval '1 second') THEN now() ELSE login_rate_limits.window_started_at END,
+      updated_at=now()
+    RETURNING attempts,window_started_at`,[key,windowSeconds]);
+  const row=q.rows[0];
+  const retryAfter=Math.max(1,windowSeconds-Math.floor((Date.now()-new Date(row.window_started_at).getTime())/1000));
+  return {allowed:Number(row.attempts)<=LOGIN_MAX_ATTEMPTS,retryAfter:Number(row.attempts)>LOGIN_MAX_ATTEMPTS?retryAfter:0};
 };
-const clearLoginAttempts = (key: string) => loginAttempts.delete(key);
+const clearLoginAttempts = async (key: string) => { await pool.query('DELETE FROM login_rate_limits WHERE key_hash=$1',[key]); };
 
 const legacyPasswordHash = (password: string, salt: string, iterations: number) => {
   let digest = crypto.createHmac('sha256', salt).update(password + salt).digest();
@@ -116,7 +117,7 @@ export default {
         const password = String(body.password || '');
         if (!studentCode || !password) return json({ status: 'error', code: 'INVALID_CREDENTIALS' }, 401, corsOrigin);
         const studentLoginKey = loginKey(request, studentCode);
-        const studentRate = consumeLoginAttempt(studentLoginKey);
+        const studentRate = await consumeLoginAttempt(studentLoginKey);
         if (!studentRate.allowed) return json({ status:'error', code:'RATE_LIMITED', retryAfter:studentRate.retryAfter },429,corsOrigin);
         const result = await pool.query(
           `SELECT u.id,u.full_name,u.role,u.access_scope,u.school_id,u.student_id,u.password_hash,u.password_salt,u.password_iterations,u.is_active,u.status,s.student_code
@@ -145,7 +146,7 @@ export default {
           pool.query('INSERT INTO sessions(id,user_id,token_hash,active_school_id,expires_at) VALUES($1,$2,$3,$4,$5)', [sessionId,user.id,tokenHash(token),user.school_id,expiresAt]),
           pool.query('UPDATE users SET last_login_at=now(), updated_at=now() WHERE id=$1', [user.id])
         ]);
-        clearLoginAttempts(studentLoginKey);
+        await clearLoginAttempts(studentLoginKey);
         console.log(JSON.stringify({ marker: 'NTSS_STUDENT_LOGIN_SUCCESS', requestId, userId:user.id, totalMs:Math.round(performance.now()-startedAt) }));
         return json({ status:'success', sessionToken:token, expiresAt:expiresAt.toISOString(), user:{
           id:user.id, fullName:user.full_name, role:'Student', accessScope:'SELF', schoolId:user.school_id,
@@ -161,7 +162,7 @@ export default {
         const password = String(body.password || '');
         if (!email || !password) return json({ status: 'error', code: 'INVALID_CREDENTIALS' }, 401, corsOrigin);
         const staffLoginKey = loginKey(request, email);
-        const staffRate = consumeLoginAttempt(staffLoginKey);
+        const staffRate = await consumeLoginAttempt(staffLoginKey);
         if (!staffRate.allowed) return json({ status:'error', code:'RATE_LIMITED', retryAfter:staffRate.retryAfter },429,corsOrigin);
         const dbStartedAt = performance.now();
         const query = await pool.query(
@@ -197,7 +198,7 @@ export default {
         ]);
         const sessionMs = Math.round(performance.now() - sessionStartedAt);
         const totalMs = Math.round(performance.now() - loginStartedAt);
-        clearLoginAttempts(staffLoginKey);
+        await clearLoginAttempts(staffLoginKey);
         console.log(JSON.stringify({ marker: 'NTSS_LOGIN_SUCCESS', requestId, userId: user.id, dbMs, authMs, sessionMs, totalMs }));
         return json({ status: 'success', sessionToken: token, expiresAt: expiresAt.toISOString(), user: {
           id: user.id, email: user.email, fullName: user.full_name, role: user.role, accessScope: user.access_scope,
