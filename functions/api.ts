@@ -777,7 +777,7 @@ export default {
         const canWrite=new Set(['SystemAdmin','Admin','SchoolAdmin','SchoolDirector','QualityOfficer','Supervisor']);
         const canApprove=new Set(['SystemAdmin','Admin','SchoolAdmin','SchoolDirector']);
         if(!canRead.has(String(user.role||''))) return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);
-        const allowedTypes=new Set(['TEACHER_VISIT','DAILY_REPORT','COMPREHENSIVE_EVALUATION','CORRECTIVE_ACTION']);
+        const allowedTypes=new Set(['TEACHER_VISIT','DAILY_REPORT','COMPREHENSIVE_EVALUATION','CORRECTIVE_ACTION','QUALITY_STANDARD']);
         const recordType=String(data.recordType||body.recordType||'').toUpperCase();
         if(action==='list'){
           const params:any[]=[schoolId]; let sql='SELECT * FROM quality_records WHERE school_id=$1';
@@ -787,7 +787,9 @@ export default {
           return json({status:'success',data:q.rows.map((r:any)=>({...r.payload,id:r.id,schoolId:r.school_id,recordType:r.record_type,status:r.status,createdAt:r.created_at,updatedAt:r.updated_at,approvedAt:r.approved_at}))},200,corsOrigin);
         }
         if(!canWrite.has(String(user.role||''))) return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);
-        const id=String(data.id||'').trim()||('QLT-'+crypto.randomBytes(8).toString('hex').toUpperCase());
+        const suppliedId=String(data.id||'').trim();
+        if((action==='delete'||action==='approve')&&!suppliedId)return json({status:'error',code:'INVALID_ID'},400,corsOrigin);
+        const id=suppliedId||('QLT-'+crypto.randomBytes(8).toString('hex').toUpperCase());
         if(action==='delete'){
           const existing=await pool.query('SELECT status FROM quality_records WHERE school_id=$1 AND id=$2',[schoolId,id]);
           if(!existing.rowCount)return json({status:'error',code:'NOT_FOUND'},404,corsOrigin);
