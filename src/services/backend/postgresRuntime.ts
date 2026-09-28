@@ -34,7 +34,8 @@ export async function postgresApiRequest<T>(
     const body = await response.json().catch(() => ({}));
     return { ok: response.ok, status: response.status, body };
   } catch (error) {
-    const code = error instanceof DOMException && error.name === 'AbortError' ? 'POSTGRES_API_TIMEOUT' : 'POSTGRES_API_UNREACHABLE';
+    const isAbort = typeof DOMException !== 'undefined' && error instanceof DOMException && error.name === 'AbortError';
+    const code = isAbort ? 'POSTGRES_API_TIMEOUT' : 'POSTGRES_API_UNREACHABLE';
     return { ok: false, status: 0, body: { status: 'error', code } };
   }
 }
