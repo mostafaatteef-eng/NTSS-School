@@ -101,7 +101,7 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
 
     const initScores: Record<string, { score: number; notes: string }> = {};
     visitStandards.forEach((s) => {
-      initScores[s.id] = { score: s.evaluationScale || 4, notes: '' };
+      initScores[s.id] = { score: 0, notes: '' };
     });
     setScores(initScores);
     setIsModalOpen(true);
