@@ -64,10 +64,17 @@ async function canAccessSchool(user: any, schoolId: string) {
 
 const ntssHandler = {
   async fetch(request: Request) {
-    const origin = String(request.headers.get('origin') || '');
-    const corsOrigin = isAllowedOrigin(origin) ? origin.replace(/\/$/, '') : '*';
-    if (request.method === 'OPTIONS') return new Response(null, { status: corsOrigin ? 204 : 403, headers: {
-      'access-control-allow-origin': corsOrigin, 'access-control-allow-headers': 'content-type, authorization', 'access-control-allow-methods': 'GET,POST,OPTIONS'
+    const origin = String(request.headers.get('origin') || '').trim();
+    const hasOrigin = Boolean(origin);
+    const originAllowed = !hasOrigin || isAllowedOrigin(origin);
+    const corsOrigin = hasOrigin && originAllowed ? origin.replace(/\/$/, '') : '';
+    if (hasOrigin && !originAllowed) {
+      if (request.method === 'OPTIONS') return new Response(null, { status: 403, headers: { vary: 'Origin' } });
+      return json({ status: 'error', code: 'ORIGIN_NOT_ALLOWED' }, 403, '');
+    }
+    if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: {
+      ...(corsOrigin ? { 'access-control-allow-origin': corsOrigin } : {}),
+      'access-control-allow-headers': 'content-type, authorization', 'access-control-allow-methods': 'GET,POST,OPTIONS', vary: 'Origin'
     }});
 
     console.log(JSON.stringify({ marker: 'NTSS_REQ', method: request.method, origin, corsOrigin, url: request.url }));
