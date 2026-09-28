@@ -25,17 +25,19 @@ DO $ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='employee_at
 
 CREATE TABLE IF NOT EXISTS leaves (
   id text PRIMARY KEY, school_id text NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
-  employee_id text REFERENCES employees(id) ON DELETE SET NULL, start_date date, end_date date,
+  employee_id text, start_date date, end_date date,
   status text, payload jsonb NOT NULL DEFAULT '{}'::jsonb, created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS leaves_school_dates_idx ON leaves(school_id,start_date,end_date);
+DO $ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='leaves_employee_school_fkey') THEN ALTER TABLE leaves ADD CONSTRAINT leaves_employee_school_fkey FOREIGN KEY (school_id,employee_id) REFERENCES employees(school_id,id) ON DELETE SET NULL; END IF; END $;
 
 CREATE TABLE IF NOT EXISTS permissions (
   id text PRIMARY KEY, school_id text NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
-  employee_id text REFERENCES employees(id) ON DELETE SET NULL, permission_date date,
+  employee_id text, permission_date date,
   status text, payload jsonb NOT NULL DEFAULT '{}'::jsonb, created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS permissions_school_date_idx ON permissions(school_id,permission_date);
+DO $ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='permissions_employee_school_fkey') THEN ALTER TABLE permissions ADD CONSTRAINT permissions_employee_school_fkey FOREIGN KEY (school_id,employee_id) REFERENCES employees(school_id,id) ON DELETE SET NULL; END IF; END $;
 
 CREATE TABLE IF NOT EXISTS schedule (
   id text PRIMARY KEY, school_id text NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
