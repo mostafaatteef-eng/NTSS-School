@@ -386,7 +386,7 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
             </div>
             {!readOnly && (
               <div className="flex flex-wrap gap-2">
-                {Array.from(new Set(selectedPlan.items.map(i => Number(i.week)))).sort((a, b) => a - b).map(week => (
+                {Array.from<number>(new Set<number>(selectedPlan.items.map(i => Number(i.week)))).sort((a: number, b: number) => a - b).map((week: number) => (
                   <button
                     key={week}
                     type="button"
