@@ -94,6 +94,7 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
     if (authorized.length > 0 && !selectedPlanId) {
       setSelectedPlanId(authorized[0].id);
     }
+    await storageService.getCurriculumDistributionsAuthoritative(currentUser);
     const dists = storageService.getCurriculumDistributions(currentUser?.schoolId);
     setDistributions(dists);
   };
@@ -270,7 +271,7 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
     }
   };
 
-  const handleUpdateStatus = (
+  const handleUpdateStatus = async (
     distributionId: string,
     newStatus: CurriculumDistributionStatus
   ) => {
@@ -278,7 +279,7 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
     const dist = distributions.find(d => d.id === distributionId);
     if (!dist) return;
 
-    const result = storageService.saveCurriculumDistribution(
+    const result = await storageService.saveCurriculumDistributionAuthoritative(
       {
         ...dist,
         status: newStatus,
