@@ -649,8 +649,9 @@ class StorageService {
     if (user.status === 'Inactive' || user.status === 'Suspended') return false;
     if (user.isActive === false) return false;
 
-    // Must possess a valid authoritative sessionToken
-    if (!this.isValidSessionToken(user.sessionToken)) {
+    // PostgreSQL browser sessions are authenticated by a Secure HttpOnly cookie.
+    // Bearer tokens remain required only for the legacy backend compatibility path.
+    if (!isPostgresBackendEnabled() && !this.isValidSessionToken(user.sessionToken)) {
       return false;
     }
 
@@ -668,8 +669,8 @@ class StorageService {
   /**
    * Retrieves the current user from storage cache.
    * STRICT SECURITY POLICY:
-   * If a user record is found in local storage WITHOUT a valid sessionToken,
-   * it is strictly considered unauthenticated, purged, and returns null.
+   * PostgreSQL user metadata may be restored without a bearer token because
+   * the authoritative credential is the Secure HttpOnly session cookie.
    * sessionStorage is NEVER used as a fallback credential.
    */
   public getCurrentUser(): User | null {
