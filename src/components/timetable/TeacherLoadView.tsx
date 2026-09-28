@@ -187,19 +187,19 @@ export const TeacherLoadView: React.FC = () => {
           </button>
           <button
             onClick={() => setFilterStatus('AVAILABLE')}
-            className={`px-3 py-1.5 rounded-lg ${filterStatus === 'AVAILABLE' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-600'}`}
+            className={`px-3 py-1.5 rounded-lg ${filterStatus === 'AVAILABLE' ? 'bg-white text-emerald-700 ' : 'text-slate-600'}`}
           >
             متاح
           </button>
           <button
             onClick={() => setFilterStatus('FULL')}
-            className={`px-3 py-1.5 rounded-lg ${filterStatus === 'FULL' ? 'bg-white text-amber-700 shadow-sm' : 'text-slate-600'}`}
+            className={`px-3 py-1.5 rounded-lg ${filterStatus === 'FULL' ? 'bg-white text-amber-700 ' : 'text-slate-600'}`}
           >
             قارب الحد
           </button>
           <button
             onClick={() => setFilterStatus('OVERLOAD')}
-            className={`px-3 py-1.5 rounded-lg ${filterStatus === 'OVERLOAD' ? 'bg-white text-rose-700 shadow-sm' : 'text-slate-600'}`}
+            className={`px-3 py-1.5 rounded-lg ${filterStatus === 'OVERLOAD' ? 'bg-white text-rose-700 ' : 'text-slate-600'}`}
           >
             نصاب زائد
           </button>
@@ -228,7 +228,7 @@ export const TeacherLoadView: React.FC = () => {
             <tbody className="divide-y divide-slate-100 text-slate-800">
               {filteredList.map(t => (
                 <tr key={t.teacherId} className="hover:bg-slate-50 transition">
-                  <td className="p-3 font-mono font-bold text-indigo-700">{t.teacherCode || '—'}</td>
+                  <td className="p-3 font-mono font-bold text-teal-800">{t.teacherCode || '—'}</td>
                   <td className="p-3 font-bold text-slate-900">{t.teacherName}</td>
                   <td className="p-3 text-center font-semibold text-slate-600">{t.assignedLoad}</td>
                   <td className="p-3 text-center font-bold text-slate-800">{t.scheduledBasePeriods}</td>
@@ -276,7 +276,7 @@ export const TeacherLoadView: React.FC = () => {
                   <td className="p-3 text-center">
                     <button
                       onClick={() => openAssignmentsModal(t)}
-                      className="px-2.5 py-1 text-[11px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition"
+                      className="px-2.5 py-1 text-[11px] font-bold text-teal-800 bg-teal-50 hover:bg-teal-100 rounded-lg transition"
                     >
                       إدارة الإسناد
                     </button>
@@ -295,7 +295,7 @@ export const TeacherLoadView: React.FC = () => {
             <div className="flex items-center justify-between border-b pb-3">
               <div>
                 <h3 className="font-bold text-base text-slate-800 flex items-center gap-2">
-                  <Layers className="w-5 h-5 text-indigo-600" />
+                  <Layers className="w-5 h-5 text-[#008e8b]" />
                   إسناد المواد والفصول: {selectedTeacherForAssignments.teacherName}
                 </h3>
                 <span className="text-xs text-slate-500 font-mono">
@@ -384,7 +384,7 @@ export const TeacherLoadView: React.FC = () => {
                         <td className="p-2.5 text-slate-600">
                           {a.gradeName} - فصل {a.classroomName}
                         </td>
-                        <td className="p-2.5 text-center font-bold text-indigo-600">{a.weeklyPeriods} حصة</td>
+                        <td className="p-2.5 text-center font-bold text-[#008e8b]">{a.weeklyPeriods} حصة</td>
                         <td className="p-2.5 text-center">
                           <button
                             onClick={() => handleDeleteAssignment(a.id)}
