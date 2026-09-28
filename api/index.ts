@@ -1,3 +1,4 @@
+// deployment sync marker: timetable validation rollout
 import pg from 'pg';
 import crypto from 'node:crypto';
 
