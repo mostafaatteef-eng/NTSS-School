@@ -536,7 +536,7 @@ export const TimetableImportWizardView: React.FC = () => {
     if (!entries.length) return null;
 
     return (
-      <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-sm">
+      <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden ">
         <div className="flex items-center justify-between gap-3 p-4 border-b border-slate-100 bg-slate-50/80">
           <div className="flex items-center gap-2 text-sm font-bold text-slate-800">
             {icon}
@@ -655,7 +655,7 @@ export const TimetableImportWizardView: React.FC = () => {
         icon={<span className="rounded-xl bg-teal-50 p-2 text-[#008e8b]"><FileSpreadsheet className="h-5 w-5" /></span>}
         actions={<button
           onClick={handleDownloadTemplate}
-          className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-teal-800 bg-teal-50 hover:bg-indigo-100 rounded-xl border border-teal-200 transition"
+          className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-teal-800 bg-teal-50 hover:bg-teal-100 rounded-xl border border-teal-200 transition"
         >
           <Download className="w-4 h-4" /> تحميل نموذج Excel
         </button>}
@@ -702,7 +702,7 @@ export const TimetableImportWizardView: React.FC = () => {
         <div className="bg-teal-50/70 border border-teal-200 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3 text-xs">
           <div className="flex items-center gap-2">
             <span className="font-bold text-teal-950">الصيغة المكتشفة:</span>
-            <span className="font-mono px-2 py-0.5 rounded bg-indigo-200/60 font-black text-teal-900">
+            <span className="font-mono px-2 py-0.5 rounded bg-teal-200/60 font-black text-teal-900">
               {fileFormat}
             </span>
             {detectedMeta.classesCount && (
@@ -773,7 +773,7 @@ export const TimetableImportWizardView: React.FC = () => {
                 <button
                   type="button"
                   onClick={reapplyAutomaticMappings}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-teal-300 bg-white px-3 py-2 text-xs font-bold text-teal-800 shadow-sm"
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-teal-300 bg-white px-3 py-2 text-xs font-bold text-teal-800 "
                 >
                   <WandSparkles className="w-4 h-4" /> مطابقة تلقائية آمنة
                 </button>
@@ -805,7 +805,7 @@ export const TimetableImportWizardView: React.FC = () => {
                 ['day', 'الأيام'],
               ] as Array<[MappingBucket, string]>
             ).map(([bucket, label]) => (
-              <div key={bucket} className="rounded-xl border border-slate-200 bg-white p-3 text-center shadow-sm">
+              <div key={bucket} className="rounded-xl border border-slate-200 bg-white p-3 text-center ">
                 <div
                   className={`text-xl font-black ${
                     progress[bucket].resolved === progress[bucket].total
@@ -842,7 +842,7 @@ export const TimetableImportWizardView: React.FC = () => {
               type="button"
               disabled={hasBlockingMappings || isLoading}
               onClick={applyMappingsAndValidate}
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 px-5 py-2.5 text-sm font-bold text-white shadow-sm transition"
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#008e8b] hover:bg-teal-700 disabled:bg-slate-300 px-5 py-2.5 text-sm font-bold text-white  transition"
             >
               <CheckCircle2 className="w-4 h-4" /> فحص التعارضات والأنصبة والاعتماد
             </button>
@@ -881,27 +881,27 @@ export const TimetableImportWizardView: React.FC = () => {
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
-            <div className="bg-white p-4 rounded-xl border border-slate-200 text-center shadow-sm">
+            <div className="bg-white p-4 rounded-xl border border-slate-200 text-center ">
               <div className="text-2xl font-black">{summary.totalRows}</div>
               <div className="text-xs text-slate-500">إجمالي الحصص</div>
             </div>
-            <div className="bg-white p-4 rounded-xl border border-slate-200 text-center shadow-sm">
+            <div className="bg-white p-4 rounded-xl border border-slate-200 text-center ">
               <div className="text-2xl font-black text-emerald-600">{summary.validRowsCount}</div>
               <div className="text-xs text-slate-500">صالحة للاستيراد</div>
             </div>
-            <div className="bg-white p-4 rounded-xl border border-slate-200 text-center shadow-sm">
+            <div className="bg-white p-4 rounded-xl border border-slate-200 text-center ">
               <div className="text-2xl font-black text-rose-600">{summary.invalidRowsCount}</div>
               <div className="text-xs text-slate-500">أخطاء مانعة</div>
             </div>
-            <div className="bg-white p-4 rounded-xl border border-slate-200 text-center shadow-sm">
+            <div className="bg-white p-4 rounded-xl border border-slate-200 text-center ">
               <div className="text-2xl font-black text-amber-600">{summary.unknownTeacherCodes.length}</div>
               <div className="text-xs text-slate-500">معلم غير معتمد</div>
             </div>
-            <div className="bg-white p-4 rounded-xl border border-slate-200 text-center shadow-sm">
+            <div className="bg-white p-4 rounded-xl border border-slate-200 text-center ">
               <div className="text-2xl font-black text-[#008e8b]">{summary.conflictsFound}</div>
               <div className="text-xs text-slate-500">تعارضات مجدولة</div>
             </div>
-            <div className="bg-white p-4 rounded-xl border border-slate-200 text-center shadow-sm">
+            <div className="bg-white p-4 rounded-xl border border-slate-200 text-center ">
               <div className="text-2xl font-black text-purple-600">{summary.loadWarningsFound}</div>
               <div className="text-xs text-slate-500">تنبيهات نصاب (30+)</div>
             </div>
@@ -932,7 +932,7 @@ export const TimetableImportWizardView: React.FC = () => {
           )}
 
           {/* Table Preview */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="bg-white rounded-2xl border border-slate-200  overflow-hidden">
             <div className="p-4 border-b border-slate-200 flex flex-col xl:flex-row xl:items-center justify-between gap-3">
               <h3 className="font-bold text-sm text-slate-800 flex items-center gap-2">
                 <Layers className="w-4 h-4 text-[#008e8b]" /> معاينة الحصص وحالة التدقيق
@@ -949,7 +949,7 @@ export const TimetableImportWizardView: React.FC = () => {
                 <button
                   disabled={summary.validRowsCount === 0 || isLoading}
                   onClick={handleCommit}
-                  className="px-5 py-2 text-sm font-bold bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white rounded-xl flex items-center gap-2 shadow-sm transition"
+                  className="px-5 py-2 text-sm font-bold bg-[#008e8b] hover:bg-teal-700 disabled:bg-slate-300 text-white rounded-xl flex items-center gap-2  transition"
                 >
                   <CheckCircle2 className="w-4 h-4" /> اعتماد واستيراد ({summary.validRowsCount}) حصة صالحة
                 </button>
