@@ -609,6 +609,28 @@ export default {
           if(ids.length){const iq=await pool.query('SELECT * FROM curriculum_plan_items WHERE plan_id=ANY($1::text[]) ORDER BY week,sort_order,id',[ids]);items=iq.rows;}
           return json({status:'success',data:ps.rows.map((p:any)=>mapPlan(p,items.filter((i:any)=>i.plan_id===p.id).map((i:any)=>({id:i.id,week:i.week,unit:i.unit,lessonTitle:i.lesson_title,objectives:i.objectives||'',resources:i.resources||'',assessment:i.assessment||'',estimatedPeriods:i.estimated_periods,notes:i.notes||'',order:i.sort_order}))))},200,corsOrigin);
         }
+
+        if(action==='getDistributions'){
+          const q=await pool.query(isTeacher?'SELECT * FROM curriculum_distributions WHERE school_id=$1 AND teacher_id=$2 ORDER BY day_of_week,period_number,id':'SELECT * FROM curriculum_distributions WHERE school_id=$1 ORDER BY day_of_week,period_number,id',isTeacher?[schoolId,actorTeacherId]:[schoolId]);
+          return json({status:'success',data:q.rows.map((r:any)=>({id:r.id,schoolId:r.school_id,planId:r.plan_id,planItemId:r.plan_item_id,scheduleItemId:r.schedule_item_id,teacherId:r.teacher_id,teacherName:r.teacher_name,grade:r.grade,classroom:r.classroom,subject:r.subject,dayOfWeek:r.day_of_week,periodNumber:r.period_number,targetDate:r.target_date?String(r.target_date).slice(0,10):undefined,status:r.status,notes:r.notes,createdAt:r.created_at,updatedAt:r.updated_at}))},200,corsOrigin);
+        }
+        if(action==='saveDistribution'){
+          const planId=String(data.planId||''),planItemId=String(data.planItemId||''),scheduleItemId=String(data.scheduleItemId||''),teacherId=String(data.teacherId||'');
+          if(!planId||!planItemId||!teacherId)return json({status:'error',code:'INVALID_DISTRIBUTION'},400,corsOrigin);
+          if(isTeacher&&teacherId!==actorTeacherId)return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);
+          const pq=await pool.query('SELECT status FROM curriculum_plans WHERE id=$1 AND school_id=$2',[planId,schoolId]);
+          if(!pq.rowCount)return json({status:'error',code:'PLAN_NOT_FOUND'},404,corsOrigin);
+          if(pq.rows[0].status!=='Approved')return json({status:'error',code:'PLAN_NOT_APPROVED'},409,corsOrigin);
+          const iq=await pool.query('SELECT 1 FROM curriculum_plan_items WHERE id=$1 AND plan_id=$2',[planItemId,planId]);if(!iq.rowCount)return json({status:'error',code:'PLAN_ITEM_NOT_FOUND'},404,corsOrigin);
+          if(scheduleItemId){const sq=await pool.query('SELECT teacher_id,grade,classroom,weekday,period_no,payload FROM schedule WHERE id=$1 AND school_id=$2',[scheduleItemId,schoolId]);if(!sq.rowCount)return json({status:'error',code:'SCHEDULE_NOT_FOUND'},404,corsOrigin);const s=sq.rows[0];if(isTeacher&&s.teacher_id!==actorTeacherId)return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);data.grade=s.grade;data.classroom=s.classroom;data.dayOfWeek=s.weekday;data.periodNumber=s.period_no;data.subject=(s.payload||{}).subject||data.subject;}
+          const id=String(data.id||('DIST-'+crypto.randomBytes(8).toString('hex').toUpperCase()));
+          const q=await pool.query(`INSERT INTO curriculum_distributions(id,school_id,plan_id,plan_item_id,schedule_item_id,teacher_id,teacher_name,grade,classroom,subject,day_of_week,period_number,target_date,status,notes)
+            VALUES($1,$2,$3,$4,NULLIF($5,''),$6,$7,$8,$9,$10,$11,$12,NULLIF($13,'')::date,$14,$15)
+            ON CONFLICT(id) DO UPDATE SET schedule_item_id=EXCLUDED.schedule_item_id,status=EXCLUDED.status,target_date=EXCLUDED.target_date,notes=EXCLUDED.notes,updated_at=now()
+            WHERE curriculum_distributions.school_id=EXCLUDED.school_id AND curriculum_distributions.teacher_id=EXCLUDED.teacher_id RETURNING *`,
+            [id,schoolId,planId,planItemId,scheduleItemId,teacherId,String(data.teacherName||''),String(data.grade||''),String(data.classroom||''),String(data.subject||''),String(data.dayOfWeek||''),Number(data.periodNumber||0),String(data.targetDate||''),String(data.status||'Planned'),String(data.notes||'')]);
+          if(!q.rowCount)return json({status:'error',code:'WRITE_REJECTED'},409,corsOrigin);return json({status:'success',data:{id:q.rows[0].id}},200,corsOrigin);
+        }
         if(action==='savePlan'){
           const status=String(data.status||'Draft'); if(isTeacher&&!['Draft','Submitted'].includes(status))return json({status:'error',code:'FORBIDDEN_STATUS'},403,corsOrigin);
           const id=String(data.id||('PLAN-'+crypto.randomBytes(8).toString('hex').toUpperCase()));
