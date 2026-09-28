@@ -2523,6 +2523,7 @@ export interface CurriculumLessonDistribution {
   subject: string;
   dayOfWeek: string;
   periodNumber: number;
+  week?: number; // Curriculum week from the approved master plan
   targetDate?: string; // YYYY-MM-DD
   status: CurriculumDistributionStatus;
   notes?: string;
