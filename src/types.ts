@@ -1040,6 +1040,7 @@ export type ScheduleItemStatus = 'Draft' | 'UnderReview' | 'Approved' | 'Publish
 
 export interface ScheduleItem {
   id: string;
+  schoolId?: string;
   academicYear?: string;
   academicYearId?: string;
   term?: string; // الترم الأول / الترم الثاني
