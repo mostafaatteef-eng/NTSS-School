@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS leaves (
   status text, payload jsonb NOT NULL DEFAULT '{}'::jsonb, created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS leaves_school_dates_idx ON leaves(school_id,start_date,end_date);
-DO $ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='leaves_employee_school_fkey') THEN ALTER TABLE leaves ADD CONSTRAINT leaves_employee_school_fkey FOREIGN KEY (school_id,employee_id) REFERENCES employees(school_id,id) ON DELETE SET NULL; END IF; END $;
+DO $ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='leaves_employee_school_fkey') THEN ALTER TABLE leaves ADD CONSTRAINT leaves_employee_school_fkey FOREIGN KEY (school_id,employee_id) REFERENCES employees(school_id,id) ON DELETE NO ACTION; END IF; END $;
 
 CREATE TABLE IF NOT EXISTS permissions (
   id text PRIMARY KEY, school_id text NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS permissions (
   status text, payload jsonb NOT NULL DEFAULT '{}'::jsonb, created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS permissions_school_date_idx ON permissions(school_id,permission_date);
-DO $ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='permissions_employee_school_fkey') THEN ALTER TABLE permissions ADD CONSTRAINT permissions_employee_school_fkey FOREIGN KEY (school_id,employee_id) REFERENCES employees(school_id,id) ON DELETE SET NULL; END IF; END $;
+DO $ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='permissions_employee_school_fkey') THEN ALTER TABLE permissions ADD CONSTRAINT permissions_employee_school_fkey FOREIGN KEY (school_id,employee_id) REFERENCES employees(school_id,id) ON DELETE NO ACTION; END IF; END $;
 
 CREATE TABLE IF NOT EXISTS schedule (
   id text PRIMARY KEY, school_id text NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
@@ -56,6 +56,7 @@ CREATE TABLE IF NOT EXISTS curriculum_plans (
   term text NOT NULL,
   grade text NOT NULL,
   grade_id text,
+  classroom text NOT NULL,
   subject text NOT NULL,
   subject_id text,
   version integer NOT NULL DEFAULT 1,
@@ -66,7 +67,7 @@ CREATE TABLE IF NOT EXISTS curriculum_plans (
   updated_at timestamptz NOT NULL DEFAULT now(),
   file_meta jsonb NOT NULL DEFAULT '{}'::jsonb
 );
-CREATE INDEX IF NOT EXISTS curriculum_plans_school_lookup_idx ON curriculum_plans(school_id,academic_year,term,grade,subject,status);
+CREATE INDEX IF NOT EXISTS curriculum_plans_school_lookup_idx ON curriculum_plans(school_id,academic_year,term,grade,classroom,subject,status);
 
 CREATE TABLE IF NOT EXISTS curriculum_plan_items (
   id text PRIMARY KEY,
