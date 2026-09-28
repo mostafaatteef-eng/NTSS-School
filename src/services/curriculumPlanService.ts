@@ -246,6 +246,83 @@ export class CurriculumPlanService {
   }
 
   /**
+   * Automatically link the requested curriculum week to matching timetable slots.
+   * Existing links are preserved and only exact school/subject/grade matches are used.
+   */
+  public autoLinkPlanWeekToSchedule(params: {
+    planId: string;
+    week: number;
+    user?: User | null;
+  }): { success: boolean; linked: number; skipped: number; message: string } {
+    const plan = storageService.getCurriculumPlanById(params.planId);
+    if (!plan) return { success: false, linked: 0, skipped: 0, message: 'خطة المنهج غير موجودة' };
+    if (!Number.isInteger(params.week) || params.week <= 0) {
+      return { success: false, linked: 0, skipped: 0, message: 'رقم الأسبوع غير صالح' };
+    }
+    if (params.user?.schoolId && plan.schoolId && params.user.schoolId !== plan.schoolId) {
+      return { success: false, linked: 0, skipped: 0, message: 'لا يمكن الوصول إلى خطة تابعة لمدرسة أخرى.' };
+    }
+
+    const normalize = (value?: string) => String(value || '').trim().toLowerCase();
+    const actorTeacherId =
+      params.user?.role === 'Teacher' ? (params.user.employeeId || params.user.id) : undefined;
+    const slots = storageService.getSchedule()
+      .filter(s =>
+        s.isActive !== false &&
+        !s.isCancelled &&
+        (!plan.schoolId || !s.schoolId || s.schoolId === plan.schoolId) &&
+        normalize(s.subject) === normalize(plan.subject) &&
+        normalize(s.grade) === normalize(plan.grade) &&
+        (!actorTeacherId || s.teacherId === actorTeacherId)
+      )
+      .sort((a, b) =>
+        String(a.dayOfWeek || a.dayName || '').localeCompare(String(b.dayOfWeek || b.dayName || ''), 'ar') ||
+        Number(a.periodNumber || 0) - Number(b.periodNumber || 0)
+      );
+
+    const weekItems = plan.items
+      .filter(i => Number(i.week) === params.week)
+      .sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
+
+    if (weekItems.length === 0) {
+      return { success: false, linked: 0, skipped: 0, message: 'لا توجد موضوعات مسجلة لهذا الأسبوع في خطة المنهج.' };
+    }
+    if (slots.length === 0) {
+      return { success: false, linked: 0, skipped: 0, message: 'لا توجد حصص مطابقة للمادة والصف في الجدول الدراسي.' };
+    }
+
+    let linked = 0;
+    let skipped = 0;
+    let slotIndex = 0;
+    for (const item of weekItems) {
+      const requestedPeriods = Math.max(1, Number(item.estimatedPeriods || 1));
+      for (let n = 0; n < requestedPeriods; n++) {
+        const slot = slots[slotIndex++];
+        if (!slot) {
+          skipped += requestedPeriods - n;
+          break;
+        }
+        const result = this.linkPlanItemToSchedule({
+          planId: plan.id,
+          planItemId: item.id,
+          scheduleItemId: slot.id,
+          user: params.user,
+        });
+        if (result.success) linked++; else skipped++;
+      }
+    }
+
+    return {
+      success: linked > 0,
+      linked,
+      skipped,
+      message: skipped > 0
+        ? `تم ربط ${linked} حصة، وتعذر ربط ${skipped} حصة لعدم كفاية الحصص المطابقة في الجدول.`
+        : `تم ربط خطة الأسبوع تلقائيًا بـ ${linked} حصة في الجدول.`,
+    };
+  }
+
+  /**
    * Calculate Progress Summary
    */
   public calculateProgress(filters?: {
