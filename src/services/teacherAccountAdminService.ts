@@ -1,6 +1,7 @@
 import { Employee, PermissionKey, TeacherAccount, User } from '../types';
 import { hasPermission } from '../utils/permissions';
 import { storageService } from './storageService';
+import { isPostgresBackendEnabled, postgresApiRequest } from './backend/postgresRuntime';
 
 export interface TeacherAccountAdminResult<T = undefined> {
   success: boolean;
@@ -124,62 +125,26 @@ class TeacherAccountAdminService {
     data: Record<string, unknown> | undefined,
     user: User
   ): Promise<TeacherAccountAdminResult<any>> {
-    const url = storageService.getBackendUrl();
-    const online = typeof navigator === 'undefined' || navigator.onLine !== false;
-
-    if (!url || url.length < 15 || !online) {
-      return {
-        success: false,
-        code: 'SERVICE_UNAVAILABLE',
-        message: 'تعذر الاتصال بالخادم الرئيسي.',
-      };
-    }
-
-    try {
-      const response = await fetch(url, {
+    if (isPostgresBackendEnabled()) {
+      const schoolId = String(user.activeSchoolId || user.schoolId || '').trim();
+      const pg = await postgresApiRequest<any>('/teacher-accounts/manage', user.sessionToken || '', {
         method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({
-          action,
-          sessionToken: user.sessionToken,
-          ...(data ? { data } : {}),
-        }),
+        body: JSON.stringify({ action, schoolId, data: data || {} }),
       });
-
-      let body: any = null;
-      try {
-        body = await response.json();
-      } catch {
-        body = null;
+      const body = pg.body || {};
+      const code = body?.code || (!pg.ok ? `HTTP_${pg.status}` : undefined);
+      if (SESSION_FAILURE_CODES.has(String(code || '')) || pg.status === 401) storageService.setCurrentUser(null);
+      if (!pg.ok || body?.status === 'error') {
+        return { success:false, code:code || 'TEACHER_ACCOUNT_REQUEST_FAILED', message:body?.message || 'تعذر تنفيذ العملية المطلوبة.' };
       }
-
-      const code = body?.code || (!response.ok ? `HTTP_${response.status}` : undefined);
-
-      if (SESSION_FAILURE_CODES.has(String(code || '')) || response.status === 401) {
-        storageService.setCurrentUser(null);
-      }
-
-      if (!response.ok || body?.status === 'error') {
-        return {
-          success: false,
-          code: code || 'TEACHER_ACCOUNT_REQUEST_FAILED',
-          message: body?.message || 'تعذر تنفيذ العملية المطلوبة.',
-        };
-      }
-
-      return {
-        success: true,
-        code: body?.code,
-        message: body?.message || 'تمت العملية بنجاح.',
-        data: body,
-      };
-    } catch (error: any) {
-      return {
-        success: false,
-        code: 'NETWORK_ERROR',
-        message: error?.message || 'حدث خطأ في الاتصال بالخادم.',
-      };
+      return { success:true, code:body?.code, message:body?.message || 'تمت العملية بنجاح.', data:body };
     }
+
+    return {
+      success:false,
+      code:'CENTRAL_BACKEND_REQUIRED',
+      message:'إدارة حسابات المعلمين متاحة فقط من خلال الخادم المركزي المعتمد.',
+    };
   }
 
   private safeAccount(raw: any, effectiveSchoolId: string): TeacherAccount {
