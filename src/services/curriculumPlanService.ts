@@ -273,17 +273,28 @@ export class CurriculumPlanService {
     const normalize = (value?: string) => String(value || '').trim().toLowerCase();
     const actorTeacherId =
       params.user?.role === 'Teacher' ? (params.user.employeeId || params.user.id) : undefined;
+    const existingDistributions = storageService
+      .getCurriculumDistributions(plan.schoolId)
+      .filter(d => d.status !== 'Cancelled');
+    const occupiedScheduleIds = new Set(existingDistributions.map(d => d.scheduleItemId));
+    const schoolWeekOrder = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+    const dayRank = (value?: string) => {
+      const index = schoolWeekOrder.indexOf(String(value || '').trim());
+      return index >= 0 ? index : schoolWeekOrder.length;
+    };
+
     const slots = storageService.getSchedule()
       .filter(s =>
         s.isActive !== false &&
         !s.isCancelled &&
+        !occupiedScheduleIds.has(s.id) &&
         (!plan.schoolId || !s.schoolId || s.schoolId === plan.schoolId) &&
         normalize(s.subject) === normalize(plan.subject) &&
         normalize(s.grade) === normalize(plan.grade) &&
         (!actorTeacherId || s.teacherId === actorTeacherId)
       )
       .sort((a, b) =>
-        String(a.dayOfWeek || a.dayName || '').localeCompare(String(b.dayOfWeek || b.dayName || ''), 'ar') ||
+        dayRank(a.dayOfWeek || a.dayName) - dayRank(b.dayOfWeek || b.dayName) ||
         Number(a.periodNumber || 0) - Number(b.periodNumber || 0)
       );
 
