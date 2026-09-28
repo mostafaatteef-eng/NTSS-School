@@ -647,7 +647,7 @@ export default {
           if(existing.rowCount){
             const e=existing.rows[0];
             if(e.school_id!==schoolId||(isTeacher&&(e.uploaded_by!==actorTeacherId||e.status==='Approved')))return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);
-            if(isTeacher&&e.status==='Submitted'&&status!=='Submitted')return json({status:'error',code:'PLAN_UNDER_REVIEW',message:'الخطة مرسلة للمراجعة ولا يمكن تعديل حالتها حتى تعتمدها الإدارة أو ترفضها.'},409,corsOrigin);
+            if(isTeacher&&e.status==='Submitted')return json({status:'error',code:'PLAN_UNDER_REVIEW',message:'الخطة مرسلة للمراجعة ولا يمكن تعديل محتواها أو حالتها حتى تعتمدها الإدارة أو ترفضها.'},409,corsOrigin);
             if(isAdmin&&status==='Submitted'&&!['Draft','Rejected'].includes(String(e.status)))return json({status:'error',code:'INVALID_PLAN_TRANSITION'},409,corsOrigin);
             if(isAdmin&&['Approved','Rejected'].includes(status)&&e.status!=='Submitted')return json({status:'error',code:'INVALID_PLAN_TRANSITION',message:'يجب إرسال الخطة للمراجعة قبل اعتمادها أو رفضها.'},409,corsOrigin);
           } else if(['Approved','Rejected'].includes(status)) {
