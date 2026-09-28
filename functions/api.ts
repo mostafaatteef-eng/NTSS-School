@@ -75,6 +75,43 @@ export default {
         return json({ status: 'success', serviceAvailable: true, backend: 'neon-function', version: '1.0.1' }, 200, corsOrigin);
       }
 
+      if (request.method === 'POST' && path === '/student/login') {
+        const startedAt = performance.now();
+        const requestId = crypto.randomUUID();
+        const body: any = await request.json();
+        const studentCode = String(body.studentCode || '').trim();
+        const password = String(body.password || '');
+        if (!studentCode || !password) return json({ status: 'error', code: 'INVALID_CREDENTIALS' }, 401, corsOrigin);
+        const result = await pool.query(
+          `SELECT u.id,u.full_name,u.role,u.access_scope,u.school_id,u.student_id,u.password_hash,u.password_salt,u.password_iterations,u.is_active,u.status,s.student_code
+           FROM users u JOIN students s ON s.school_id=u.school_id AND s.id=u.student_id
+           WHERE u.role='Student' AND u.access_scope='SELF' AND s.student_code=$1
+           LIMIT 2`,
+          [studentCode]
+        );
+        if (result.rowCount !== 1) {
+          console.log(JSON.stringify({ marker: 'NTSS_STUDENT_LOGIN_DENIED', requestId, reason: 'identifier', totalMs: Math.round(performance.now()-startedAt) }));
+          return json({ status: 'error', code: 'INVALID_CREDENTIALS' }, 401, corsOrigin);
+        }
+        const user = result.rows[0];
+        if (!user.is_active || user.status !== 'Active') return json({ status: 'error', code: 'INVALID_CREDENTIALS' }, 401, corsOrigin);
+        const computed = Buffer.from(legacyPasswordHash(password, String(user.password_salt || ''), Number(user.password_iterations || 10000)));
+        const expected = Buffer.from(String(user.password_hash || ''));
+        if (computed.length !== expected.length || !crypto.timingSafeEqual(computed, expected)) {
+          console.log(JSON.stringify({ marker: 'NTSS_STUDENT_LOGIN_DENIED', requestId, reason: 'password', totalMs: Math.round(performance.now()-startedAt) }));
+          return json({ status: 'error', code: 'INVALID_CREDENTIALS' }, 401, corsOrigin);
+        }
+        const token = crypto.randomBytes(32).toString('base64url');
+        const sessionId = crypto.randomUUID();
+        const expiresAt = new Date(Date.now() + 86400000);
+        await pool.query('INSERT INTO sessions(id,user_id,token_hash,active_school_id,expires_at) VALUES($1,$2,$3,$4,$5)', [sessionId,user.id,tokenHash(token),user.school_id,expiresAt]);
+        console.log(JSON.stringify({ marker: 'NTSS_STUDENT_LOGIN_SUCCESS', requestId, userId:user.id, totalMs:Math.round(performance.now()-startedAt) }));
+        return json({ status:'success', sessionToken:token, expiresAt:expiresAt.toISOString(), user:{
+          id:user.id, fullName:user.full_name, role:'Student', accessScope:'SELF', schoolId:user.school_id,
+          activeSchoolId:user.school_id, allowedSchoolIds:[user.school_id], studentId:user.student_id, studentCode:user.student_code
+        }},200,corsOrigin);
+      }
+
       if (request.method === 'POST' && path === '/login') {
         const loginStartedAt = performance.now();
         const requestId = crypto.randomUUID();
