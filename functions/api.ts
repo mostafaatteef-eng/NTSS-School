@@ -76,29 +76,44 @@ export default {
       }
 
       if (request.method === 'POST' && path === '/login') {
-        console.log(JSON.stringify({ marker: 'NTSS_LOGIN_BEGIN', origin, corsOrigin }));
+        const loginStartedAt = performance.now();
+        const requestId = crypto.randomUUID();
         const body: any = await request.json();
         const email = String(body.email || '').trim().toLowerCase();
         const password = String(body.password || '');
-        const query = await pool.query('SELECT * FROM users WHERE lower(email)=lower($1) LIMIT 1', [email]);
+        const dbStartedAt = performance.now();
+        const query = await pool.query(
+          `SELECT id,email,full_name,role,access_scope,school_id,employee_id,password_hash,password_salt,password_iterations,is_active,status
+           FROM users WHERE lower(email)=$1 LIMIT 1`,
+          [email]
+        );
+        const dbMs = Math.round(performance.now() - dbStartedAt);
         const user = query.rows[0];
-        console.log(JSON.stringify({ marker: 'NTSS_LOGIN_USER_LOOKUP', found: !!user }));
-        if (!user || !user.is_active || user.status !== 'Active') return json({ status: 'error', code: 'INVALID_CREDENTIALS' }, 401, corsOrigin);
-
-        let digest = crypto.createHmac('sha256', String(user.password_salt || '')).update(password + String(user.password_salt || '')).digest();
-        for (let i = 1; i < Math.max(1, Number(user.password_iterations || 10000)); i++) {
-          digest = crypto.createHmac('sha256', String(user.password_salt || '')).update(digest.toString('hex')).digest();
+        if (!user || !user.is_active || user.status !== 'Active') {
+          console.log(JSON.stringify({ marker: 'NTSS_LOGIN_DENIED', requestId, reason: 'user', dbMs, totalMs: Math.round(performance.now() - loginStartedAt) }));
+          return json({ status: 'error', code: 'INVALID_CREDENTIALS' }, 401, corsOrigin);
         }
-        const computed = Buffer.from(digest.toString('hex'));
+
+        const authStartedAt = performance.now();
+        const computed = Buffer.from(legacyPasswordHash(password, String(user.password_salt || ''), Number(user.password_iterations || 10000)));
         const expected = Buffer.from(String(user.password_hash || ''));
-        if (computed.length !== expected.length || !crypto.timingSafeEqual(computed, expected)) return json({ status: 'error', code: 'INVALID_CREDENTIALS' }, 401, corsOrigin);
+        const authMs = Math.round(performance.now() - authStartedAt);
+        if (computed.length !== expected.length || !crypto.timingSafeEqual(computed, expected)) {
+          console.log(JSON.stringify({ marker: 'NTSS_LOGIN_DENIED', requestId, reason: 'password', dbMs, authMs, totalMs: Math.round(performance.now() - loginStartedAt) }));
+          return json({ status: 'error', code: 'INVALID_CREDENTIALS' }, 401, corsOrigin);
+        }
 
         const token = crypto.randomBytes(32).toString('base64url');
         const sessionId = crypto.randomUUID();
         const expiresAt = new Date(Date.now() + 86400000);
-        await pool.query('INSERT INTO sessions(id,user_id,token_hash,active_school_id,expires_at) VALUES($1,$2,$3,$4,$5)', [sessionId, user.id, tokenHash(token), user.school_id || null, expiresAt]);
-        const access = await pool.query('SELECT school_id FROM user_school_access WHERE user_id=$1', [user.id]);
-        console.log(JSON.stringify({ marker: 'NTSS_LOGIN_SUCCESS', userId: user.id, corsOrigin }));
+        const sessionStartedAt = performance.now();
+        const [, access] = await Promise.all([
+          pool.query('INSERT INTO sessions(id,user_id,token_hash,active_school_id,expires_at) VALUES($1,$2,$3,$4,$5)', [sessionId, user.id, tokenHash(token), user.school_id || null, expiresAt]),
+          pool.query('SELECT school_id FROM user_school_access WHERE user_id=$1', [user.id]),
+        ]);
+        const sessionMs = Math.round(performance.now() - sessionStartedAt);
+        const totalMs = Math.round(performance.now() - loginStartedAt);
+        console.log(JSON.stringify({ marker: 'NTSS_LOGIN_SUCCESS', requestId, userId: user.id, dbMs, authMs, sessionMs, totalMs }));
         return json({ status: 'success', sessionToken: token, expiresAt: expiresAt.toISOString(), user: {
           id: user.id, email: user.email, fullName: user.full_name, role: user.role, accessScope: user.access_scope,
           schoolId: user.school_id || '', activeSchoolId: user.school_id || '', allowedSchoolIds: access.rows.map((x: any) => x.school_id), employeeId: user.employee_id || ''
