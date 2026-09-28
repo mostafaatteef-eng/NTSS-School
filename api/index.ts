@@ -645,7 +645,15 @@ const ntssHandler = {
           const status=String(data.status||'Draft'); if(isTeacher&&!['Draft','Submitted'].includes(status))return json({status:'error',code:'FORBIDDEN_STATUS'},403,corsOrigin);
           const id=String(data.id||('PLAN-'+crypto.randomBytes(8).toString('hex').toUpperCase()));
           const existing=await pool.query('SELECT * FROM curriculum_plans WHERE id=$1',[id]);
-          if(existing.rowCount){const e=existing.rows[0];if(e.school_id!==schoolId||(isTeacher&&(e.uploaded_by!==actorTeacherId||e.status==='Approved')))return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);}
+          if(existing.rowCount){
+            const e=existing.rows[0];
+            if(e.school_id!==schoolId||(isTeacher&&(e.uploaded_by!==actorTeacherId||e.status==='Approved')))return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);
+            if(isTeacher&&e.status==='Submitted'&&status!=='Submitted')return json({status:'error',code:'PLAN_UNDER_REVIEW',message:'الخطة مرسلة للمراجعة ولا يمكن تعديل حالتها حتى تعتمدها الإدارة أو ترفضها.'},409,corsOrigin);
+            if(isAdmin&&status==='Submitted'&&!['Draft','Rejected'].includes(String(e.status)))return json({status:'error',code:'INVALID_PLAN_TRANSITION'},409,corsOrigin);
+            if(isAdmin&&['Approved','Rejected'].includes(status)&&e.status!=='Submitted')return json({status:'error',code:'INVALID_PLAN_TRANSITION',message:'يجب إرسال الخطة للمراجعة قبل اعتمادها أو رفضها.'},409,corsOrigin);
+          } else if(['Approved','Rejected'].includes(status)) {
+            return json({status:'error',code:'INVALID_PLAN_TRANSITION',message:'لا يمكن إنشاء خطة جديدة بحالة اعتماد أو رفض.'},409,corsOrigin);
+          }
           const client=await pool.connect();try{await client.query('BEGIN');
             const q=await client.query(`INSERT INTO curriculum_plans(id,school_id,academic_year,term,grade,grade_id,subject,subject_id,version,status,uploaded_by,uploaded_by_name,file_meta)
               VALUES($1,$2,$3,$4,$5,NULLIF($6,''),$7,NULLIF($8,''),1,$9,$10,$11,$12::jsonb)
