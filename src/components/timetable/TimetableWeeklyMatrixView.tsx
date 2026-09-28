@@ -318,7 +318,7 @@ export const TimetableWeeklyMatrixView: React.FC<TimetableWeeklyMatrixViewProps>
             <select
               value={curriculumWeek}
               onChange={e => setCurriculumWeek(Math.max(1, Number(e.target.value) || 1))}
-              className="bg-white border border-slate-300 rounded-lg px-2 py-1 font-bold text-indigo-700"
+              className="bg-white border border-slate-300 rounded-lg px-2 py-1 font-bold text-teal-800"
               aria-label="أسبوع المنهج"
             >
               {Array.from({ length: Math.max(1, ...curriculumPlans.flatMap(p => p.items.map(i => Number(i.week) || 1))) }, (_, index) => index + 1).map(week => (
@@ -492,7 +492,7 @@ export const TimetableWeeklyMatrixView: React.FC<TimetableWeeklyMatrixViewProps>
                             className={`p-2.5 rounded-xl border text-right text-xs transition relative ${
                               item.isLocked
                                 ? 'bg-amber-50/70 border-amber-300'
-                                : 'bg-indigo-50/60 border-indigo-200 hover:border-indigo-400'
+                                : 'bg-teal-50/60 border-teal-200 hover:border-teal-400'
                             }`}
                           >
                             <div className="font-bold text-slate-800 line-clamp-1 mb-1">{item.subject}</div>
@@ -519,7 +519,7 @@ export const TimetableWeeklyMatrixView: React.FC<TimetableWeeklyMatrixViewProps>
                                 <Users className="w-3 h-3 text-slate-400" />
                                 <span className="truncate">{item.teacherName}</span>
                                 {item.teacherCode && (
-                                  <span className="bg-indigo-100 text-indigo-700 px-1 py-0.5 rounded text-[10px] font-mono">
+                                  <span className="bg-indigo-100 text-teal-800 px-1 py-0.5 rounded text-[10px] font-mono">
                                     {item.teacherCode}
                                   </span>
                                 )}
@@ -559,7 +559,7 @@ export const TimetableWeeklyMatrixView: React.FC<TimetableWeeklyMatrixViewProps>
                                 <button
                                   onClick={() => handleOpenEdit(item)}
                                   title="تعديل الحصة"
-                                  className="text-slate-500 hover:text-indigo-600 p-0.5"
+                                  className="text-slate-500 hover:text-[#008e8b] p-0.5"
                                 >
                                   <Edit2 className="w-3.5 h-3.5" />
                                 </button>
@@ -577,7 +577,7 @@ export const TimetableWeeklyMatrixView: React.FC<TimetableWeeklyMatrixViewProps>
                           isAdmin && (
                             <button
                               onClick={() => handleOpenAdd(day, period)}
-                              className="w-full h-full min-h-[70px] border-2 border-dashed border-slate-200 hover:border-indigo-400 rounded-xl flex flex-col items-center justify-center text-slate-400 hover:text-indigo-600 transition group/btn"
+                              className="w-full h-full min-h-[70px] border-2 border-dashed border-slate-200 hover:border-teal-400 rounded-xl flex flex-col items-center justify-center text-slate-400 hover:text-[#008e8b] transition group/btn"
                             >
                               <Plus className="w-4 h-4 group-hover/btn:scale-110 transition" />
                               <span className="text-[10px] mt-0.5">إضافة</span>
@@ -600,7 +600,7 @@ export const TimetableWeeklyMatrixView: React.FC<TimetableWeeklyMatrixViewProps>
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-100 space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b pb-3">
               <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
-                <Calendar className="w-5 h-5 text-indigo-600" />
+                <Calendar className="w-5 h-5 text-[#008e8b]" />
                 {editingItem.id ? 'تعديل حصة دراسية' : 'إضافة حصة دراسية جديدة'}
               </h3>
               <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600 text-lg">
@@ -748,7 +748,7 @@ export const TimetableWeeklyMatrixView: React.FC<TimetableWeeklyMatrixViewProps>
                   id="lockCheckbox"
                   checked={Boolean(editingItem.isLocked)}
                   onChange={e => setEditingItem({ ...editingItem, isLocked: e.target.checked })}
-                  className="rounded text-indigo-600 focus:ring-[#008e8b]/30 h-4 w-4"
+                  className="rounded text-[#008e8b] focus:ring-[#008e8b]/30 h-4 w-4"
                 />
                 <label htmlFor="lockCheckbox" className="text-xs font-medium text-slate-700">
                   قفل الحصة لمنع التعديل التلقائي أو استبدالها أثناء إعادة التوزيع
@@ -767,7 +767,7 @@ export const TimetableWeeklyMatrixView: React.FC<TimetableWeeklyMatrixViewProps>
               <button
                 disabled={isSaving}
                 onClick={handleValidateAndSave}
-                className="px-5 py-2 text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-sm disabled:opacity-50"
+                className="px-5 py-2 text-sm font-semibold bg-[#008e8b] hover:bg-teal-700 text-white rounded-lg disabled:opacity-50"
               >
                 {isSaving ? 'جاري الحفظ...' : 'حفظ الحصة'}
               </button>
