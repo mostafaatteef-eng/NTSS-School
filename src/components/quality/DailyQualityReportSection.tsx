@@ -99,7 +99,7 @@ export const DailyQualityReportSection: React.FC<Props> = ({
     setDailyScores((prev) => ({
       ...prev,
       [standardId]: {
-        ...(prev[standardId] || { score: 4 }),
+        ...(prev[standardId] || { score: 0 }),
         notes,
       },
     }));
