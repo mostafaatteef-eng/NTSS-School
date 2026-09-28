@@ -2465,7 +2465,7 @@ export interface SaveDailyStaffAttendanceBatchRequest {
 // CURRICULUM PLANS & DISTRIBUTION TYPES (PHASE 4)
 // ============================================================================
 
-export type CurriculumPlanStatus = 'Draft' | 'Approved' | 'Archived';
+export type CurriculumPlanStatus = 'Draft' | 'Submitted' | 'Approved' | 'Rejected' | 'Archived';
 export type CurriculumDistributionStatus = 'Planned' | 'Delivered' | 'Deferred' | 'Cancelled';
 
 export interface CurriculumPlanItem {
