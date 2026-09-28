@@ -47,7 +47,7 @@ class TeacherAccountAdminService {
   ): { user?: User; effectiveSchoolId?: string; error?: TeacherAccountAdminResult } {
     const user = this.caller(caller);
 
-    if (!user?.sessionToken) {
+    if (!user) {
       return {
         error: {
           success: false,
