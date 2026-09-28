@@ -81,19 +81,21 @@ export const QualityModule: React.FC<QualityModuleProps> = ({ currentUser }) => 
 
   // Load all Quality module data for current school
   const loadData = async () => {
-    const stds = storageService.getQualityStandards(schoolId);
+    let stds = storageService.getQualityStandards(schoolId);
     let daily = storageService.getDailyQualityReports(schoolId);
     let visits = storageService.getTeacherVisitReports(schoolId);
     let evals = storageService.getComprehensiveEvaluations(schoolId);
     let acts = storageService.getCorrectiveActions(schoolId);
     try {
-      const [serverDaily,serverVisits,serverEvals,serverActs]=await Promise.all([
+      await storageService.migrateLocalQualityToBackend(schoolId);
+      const [serverStds,serverDaily,serverVisits,serverEvals,serverActs]=await Promise.all([
+        storageService.getAuthoritativeQualityRecords('QUALITY_STANDARD',schoolId),
         storageService.getAuthoritativeQualityRecords('DAILY_REPORT',schoolId),
         storageService.getAuthoritativeQualityRecords('TEACHER_VISIT',schoolId),
         storageService.getAuthoritativeQualityRecords('COMPREHENSIVE_EVALUATION',schoolId),
         storageService.getAuthoritativeQualityRecords('CORRECTIVE_ACTION',schoolId),
       ]);
-      daily=serverDaily as DailyQualityReport[]; visits=serverVisits as TeacherVisitReport[];
+      stds=serverStds as QualityStandard[]; daily=serverDaily as DailyQualityReport[]; visits=serverVisits as TeacherVisitReport[];
       evals=serverEvals as ComprehensiveEvaluation[]; acts=serverActs as CorrectiveAction[];
     } catch (error) {
       console.error('Authoritative quality load failed',error);
