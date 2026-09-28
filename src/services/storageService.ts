@@ -120,6 +120,7 @@ import {
 } from '../utils/cryptoUtils';
 import { buildUnifiedAttendanceRecord, calculateAttendanceMetrics } from '../utils/attendanceUtils';
 import { computeAttendanceDayReview, calculateStudentLateMinutes } from '../utils/attendanceEngine';
+import { hasPermission } from '../utils/permissions';
 import { SyncQueueService } from './syncQueueService';
 import { NotificationService } from './notificationService';
 import { CANONICAL_BACKEND_SOURCE, CANONICAL_BACKEND_VERSION } from './googleSheetsAppScript';
@@ -8053,6 +8054,13 @@ class StorageService {
   ): { success: boolean; data?: TeacherVisitReport; message: string } {
     const caller = user || this.getCurrentUser();
     const activeSchoolId = (caller?.schoolId || this.getActiveSchoolId()).trim();
+    if (!caller || !this.isAuthenticated(caller) || !activeSchoolId) {
+      return { success: false, message: 'يجب تسجيل الدخول وتحديد المدرسة قبل حفظ تقرير الزيارة.' };
+    }
+    const canCreateVisit = hasPermission(caller, 'quality.create') || hasPermission(caller, 'quality.evaluate');
+    if (!canCreateVisit) {
+      return { success: false, message: 'ليس لديك صلاحية إنشاء أو تقييم زيارات المعلمين.' };
+    }
 
     if (!report.teacherId || !report.classroom || !report.subject) {
       return { success: false, message: 'يرجى تحديد المعلم والفصل والمادة لتقرير الزيارة.' };
@@ -8119,6 +8127,17 @@ class StorageService {
 
     const idx = all.findIndex(r => r.id === record.id);
     if (idx >= 0) {
+      const existing = all[idx];
+      if ((existing.schoolId || '').trim() !== activeSchoolId) {
+        return { success: false, message: 'لا يمكن تعديل تقرير تابع لمدرسة أخرى.' };
+      }
+      const existingStatus = String(existing.status || '').toUpperCase();
+      if (existingStatus === 'APPROVED') {
+        return { success: false, message: 'التقرير المعتمد مقفل ولا يمكن تعديله.' };
+      }
+      if (existingStatus === 'SUBMITTED') {
+        return { success: false, message: 'التقرير المرسل للاعتماد مقفل حتى تتم مراجعته.' };
+      }
       all[idx] = record;
     } else {
       all.unshift(record);
@@ -8142,6 +8161,14 @@ class StorageService {
   public deleteTeacherVisitReport(id: string, user?: User | null): { success: boolean; message?: string } {
     const caller = user || this.getCurrentUser();
     const activeSchoolId = (caller?.schoolId || this.getActiveSchoolId()).trim();
+    if (!caller || !this.isAuthenticated(caller) || !hasPermission(caller, 'quality.create')) {
+      return { success: false, message: 'ليس لديك صلاحية حذف تقارير الزيارة.' };
+    }
+    const existing = this.getTeacherVisitReports(activeSchoolId).find(r => r.id === id);
+    if (!existing) return { success: false, message: 'التقرير غير موجود' };
+    if (String(existing.status || '').toUpperCase() !== 'DRAFT') {
+      return { success: false, message: 'يمكن حذف مسودات تقارير الزيارة فقط.' };
+    }
     const raw = localStorage.getItem(STORAGE_KEYS.TEACHER_VISIT_REPORTS);
     let all: TeacherVisitReport[] = [];
     try { all = raw ? JSON.parse(raw) : []; } catch { all = []; }
@@ -8461,11 +8488,17 @@ class StorageService {
   public approveTeacherVisitReport(id: string, user?: User | null): { success: boolean; message: string } {
     const caller = user || this.getCurrentUser();
     const activeSchoolId = (caller?.schoolId || this.getActiveSchoolId()).trim();
+    if (!caller || !this.isAuthenticated(caller) || !hasPermission(caller, 'quality.approve')) {
+      return { success: false, message: 'ليس لديك صلاحية اعتماد تقارير زيارات المعلمين.' };
+    }
     const raw = localStorage.getItem(STORAGE_KEYS.TEACHER_VISIT_REPORTS);
     let all: TeacherVisitReport[] = [];
     try { all = raw ? JSON.parse(raw) : []; } catch { all = []; }
     const item = all.find((r) => r.id === id && (r.schoolId || '').trim() === activeSchoolId);
     if (!item) return { success: false, message: 'التقرير غير موجود' };
+    if (String(item.status || '').toUpperCase() !== 'SUBMITTED') {
+      return { success: false, message: 'لا يمكن اعتماد التقرير إلا بعد إرساله للمراجعة.' };
+    }
     item.status = 'APPROVED';
     item.approvedBy = caller?.fullName || caller?.name || 'مدير المدرسة';
     item.approvedAt = getCairoNowISO();
