@@ -149,3 +149,13 @@ CREATE TABLE IF NOT EXISTS quality_records (
   approved_at timestamptz
 );
 CREATE INDEX IF NOT EXISTS quality_records_school_type_idx ON quality_records(school_id,record_type,updated_at DESC);
+
+-- Distributed login throttling for serverless runtimes.
+CREATE TABLE IF NOT EXISTS login_rate_limits (
+  key_hash text PRIMARY KEY,
+  attempts integer NOT NULL DEFAULT 0,
+  window_started_at timestamptz NOT NULL DEFAULT now(),
+  blocked_until timestamptz,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS login_rate_limits_updated_idx ON login_rate_limits(updated_at);
