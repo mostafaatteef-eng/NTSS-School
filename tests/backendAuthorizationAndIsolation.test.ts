@@ -854,5 +854,23 @@ describe('RBAC Phase 2: Backend Authorization Engine & Multi-School Isolation', 
       expect(res.success).toBe(false);
       expect(res.code).toBe('CROSS_SCHOOL_ACCESS_DENIED');
     });
+
+    it('21. SchoolAdmin user-management permissions stay school-scoped and cannot manage roles globally', () => {
+      expect(authorize(schoolAdminBadr, 'users.view', { schoolId: 'SCH-BADR' }).allowed).toBe(true);
+      expect(authorize(schoolAdminBadr, 'users.manage', { schoolId: 'SCH-BADR' }).allowed).toBe(true);
+      expect(authorize(schoolAdminBadr, 'users.view', { schoolId: 'SCH-ALNOOR' }).allowed).toBe(false);
+      expect(authorize(schoolAdminBadr, 'schools.manage', { schoolId: 'SCH-BADR' }).allowed).toBe(false);
+    });
+
+    it('22. Legacy Admin user-management permissions cannot escape its bound school', () => {
+      const legacyAdminBadr: ServerSession = {
+        ...schoolAdminBadr,
+        role: 'Admin',
+        accessScope: 'SCHOOL',
+        allowedSchoolIds: ['SCH-BADR'],
+      };
+      expect(authorize(legacyAdminBadr, 'users.view', { schoolId: 'SCH-BADR' }).allowed).toBe(true);
+      expect(authorize(legacyAdminBadr, 'users.manage', { schoolId: 'SCH-ALNOOR' }).allowed).toBe(false);
+    });
   });
 });
