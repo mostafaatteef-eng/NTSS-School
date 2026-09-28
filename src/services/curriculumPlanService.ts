@@ -176,6 +176,10 @@ export class CurriculumPlanService {
     const plan = storageService.getCurriculumPlanById(params.planId);
     if (!plan) return { success: false, message: 'خطة المنهج غير موجودة' };
 
+    if (plan.status !== 'Approved') {
+      return { success: false, message: 'لا يمكن ربط الحصص إلا بخطة منهج معتمدة.' };
+    }
+
     const planItem = plan.items.find(i => i.id === params.planItemId);
     if (!planItem) return { success: false, message: 'عنصر الخطة غير موجود' };
 
@@ -256,6 +260,9 @@ export class CurriculumPlanService {
   }): { success: boolean; linked: number; skipped: number; message: string } {
     const plan = storageService.getCurriculumPlanById(params.planId);
     if (!plan) return { success: false, linked: 0, skipped: 0, message: 'خطة المنهج غير موجودة' };
+    if (plan.status !== 'Approved') {
+      return { success: false, linked: 0, skipped: 0, message: 'يجب اعتماد خطة المنهج قبل الربط التلقائي بالجدول.' };
+    }
     if (!Number.isInteger(params.week) || params.week <= 0) {
       return { success: false, linked: 0, skipped: 0, message: 'رقم الأسبوع غير صالح' };
     }
