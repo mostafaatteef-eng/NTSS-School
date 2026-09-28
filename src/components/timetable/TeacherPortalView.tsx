@@ -412,7 +412,7 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ onBackToLo
               minLength={8}
               value={newTeacherPassword}
               onChange={e => setNewTeacherPassword(e.target.value)}
-              className="w-full rounded-xl border border-slate-200 px-3 py-2.5 outline-none focus:border-indigo-500"
+              className="w-full rounded-xl border border-slate-200 px-3 py-2.5 outline-none focus:border-[#008e8b]"
             />
           </div>
           <div>
@@ -424,7 +424,7 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ onBackToLo
               minLength={8}
               value={confirmTeacherPassword}
               onChange={e => setConfirmTeacherPassword(e.target.value)}
-              className="w-full rounded-xl border border-slate-200 px-3 py-2.5 outline-none focus:border-indigo-500"
+              className="w-full rounded-xl border border-slate-200 px-3 py-2.5 outline-none focus:border-[#008e8b]"
             />
           </div>
           <button
@@ -451,7 +451,7 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ onBackToLo
     return (
       <div className="max-w-md mx-auto my-12 bg-white rounded-3xl p-8 border border-slate-200 shadow-xl space-y-6" dir="rtl">
         <div className="text-center space-y-2">
-          <div className="w-14 h-14 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center mx-auto shadow-sm">
+          <div className="w-14 h-14 bg-teal-50 text-[#008e8b] rounded-2xl flex items-center justify-center mx-auto shadow-sm">
             <GraduationCap className="w-8 h-8" />
           </div>
           <h2 className="text-xl font-bold text-slate-800">بوابة المعلم — الدخول الآمن</h2>
@@ -479,7 +479,7 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ onBackToLo
               placeholder="أدخل اسم المستخدم (مثال: ahmed.hassan)"
               value={username}
               onChange={e => setUsername(e.target.value)}
-              className="w-full border border-slate-300 rounded-xl p-2.5 text-xs font-mono focus:ring-2 focus:ring-indigo-500"
+              className="w-full border border-slate-300 rounded-xl p-2.5 text-xs font-mono focus:ring-2 focus:ring-[#008e8b]/30"
             />
           </div>
 
@@ -494,14 +494,14 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ onBackToLo
               placeholder="أدخل كلمة المرور"
               value={password}
               onChange={e => setPassword(e.target.value)}
-              className="w-full border border-slate-300 rounded-xl p-2.5 text-xs font-mono focus:ring-2 focus:ring-indigo-500"
+              className="w-full border border-slate-300 rounded-xl p-2.5 text-xs font-mono focus:ring-2 focus:ring-[#008e8b]/30"
             />
           </div>
 
           <button
             type="submit"
             disabled={isSubmitting}
-            className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-md transition cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
+            className="w-full py-3 bg-[#008e8b] hover:bg-teal-700 text-white font-bold rounded-xl shadow-md transition cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
           >
             {isSubmitting ? (
               <span>جاري التحقق من الحساب...</span>
@@ -550,18 +550,9 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ onBackToLo
   return (
     <div className="space-y-6" dir="rtl">
       {/* Teacher Portal Independent Header & Security Guard Banner */}
-      <div className="bg-indigo-900 text-white p-3.5 rounded-2xl flex flex-wrap items-center justify-between gap-3 shadow-sm">
-        <div className="flex items-center gap-2 text-xs">
-          <Shield className="w-4 h-4 text-emerald-400" />
-          <span className="font-bold">بوابة المعلم المستقلة</span>
-          <span className="text-indigo-200">|</span>
-          <span className="text-indigo-200 text-[11px]">
-            جلسة مؤمنة بتوكن معتمد: <span className="font-mono text-emerald-300">{sessionToken ? `${sessionToken.substring(0, 16)}...` : 'نشطة'}</span>
-          </span>
-        </div>
-        <div className="text-[11px] text-indigo-300">
-          حساب المعلم معزول تماماً عن نظام ERP الإداري
-        </div>
+      <div className="rounded-2xl border border-teal-200 bg-teal-50 p-3.5 text-xs text-teal-900 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2"><Shield className="h-4 w-4 text-[#008e8b]" /><span className="font-bold">بوابة المعلم المستقلة</span><span className="text-teal-700">جلسة آمنة ونشطة</span></div>
+        <div className="text-[11px] text-teal-700">حساب المعلم معزول عن صلاحيات النظام الإداري</div>
       </div>
 
       {portalNotice && (
@@ -581,7 +572,7 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ onBackToLo
             <div className="flex items-center gap-2">
               <h2 className="text-lg font-bold text-slate-900">{activeTeacher.name}</h2>
               {activeTeacher.teacherCode && (
-                <span className="font-mono text-xs font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100">
+                <span className="font-mono text-xs font-bold text-teal-800 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100">
                   كود المعلم: {activeTeacher.teacherCode}
                 </span>
               )}
@@ -624,7 +615,7 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ onBackToLo
         <button
           onClick={() => setPortalTab('today')}
           className={`px-4 py-2 rounded-xl transition ${
-            portalTab === 'today' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600'
+            portalTab === 'today' ? 'bg-white text-teal-800 shadow-sm' : 'text-slate-600'
           }`}
         >
           حصص اليوم ({todayLessons.length})
@@ -632,7 +623,7 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ onBackToLo
         <button
           onClick={() => setPortalTab('weekly')}
           className={`px-4 py-2 rounded-xl transition ${
-            portalTab === 'weekly' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600'
+            portalTab === 'weekly' ? 'bg-white text-teal-800 shadow-sm' : 'text-slate-600'
           }`}
         >
           جدولي الأسبوعي
@@ -640,7 +631,7 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ onBackToLo
         <button
           onClick={() => setPortalTab('curriculum')}
           className={`px-4 py-2 rounded-xl transition ${
-            portalTab === 'curriculum' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600'
+            portalTab === 'curriculum' ? 'bg-white text-teal-800 shadow-sm' : 'text-slate-600'
           }`}
         >
           خطة المنهج وتوزيع الحصص
@@ -648,7 +639,7 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ onBackToLo
         <button
           onClick={() => setPortalTab('homework')}
           className={`px-4 py-2 rounded-xl transition ${
-            portalTab === 'homework' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600'
+            portalTab === 'homework' ? 'bg-white text-teal-800 shadow-sm' : 'text-slate-600'
           }`}
         >
           الواجبات المنزلية ({homeworkList.length})
@@ -656,7 +647,7 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ onBackToLo
         <button
           onClick={() => setPortalTab('resources')}
           className={`px-4 py-2 rounded-xl transition ${
-            portalTab === 'resources' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600'
+            portalTab === 'resources' ? 'bg-white text-teal-800 shadow-sm' : 'text-slate-600'
           }`}
         >
           تحضير الدرس والمصادر ({resources.length})
@@ -664,7 +655,7 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ onBackToLo
         <button
           onClick={() => setPortalTab('exams')}
           className={`px-4 py-2 rounded-xl transition ${
-            portalTab === 'exams' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600'
+            portalTab === 'exams' ? 'bg-white text-teal-800 shadow-sm' : 'text-slate-600'
           }`}
         >
           جدول الامتحانات المنشور ({exams.length})
@@ -672,7 +663,7 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ onBackToLo
         <button
           onClick={() => setPortalTab('requests')}
           className={`px-4 py-2 rounded-xl transition ${
-            portalTab === 'requests' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600'
+            portalTab === 'requests' ? 'bg-white text-teal-800 shadow-sm' : 'text-slate-600'
           }`}
         >
           إجازاتي وأذوناتي
@@ -684,7 +675,7 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ onBackToLo
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="font-bold text-sm text-slate-800 flex items-center gap-2">
-              <Clock className="w-4 h-4 text-indigo-600" />
+              <Clock className="w-4 h-4 text-[#008e8b]" />
               حصص اليوم ({todayName})
             </h3>
             <span className="text-xs text-slate-500 font-mono">
@@ -701,7 +692,7 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ onBackToLo
               {todayLessons.map(lesson => (
                 <div key={lesson.id} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
                   <div className="flex items-center justify-between">
-                    <span className="font-bold text-xs text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-lg">
+                    <span className="font-bold text-xs text-teal-800 bg-indigo-50 px-2.5 py-1 rounded-lg">
                       الحصة {lesson.periodNumber}
                     </span>
                     <span className="text-[11px] font-mono text-slate-500">
@@ -787,12 +778,12 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ onBackToLo
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="font-bold text-sm text-slate-800 flex items-center gap-2">
-              <FileText className="w-4 h-4 text-indigo-600" />
+              <FileText className="w-4 h-4 text-[#008e8b]" />
               الواجبات المنزلية والمهام المكلف بها الطلاب
             </h3>
             <button
               onClick={() => { setHomeworkSaveError(''); setIsHwModalOpen(true); }}
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5"
+              className="px-4 py-2 bg-[#008e8b] hover:bg-teal-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5"
             >
               <Plus className="w-4 h-4" />
               إضافة واجب جديد
@@ -803,7 +794,7 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ onBackToLo
             {homeworkList.map(hw => (
               <div key={hw.id} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded">
+                  <span className="text-[10px] font-bold text-teal-800 bg-indigo-50 px-2 py-0.5 rounded">
                     فصل {hw.classroom}
                   </span>
                   <span className="text-[11px] font-mono text-slate-400">تسليم: {hw.dueDate}</span>
@@ -823,7 +814,7 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ onBackToLo
           <div className="flex items-center justify-between">
             <div>
               <h3 className="font-bold text-sm text-slate-800 flex items-center gap-2">
-                <Link className="w-4 h-4 text-indigo-600" />
+                <Link className="w-4 h-4 text-[#008e8b]" />
                 روابط تحضير الدرس ومصادر الطلاب
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
@@ -832,7 +823,7 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ onBackToLo
             </div>
             <button
               onClick={() => { setResourceSaveError(''); setIsResModalOpen(true); }}
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5"
+              className="px-4 py-2 bg-[#008e8b] hover:bg-teal-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5"
             >
               <Plus className="w-4 h-4" />
               إضافة مصادر درس جديد
@@ -854,7 +845,7 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ onBackToLo
                       href={res.preparationUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex items-center gap-1.5 text-indigo-600 hover:underline"
+                      className="flex items-center gap-1.5 text-[#008e8b] hover:underline"
                     >
                       <ExternalLink className="w-3.5 h-3.5" />
                       رابط التحضير الخاص بالمعلم
@@ -1010,7 +1001,7 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ onBackToLo
               <button
                 onClick={() => void handleSaveHomework()}
                 disabled={contentSaving !== null}
-                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50"
+                className="px-5 py-2 bg-[#008e8b] hover:bg-teal-700 text-white rounded-lg text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {contentSaving === 'homework' ? 'جارٍ الحفظ...' : 'حفظ كمسودة'}
               </button>
@@ -1125,7 +1116,7 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ onBackToLo
               <button
                 onClick={() => void handleSaveResource()}
                 disabled={contentSaving !== null}
-                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50"
+                className="px-5 py-2 bg-[#008e8b] hover:bg-teal-700 text-white rounded-lg text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {contentSaving === 'resource' ? 'جارٍ الحفظ...' : 'حفظ كمسودة'}
               </button>
