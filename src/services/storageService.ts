@@ -7495,6 +7495,12 @@ class StorageService {
         message: 'المعلم يمكنه حفظ الخطة كمسودة أو إرسالها للمراجعة فقط.',
       };
     }
+    if (!plan.id && (requestedStatus === 'Approved' || requestedStatus === 'Rejected')) {
+      return {
+        success: false,
+        message: 'لا يمكن إنشاء خطة جديدة بحالة اعتماد أو رفض؛ يجب حفظها وإرسالها للمراجعة أولاً.',
+      };
+    }
 
     const rawPlans = localStorage.getItem(STORAGE_KEYS.CURRICULUM_PLANS);
     let plans: CurriculumMasterPlan[] = [];
