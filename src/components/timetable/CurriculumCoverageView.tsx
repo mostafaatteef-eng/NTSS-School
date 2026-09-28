@@ -109,7 +109,7 @@ export const CurriculumCoverageView: React.FC = () => {
                   className={`text-[10px] px-1.5 py-0.5 rounded-full ${
                     isComplete
                       ? isSelected
-                        ? 'bg-indigo-500 text-white'
+                        ? 'bg-[#008e8b] text-white'
                         : 'bg-emerald-100 text-emerald-800'
                       : isSelected
                       ? 'bg-rose-500 text-white'
@@ -135,10 +135,10 @@ export const CurriculumCoverageView: React.FC = () => {
           </div>
 
           {/* Breakdown Table */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="bg-white rounded-2xl border border-slate-200  overflow-hidden">
             <div className="p-4 border-b border-slate-200 flex items-center justify-between">
               <h3 className="font-bold text-sm text-slate-800 flex items-center gap-2">
-                <Layers className="w-4 h-4 text-indigo-600" />
+                <Layers className="w-4 h-4 text-[#008e8b]" />
                 التوزيع التفصيلي لمواد فصل ({activeReport.classroomName}) مقارنة بالخطة الرسمية
               </h3>
             </div>
@@ -167,7 +167,7 @@ export const CurriculumCoverageView: React.FC = () => {
                       <td className="p-3 font-mono text-slate-400">{idx + 1}</td>
                       <td className="p-3 font-bold text-slate-900">{sub.subjectName}</td>
                       <td className="p-3 text-center font-bold text-slate-700">{sub.requiredPeriods} حصة</td>
-                      <td className="p-3 text-center font-bold text-indigo-700">{sub.scheduledPeriods} حصة</td>
+                      <td className="p-3 text-center font-bold text-teal-800">{sub.scheduledPeriods} حصة</td>
                       <td className="p-3 text-center">
                         <span
                           className={`font-black ${
