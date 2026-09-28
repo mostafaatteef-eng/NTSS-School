@@ -102,6 +102,7 @@ export const SCHOOL_SCOPED_TABS: readonly string[] = [
   'parent_portal',
   'parent_day_view',
   'teacher_portal',
+  'student_portal',
 ];
 
 /**
@@ -222,6 +223,8 @@ export function resolveDefaultRouteForCurrentUser(user: User | null): string {
       return 'reports';
     case 'Teacher':
       return 'teacher_portal';
+    case 'Student':
+      return 'student_portal';
     case 'Parent':
       return 'dashboard';
     default:
@@ -266,7 +269,12 @@ export function canAccessTab(user: User | null, rawTab: string): boolean {
     return tab === 'teacher_portal' || tab === 'my_requests';
   }
 
-  // 3. Parent Role Isolation
+  // 3. Student Role Isolation: portal only; backend must independently enforce SELF scope.
+  if (user.role === 'Student') {
+    return tab === 'student_portal';
+  }
+
+  // 4. Parent Role Isolation
   if (user.role === 'Parent') {
     return (
       tab === 'dashboard' ||
