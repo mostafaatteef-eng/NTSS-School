@@ -1074,7 +1074,7 @@ export default async function vercelHandler(request: any, response: any) {
   const expected = Buffer.from(hex, 'hex');
   if (!expected.length) return false;
   const computed = crypto.scryptSync(password, salt, expected.length);
-  return crypto.timingSafeEqual(computed, expected);
+  return computed.length === expected.length && crypto.timingSafeEqual(computed, expected);
 };
 const isScryptHash = (hash: string) => String(hash || '').startsWith(`${SCRYPT_PREFIX}// deployment sync marker: 2026-09-28T20:10:00.000Z
 import pg from 'pg';
@@ -1090,9 +1090,9 @@ const allowedOrigins = new Set([
   'https://www.ntss-schools.edu.eg',
 ]);
 const isAllowedOrigin = (origin: string) => allowedOrigins.has(origin.replace(/\/$/, ''));
+const tokenHash = (value: string) => crypto.createHash('sha256').update(value).digest('hex');
 );
 const consumeDummyPasswordHash = (password: string) => { crypto.scryptSync(password, 'ntss-login-timing-equalizer', SCRYPT_KEYLEN); };
-
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_MAX_ATTEMPTS = 10;
 const loginKey = (request: Request, identifier: string) => {
