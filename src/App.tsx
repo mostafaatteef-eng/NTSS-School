@@ -236,8 +236,8 @@ export default function App() {
 
   const handleLoginSuccess = (user: User) => {
     if (!user || typeof user !== 'object') return;
-    if (!user.sessionToken || !storageService.isAuthenticated(user)) {
-      console.error('Login rejected: user lacks valid backend sessionToken');
+    if (!storageService.isAuthenticated(user)) {
+      console.error('Login rejected: user lacks a valid authoritative session');
       return;
     }
     clearPreviousNavigationState();
