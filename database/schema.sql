@@ -1,8 +1,9 @@
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 CREATE TABLE IF NOT EXISTS schools (id text PRIMARY KEY, code text NOT NULL UNIQUE, name text NOT NULL, status text NOT NULL DEFAULT 'ACTIVE', created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now());
-CREATE TABLE IF NOT EXISTS users (id text PRIMARY KEY, email text NOT NULL UNIQUE, username text, full_name text NOT NULL, role text NOT NULL, access_scope text NOT NULL DEFAULT 'SCHOOL', school_id text REFERENCES schools(id), employee_id text, password_hash text NOT NULL, password_salt text, password_iterations integer, is_active boolean NOT NULL DEFAULT true, status text NOT NULL DEFAULT 'Active', created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(), last_login_at timestamptz);
+CREATE TABLE IF NOT EXISTS users (id text PRIMARY KEY, email text NOT NULL UNIQUE, username text, full_name text NOT NULL, role text NOT NULL, access_scope text NOT NULL DEFAULT 'SCHOOL', school_id text REFERENCES schools(id), employee_id text, student_id text, password_hash text NOT NULL, password_salt text, password_iterations integer, is_active boolean NOT NULL DEFAULT true, status text NOT NULL DEFAULT 'Active', created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(), last_login_at timestamptz);
 CREATE INDEX IF NOT EXISTS users_email_lower_idx ON users (lower(email));
+CREATE UNIQUE INDEX IF NOT EXISTS users_student_id_idx ON users (school_id, student_id) WHERE student_id IS NOT NULL;
 CREATE TABLE IF NOT EXISTS user_school_access (user_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE, school_id text NOT NULL REFERENCES schools(id) ON DELETE CASCADE, PRIMARY KEY (user_id, school_id));
 CREATE TABLE IF NOT EXISTS sessions (id text PRIMARY KEY, user_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE, token_hash text NOT NULL UNIQUE, active_school_id text REFERENCES schools(id), status text NOT NULL DEFAULT 'ACTIVE', created_at timestamptz NOT NULL DEFAULT now(), expires_at timestamptz NOT NULL, revoked_at timestamptz);
 CREATE INDEX IF NOT EXISTS sessions_user_id_idx ON sessions(user_id);
