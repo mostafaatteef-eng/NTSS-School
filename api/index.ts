@@ -121,6 +121,7 @@ const ntssHandler = {
         const body: any = await request.json();
         const email = String(body.email || '').trim().toLowerCase();
         const password = String(body.password || '');
+        if (!email || !password) return json({ status: 'error', code: 'INVALID_CREDENTIALS' }, 401, corsOrigin);
         const dbStartedAt = performance.now();
         const query = await pool.query(
           `SELECT id,email,full_name,role,access_scope,school_id,employee_id,password_hash,password_salt,password_iterations,is_active,status
@@ -129,6 +130,7 @@ const ntssHandler = {
         );
         const dbMs = Math.round(performance.now() - dbStartedAt);
         const user = query.rows[0];
+        if (user?.role === 'Student') return json({ status: 'error', code: 'INVALID_CREDENTIALS' }, 401, corsOrigin);
         if (!user || !user.is_active || user.status !== 'Active') {
           console.log(JSON.stringify({ marker: 'NTSS_LOGIN_DENIED', requestId, reason: 'user', dbMs, totalMs: Math.round(performance.now() - loginStartedAt) }));
           return json({ status: 'error', code: 'INVALID_CREDENTIALS' }, 401, corsOrigin);
