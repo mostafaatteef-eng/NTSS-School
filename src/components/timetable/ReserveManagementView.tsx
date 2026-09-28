@@ -298,7 +298,7 @@ export const ReserveManagementView: React.FC = () => {
                         !cand.isEligible
                           ? 'bg-slate-50/60 border-slate-200 opacity-60 cursor-not-allowed'
                           : isSelected
-                          ? 'bg-indigo-50 border-indigo-400 ring-2 ring-indigo-200'
+                          ? 'bg-teal-50 border-indigo-400 ring-2 ring-indigo-200'
                           : 'bg-white border-slate-200 hover:border-slate-300'
                       }`}
                     >
@@ -308,7 +308,7 @@ export const ReserveManagementView: React.FC = () => {
                             idx === 0 && cand.isEligible
                               ? 'bg-amber-100 text-amber-800'
                               : cand.isEligible
-                              ? 'bg-indigo-100 text-indigo-700'
+                              ? 'bg-teal-100 text-teal-800'
                               : 'bg-slate-200 text-slate-500'
                           }`}
                         >
@@ -317,7 +317,7 @@ export const ReserveManagementView: React.FC = () => {
                         <div>
                           <div className="flex items-center gap-2">
                             <span className="font-bold text-sm text-slate-900">{cand.teacherName}</span>
-                            <span className="font-mono text-xs text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded">
+                            <span className="font-mono text-xs text-teal-800 bg-teal-50 px-1.5 py-0.5 rounded">
                               {cand.teacherCode}
                             </span>
                             {cand.teachesSameSubject && (
@@ -355,7 +355,7 @@ export const ReserveManagementView: React.FC = () => {
                             }}
                             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
                               isSelected
-                                ? 'bg-indigo-600 text-white shadow-sm'
+                                ? 'bg-[#008e8b] text-white '
                                 : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                             }`}
                           >
@@ -374,7 +374,7 @@ export const ReserveManagementView: React.FC = () => {
                 {selectedCandidateId && (
                   <span>
                     المعلم المختار:{' '}
-                    <strong className="text-indigo-700">
+                    <strong className="text-teal-800">
                       {teachers.find(t => t.id === selectedCandidateId)?.name}
                     </strong>
                   </span>
@@ -383,7 +383,7 @@ export const ReserveManagementView: React.FC = () => {
               <button
                 disabled={!selectedCandidateId || isAssigning}
                 onClick={handleConfirmAssignment}
-                className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white rounded-xl text-xs font-bold shadow-md transition flex items-center gap-2"
+                className="px-6 py-2.5 bg-[#008e8b] hover:bg-teal-700 disabled:bg-slate-300 text-white rounded-xl text-xs font-bold shadow-md transition flex items-center gap-2"
               >
                 <CheckCircle2 className="w-4 h-4" />
                 إسناد الحصة رسمياً وتسجيلها
@@ -430,7 +430,7 @@ export const ReserveManagementView: React.FC = () => {
                     <tr key={s.id} className="hover:bg-slate-50 transition">
                       <td className="p-3 font-mono">{s.date}</td>
                       <td className="p-3 font-semibold">{s.dayOfWeek}</td>
-                      <td className="p-3 text-center font-bold text-indigo-700">الحصة {s.periodNumber}</td>
+                      <td className="p-3 text-center font-bold text-teal-800">الحصة {s.periodNumber}</td>
                       <td className="p-3 text-slate-700">{s.classroomName}</td>
                       <td className="p-3 text-slate-600">
                         {s.originalTeacherName} ({s.originalTeacherCode})
@@ -506,11 +506,11 @@ export const ReserveManagementView: React.FC = () => {
               <tbody className="divide-y divide-slate-100 text-slate-800">
                 {fairnessReport.map(r => (
                   <tr key={r.teacherId} className="hover:bg-slate-50 transition">
-                    <td className="p-3 font-mono font-bold text-indigo-700">{r.teacherCode}</td>
+                    <td className="p-3 font-mono font-bold text-teal-800">{r.teacherCode}</td>
                     <td className="p-3 font-bold text-slate-900">{r.teacherName}</td>
                     <td className="p-3 text-center font-bold text-slate-700">{r.weeklyCount}</td>
                     <td className="p-3 text-center font-bold text-slate-700">{r.monthlyCount}</td>
-                    <td className="p-3 text-center font-bold text-indigo-700">{r.termCount}</td>
+                    <td className="p-3 text-center font-bold text-teal-800">{r.termCount}</td>
                     <td className="p-3 text-center font-bold text-purple-700">{r.annualCount}</td>
                     <td className="p-3 text-center">
                       <span
