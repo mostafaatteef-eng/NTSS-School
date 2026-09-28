@@ -163,7 +163,7 @@ export const SystemHealthView: React.FC<SystemHealthViewProps> = ({ currentUser 
         <div className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-xs space-y-2">
           <div className="flex items-center justify-between text-slate-500">
             <span className="text-xs font-bold">طابور المزامنة (Queue)</span>
-            <RefreshCw className="w-4 h-4 text-indigo-600" />
+            <RefreshCw className="w-4 h-4 text-[#008e8b]" />
           </div>
           <div className="text-lg font-black text-slate-900">
             {healthData.sync.pendingCount} معلق | {healthData.sync.failedCount} فاشل
@@ -175,7 +175,7 @@ export const SystemHealthView: React.FC<SystemHealthViewProps> = ({ currentUser 
             {healthData.sync.failedCount > 0 && (
               <button
                 onClick={handleRetryQueue}
-                className="text-[10px] font-bold text-indigo-600 hover:underline"
+                className="text-[10px] font-bold text-[#008e8b] hover:underline"
               >
                 إعادة المحاولة الآن
               </button>
@@ -271,9 +271,9 @@ export const SystemHealthView: React.FC<SystemHealthViewProps> = ({ currentUser 
           </div>
         </div>
 
-        <div className="bg-indigo-50/60 border border-indigo-100 rounded-2xl p-4 text-xs space-y-1 text-indigo-950">
+        <div className="bg-teal-50/60 border border-indigo-100 rounded-2xl p-4 text-xs space-y-1 text-indigo-950">
           <div className="font-bold flex items-center gap-2">
-            <Zap className="w-4 h-4 text-indigo-600" />
+            <Zap className="w-4 h-4 text-[#008e8b]" />
             <span>القرار النهائي لجاهزية التشغيل:</span>
           </div>
           <p className="leading-relaxed">{capacity.verdictReason}</p>
