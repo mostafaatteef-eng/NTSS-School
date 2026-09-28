@@ -338,7 +338,13 @@ export default {
                  ORDER BY u.full_name`,
                 [user.user_id]
               );
-          const out=[]; for(const row of rows.rows) out.push(await project(row));
+          const userIds=rows.rows.map((row:any)=>String(row.id));
+          const accessRows=userIds.length
+            ? await pool.query('SELECT user_id,school_id FROM user_school_access WHERE user_id = ANY($1::text[]) ORDER BY user_id,school_id',[userIds])
+            : {rows:[]};
+          const accessByUser=new Map<string,string[]>();
+          for(const access of accessRows.rows){const key=String(access.user_id);const list=accessByUser.get(key)||[];list.push(String(access.school_id));accessByUser.set(key,list);}
+          const out=rows.rows.map((row:any)=>({id:row.id,email:row.email,username:row.username,fullName:row.full_name,role:row.role,accessScope:row.access_scope,schoolId:row.school_id||'',employeeId:row.employee_id||undefined,studentId:row.student_id||undefined,status:row.status,allowedSchoolIds:accessByUser.get(String(row.id))||[],createdAt:row.created_at,updatedAt:row.updated_at,lastLogin:row.last_login_at}));
           return json({status:'success',data:out},200,corsOrigin);
         }
         if(action==='activateStudentAccount'){
