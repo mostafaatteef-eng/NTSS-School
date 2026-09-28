@@ -35,6 +35,7 @@ export const CorrectiveActionsSection: React.FC<Props> = ({
   canCreate,
   canManage,
 }) => {
+  const schoolId = storageService.getActiveSchoolId() || currentUser?.schoolId || '';
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [priorityFilter, setPriorityFilter] = useState<string>('ALL');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -79,7 +80,7 @@ export const CorrectiveActionsSection: React.FC<Props> = ({
     setIsModalOpen(true);
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title || !assignedToName || !dueDate) {
       alert('يرجى تعبئة الحقول الأساسية: عنوان الإجراء، المكلف، وتاريخ الاستحقاق.');
@@ -98,23 +99,16 @@ export const CorrectiveActionsSection: React.FC<Props> = ({
       resolvedAt: status === 'RESOLVED' || status === 'CLOSED' ? new Date().toISOString() : undefined,
     };
 
-    const res = storageService.saveCorrectiveAction(payload, currentUser);
-    if (res.success) {
-      setIsModalOpen(false);
-      onRefresh();
-    } else {
-      alert(res.message);
-    }
+    try {
+      await storageService.saveAuthoritativeQualityRecord('CORRECTIVE_ACTION',payload,schoolId);
+      setIsModalOpen(false); onRefresh();
+    } catch(error:any){ alert(error?.message || 'تعذر حفظ الإجراء التصحيحي'); }
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (!window.confirm('هل أنت متأكد من حذف هذا الإجراء التصحيحي؟')) return;
-    const res = storageService.deleteCorrectiveAction(id, currentUser);
-    if (res.success) {
-      onRefresh();
-    } else {
-      alert(res.message);
-    }
+    try { await storageService.deleteAuthoritativeQualityRecord(id,schoolId); onRefresh(); }
+    catch(error:any){ alert(error?.message || 'تعذر حذف الإجراء التصحيحي'); }
   };
 
   const priorityBadges: Record<CorrectiveActionPriority, { label: string; bg: string; text: string }> = {
