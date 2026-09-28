@@ -612,8 +612,13 @@ const ntssHandler = {
         }
 
         if(action==='getDistributions'){
-          const q=await pool.query(isTeacher?'SELECT * FROM curriculum_distributions WHERE school_id=$1 AND teacher_id=$2 ORDER BY day_of_week,period_number,id':'SELECT * FROM curriculum_distributions WHERE school_id=$1 ORDER BY day_of_week,period_number,id',isTeacher?[schoolId,actorTeacherId]:[schoolId]);
-          return json({status:'success',data:q.rows.map((r:any)=>({id:r.id,schoolId:r.school_id,planId:r.plan_id,planItemId:r.plan_item_id,scheduleItemId:r.schedule_item_id,teacherId:r.teacher_id,teacherName:r.teacher_name,grade:r.grade,classroom:r.classroom,subject:r.subject,dayOfWeek:r.day_of_week,periodNumber:r.period_number,targetDate:r.target_date?String(r.target_date).slice(0,10):undefined,status:r.status,notes:r.notes,createdAt:r.created_at,updatedAt:r.updated_at}))},200,corsOrigin);
+          const q=await pool.query(
+            isTeacher
+              ? `SELECT d.*, i.week AS curriculum_week FROM curriculum_distributions d LEFT JOIN curriculum_plan_items i ON i.id=d.plan_item_id AND i.plan_id=d.plan_id WHERE d.school_id=$1 AND d.teacher_id=$2 ORDER BY d.day_of_week,d.period_number,d.id`
+              : `SELECT d.*, i.week AS curriculum_week FROM curriculum_distributions d LEFT JOIN curriculum_plan_items i ON i.id=d.plan_item_id AND i.plan_id=d.plan_id WHERE d.school_id=$1 ORDER BY d.day_of_week,d.period_number,d.id`,
+            isTeacher?[schoolId,actorTeacherId]:[schoolId]
+          );
+          return json({status:'success',data:q.rows.map((r:any)=>({id:r.id,schoolId:r.school_id,planId:r.plan_id,planItemId:r.plan_item_id,scheduleItemId:r.schedule_item_id,teacherId:r.teacher_id,teacherName:r.teacher_name,grade:r.grade,classroom:r.classroom,subject:r.subject,dayOfWeek:r.day_of_week,periodNumber:r.period_number,week:Number(r.curriculum_week||0)||undefined,targetDate:r.target_date?String(r.target_date).slice(0,10):undefined,status:r.status,notes:r.notes,createdAt:r.created_at,updatedAt:r.updated_at}))},200,corsOrigin);
         }
         if(action==='saveDistribution'){
           const planId=String(data.planId||''),planItemId=String(data.planItemId||''),scheduleItemId=String(data.scheduleItemId||''),teacherId=String(data.teacherId||'');
