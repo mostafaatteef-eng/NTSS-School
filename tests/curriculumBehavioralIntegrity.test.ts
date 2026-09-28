@@ -41,20 +41,20 @@ describe('Curriculum behavioral authorization and classroom coverage', () => {
 
   it('does not create authorization by mixing independently assigned subjects and classes', () => {
     const plans = [plan('P1','Math','G1','A'), plan('P2','Science','G2','B'), plan('P3','Math','G2','B'), plan('P4','Math','G1','B')];
-    localStorage.setItem('ntss_curriculum_plans_v1', JSON.stringify(plans));
+    localStorage.setItem('ntss_curriculum_plans_v3', JSON.stringify(plans));
     const visible = curriculumPlanService.getAuthorizedPlansForUser(teacher).map(p => p.id);
     expect(visible).toEqual(['P1','P2']);
   });
 
   it('calculates progress from plans belonging to the requested classroom only', () => {
-    localStorage.setItem('ntss_curriculum_plans_v1', JSON.stringify([plan('PA','Math','G1','A'), plan('PB','Math','G1','B')]));
+    localStorage.setItem('ntss_curriculum_plans_v3', JSON.stringify([plan('PA','Math','G1','A'), plan('PB','Math','G1','B')]));
     const result = curriculumPlanService.calculateProgress({ schoolId:'SCH-1', subject:'Math', grade:'G1', classroom:'A', term:'T1' });
     expect(result.totalItems).toBe(1);
     expect(result.unassignedCount).toBe(1);
   });
 
   it('keeps approved plans immutable even for curriculum administrators', () => {
-    localStorage.setItem('ntss_curriculum_plans_v1', JSON.stringify([plan('LOCK','Math','G1','A')]));
+    localStorage.setItem('ntss_curriculum_plans_v3', JSON.stringify([plan('LOCK','Math','G1','A')]));
     const admin: User = { ...teacher, id:'ADMIN', employeeId:'ADMIN', role:'Admin', fullName:'Admin' };
     storageService.setCurrentUser(admin);
     const result = storageService.saveCurriculumPlan({ ...plan('LOCK','Math','G1','A'), subject:'Changed' }, admin);
