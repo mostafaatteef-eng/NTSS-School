@@ -5,7 +5,7 @@ import { defineConfig } from 'vite';
 
 export default defineConfig(({ mode }) => ({
   // Vercel serves from the domain root; GitHub Pages serves from /NTSS-School/.
-  // Keep both deployment targets valid; VITE_BASE_PATH is the explicit CI/Pages override.
+  // Keep Vercel on the domain root and GitHub Pages on its explicit CI base path.
   base: process.env.VITE_BASE_PATH || (process.env.VERCEL === '1' ? '/' : (mode === 'production' ? '/NTSS-School/' : '/')),
 
   plugins: [
