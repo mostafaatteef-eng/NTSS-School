@@ -16,7 +16,7 @@ const SCRYPT_KEYLEN = 64;
 const SCRYPT_PREFIX = 'scrypt';
 const scryptHash = (password: string, salt = crypto.randomBytes(16).toString('hex')) => {
   const derived = crypto.scryptSync(password, salt, SCRYPT_KEYLEN);
-  return { hash: `${SCRYPT_PREFIX}${salt}${derived.toString('hex')}`, salt };
+  return { hash: `${SCRYPT_PREFIX}${salt}${derived.toString('hex')}` };
 };
 const verifyScryptHash = (password: string, encoded: string) => {
   const [scheme, salt, hex] = String(encoded || '').split('
