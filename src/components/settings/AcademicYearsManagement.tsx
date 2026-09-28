@@ -164,7 +164,7 @@ export const AcademicYearsManagement: React.FC = () => {
             onClick={() => setActiveSubTab('years')}
             className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${
               activeSubTab === 'years'
-                ? 'bg-indigo-600 text-white shadow-xs'
+                ? 'bg-[#008e8b] text-white shadow-xs'
                 : 'text-slate-600 hover:bg-slate-200'
             }`}
           >
@@ -177,7 +177,7 @@ export const AcademicYearsManagement: React.FC = () => {
             onClick={() => setActiveSubTab('rules')}
             className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${
               activeSubTab === 'rules'
-                ? 'bg-indigo-600 text-white shadow-xs'
+                ? 'bg-[#008e8b] text-white shadow-xs'
                 : 'text-slate-600 hover:bg-slate-200'
             }`}
           >
@@ -190,16 +190,16 @@ export const AcademicYearsManagement: React.FC = () => {
           <button
             type="button"
             onClick={() => setIsWizardOpen(true)}
-            className="px-3.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-bold flex items-center gap-2 shadow-xs transition-colors"
+            className="px-3.5 py-1.5 bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200 rounded-lg text-xs font-bold flex items-center gap-2 shadow-xs transition-colors"
           >
-            <Sparkles className="w-4 h-4 text-indigo-600" />
+            <Sparkles className="w-4 h-4 text-[#008e8b]" />
             معالج ترحيل الطلاب
           </button>
 
           <button
             type="button"
             onClick={handleOpenAddYear}
-            className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold flex items-center gap-2 shadow-xs transition-colors"
+            className="px-3.5 py-1.5 bg-[#008e8b] hover:bg-teal-700 text-white rounded-lg text-xs font-bold flex items-center gap-2 shadow-xs transition-colors"
           >
             <Plus className="w-4 h-4" />
             إضافة عام دراسي جديد
@@ -226,7 +226,7 @@ export const AcademicYearsManagement: React.FC = () => {
                 key={year.id}
                 className={`p-5 rounded-2xl border transition-all space-y-4 ${
                   isActive
-                    ? 'bg-white border-indigo-300 shadow-md ring-2 ring-indigo-500/20'
+                    ? 'bg-white border-teal-300 shadow-md ring-2 ring-indigo-500/20'
                     : 'bg-white border-slate-200 shadow-xs'
                 }`}
               >
@@ -235,7 +235,7 @@ export const AcademicYearsManagement: React.FC = () => {
                     <div className="flex items-center gap-2">
                       <h3 className="text-sm font-bold text-slate-900">{year.name}</h3>
                       {isActive && (
-                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-800 border border-indigo-200">
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-teal-100 text-teal-900 border border-teal-200">
                           العام النشط الحالي
                         </span>
                       )}
@@ -255,7 +255,7 @@ export const AcademicYearsManagement: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => handleOpenEditYear(year)}
-                      className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                      className="p-1.5 text-slate-500 hover:text-[#008e8b] hover:bg-teal-50 rounded-lg transition-colors"
                       title="تعديل"
                     >
                       <Edit2 className="w-4 h-4" />
@@ -276,7 +276,7 @@ export const AcademicYearsManagement: React.FC = () => {
                 {/* Terms List */}
                 <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 space-y-2 text-xs">
                   <div className="font-bold text-slate-700 flex items-center gap-1.5">
-                    <Clock className="w-3.5 h-3.5 text-indigo-600" />
+                    <Clock className="w-3.5 h-3.5 text-[#008e8b]" />
                     الفصول الدراسية (الترم):
                   </div>
                   <div className="space-y-1.5">
@@ -299,7 +299,7 @@ export const AcademicYearsManagement: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => handleSetActive(year.id)}
-                        className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg font-bold transition-colors"
+                        className="px-3 py-1.5 bg-teal-50 hover:bg-teal-100 text-teal-800 rounded-lg font-bold transition-colors"
                       >
                         تعيين كعام نشط
                       </button>
@@ -353,7 +353,7 @@ export const AcademicYearsManagement: React.FC = () => {
                 {promotionRules.map(rule => (
                   <tr key={rule.id} className="hover:bg-slate-50">
                     <td className="p-3 font-bold text-slate-900">{rule.sourceGrade || rule.fromGrade}</td>
-                    <td className="p-3 text-indigo-700 font-bold">{rule.targetGrade || rule.toGrade}</td>
+                    <td className="p-3 text-teal-800 font-bold">{rule.targetGrade || rule.toGrade}</td>
                     <td className="p-3 text-slate-600">{rule.ruleType || 'تلقائي للكل'}</td>
                     <td className="p-3 font-mono">{rule.minAttendancePercentage || 75}%</td>
                     <td className="p-3 font-mono">{rule.minBehaviorScore || 60} نقطة</td>
@@ -444,7 +444,7 @@ export const AcademicYearsManagement: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-xs"
+                  className="px-5 py-2 text-xs font-bold bg-[#008e8b] hover:bg-teal-700 text-white rounded-xl shadow-xs"
                 >
                   حفظ العام الدراسي
                 </button>
