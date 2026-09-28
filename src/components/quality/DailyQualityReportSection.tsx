@@ -407,7 +407,7 @@ export const DailyQualityReportSection: React.FC<Props> = ({
                         </div>
                         <div className="space-y-3 p-3">
                     {domainStandards.map((std) => {
-                      const curScore = dailyScores[std.id]?.score ?? 4;
+                      const curScore = dailyScores[std.id]?.score ?? 0;
                       const curNotes = dailyScores[std.id]?.notes ?? '';
                       return (
                         <div
