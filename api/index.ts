@@ -767,6 +767,55 @@ const ntssHandler = {
         return json({status:'error',code:'ACTION_NOT_MIGRATED'},400,corsOrigin);
       }
 
+      if (request.method === 'POST' && path === '/quality/manage') {
+        const body:any=await request.json();
+        const action=String(body.action||'');
+        const data:any=body.data||{};
+        const schoolId=String(body.schoolId||user.active_school_id||user.school_id||'').trim();
+        if(!(await canAccessSchool(user,schoolId))) return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);
+        const canRead=new Set(['SystemAdmin','Admin','SchoolAdmin','SchoolDirector','QualityOfficer','Supervisor']);
+        const canWrite=new Set(['SystemAdmin','Admin','SchoolAdmin','SchoolDirector','QualityOfficer','Supervisor']);
+        const canApprove=new Set(['SystemAdmin','Admin','SchoolAdmin','SchoolDirector']);
+        if(!canRead.has(String(user.role||''))) return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);
+        const allowedTypes=new Set(['TEACHER_VISIT','DAILY_REPORT','COMPREHENSIVE_EVALUATION','CORRECTIVE_ACTION']);
+        const recordType=String(data.recordType||body.recordType||'').toUpperCase();
+        if(action==='list'){
+          const params:any[]=[schoolId]; let sql='SELECT * FROM quality_records WHERE school_id=$1';
+          if(recordType){if(!allowedTypes.has(recordType))return json({status:'error',code:'INVALID_RECORD_TYPE'},400,corsOrigin);params.push(recordType);sql+=' AND record_type=$2';}
+          sql+=' ORDER BY updated_at DESC';
+          const q=await pool.query(sql,params);
+          return json({status:'success',data:q.rows.map((r:any)=>({...r.payload,id:r.id,schoolId:r.school_id,recordType:r.record_type,status:r.status,createdAt:r.created_at,updatedAt:r.updated_at,approvedAt:r.approved_at}))},200,corsOrigin);
+        }
+        if(!canWrite.has(String(user.role||''))) return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);
+        const id=String(data.id||'').trim()||('QLT-'+crypto.randomBytes(8).toString('hex').toUpperCase());
+        if(action==='delete'){
+          const existing=await pool.query('SELECT status FROM quality_records WHERE school_id=$1 AND id=$2',[schoolId,id]);
+          if(!existing.rowCount)return json({status:'error',code:'NOT_FOUND'},404,corsOrigin);
+          if(String(existing.rows[0].status).toUpperCase()!=='DRAFT')return json({status:'error',code:'FINALIZED_RECORD_LOCKED'},409,corsOrigin);
+          await pool.query('DELETE FROM quality_records WHERE school_id=$1 AND id=$2',[schoolId,id]);
+          return json({status:'success'},200,corsOrigin);
+        }
+        if(action==='approve'){
+          if(!canApprove.has(String(user.role||'')))return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);
+          const q=await pool.query("UPDATE quality_records SET status='APPROVED',approved_by=$3,approved_at=now(),updated_at=now() WHERE school_id=$1 AND id=$2 AND upper(status)='SUBMITTED' RETURNING *",[schoolId,id,user.user_id]);
+          if(!q.rowCount)return json({status:'error',code:'INVALID_STATUS_TRANSITION'},409,corsOrigin);
+          await pool.query('INSERT INTO audit_logs(school_id,user_id,username,role,action,entity,target_id,details) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[schoolId,user.user_id,user.email,user.role,'APPROVE','QUALITY',id,'Approved quality record']);
+          return json({status:'success',data:{...q.rows[0].payload,id,status:'APPROVED'}},200,corsOrigin);
+        }
+        if(action!=='save'||!allowedTypes.has(recordType))return json({status:'error',code:'INVALID_ACTION'},400,corsOrigin);
+        const existing=await pool.query('SELECT status FROM quality_records WHERE school_id=$1 AND id=$2',[schoolId,id]);
+        if(existing.rowCount&&['APPROVED','FINALIZED'].includes(String(existing.rows[0].status).toUpperCase()))return json({status:'error',code:'FINALIZED_RECORD_LOCKED'},409,corsOrigin);
+        const status=String(data.status||'DRAFT').toUpperCase();
+        if(!['DRAFT','SUBMITTED','REQUIRES_REVISION'].includes(status))return json({status:'error',code:'INVALID_STATUS'},400,corsOrigin);
+        const payload=JSON.stringify({...data,id,schoolId,recordType});
+        const q=await pool.query(`INSERT INTO quality_records(id,school_id,record_type,status,payload,created_by) VALUES($1,$2,$3,$4,$5::jsonb,$6)
+          ON CONFLICT(id) DO UPDATE SET status=EXCLUDED.status,payload=EXCLUDED.payload,updated_at=now()
+          WHERE quality_records.school_id=EXCLUDED.school_id RETURNING *`,[id,schoolId,recordType,status,payload,user.user_id]);
+        if(!q.rowCount)return json({status:'error',code:'QUALITY_WRITE_REJECTED'},409,corsOrigin);
+        await pool.query('INSERT INTO audit_logs(school_id,user_id,username,role,action,entity,target_id,details) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[schoolId,user.user_id,user.email,user.role,'UPSERT','QUALITY',id,recordType]);
+        return json({status:'success',data:{...q.rows[0].payload,id,status:q.rows[0].status}},200,corsOrigin);
+      }
+
       if (request.method === 'POST' && path === '/leave-management') {
         const body: any = await request.json();
         const action = String(body.action || '');
