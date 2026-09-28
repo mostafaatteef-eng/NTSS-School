@@ -402,7 +402,7 @@ export const DailyQualityReportSection: React.FC<Props> = ({
                       <div className="rounded-xl border border-slate-200 bg-white p-3"><div className="text-[11px] text-slate-500">تم تقييمها</div><div className="text-lg font-black text-slate-900">{scoredItems.length}</div></div>
                       <div className="rounded-xl border border-slate-200 bg-white p-3"><div className="text-[11px] text-slate-500">متوسط الرصد</div><div className="text-lg font-black text-slate-900">{liveAverage ? liveAverage.toFixed(1) : '—'}</div></div>
                     </div>
-                    {Object.entries(standardsByDomain).map(([domain, domainStandards]) => (
+                    {(Object.entries(standardsByDomain) as [string, QualityStandard[]][]).map(([domain, domainStandards]) => (
                       <section key={domain} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
                         <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3">
                           <div>
