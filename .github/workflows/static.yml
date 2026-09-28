@@ -41,28 +41,6 @@ jobs:
         env:
           VITE_POSTGRES_API_URL: https://ntss-school.vercel.app
         run: npm run build
-      - name: Build Neon Function bundle
-        run: |
-          mkdir -p neon-function-dist
-          npx esbuild functions/api.ts --bundle --platform=node --target=node24 --format=esm --external:pg-native --outfile=neon-function-dist/index.js
-          printf '{"type":"module"}' > neon-function-dist/package.json
-          cd neon-function-dist
-          zip -q ../neon-function.zip index.js package.json
-      - name: Upload Neon Function bundle
-        uses: actions/upload-artifact@v4
-        with:
-          name: neon-function-bundle
-          path: neon-function.zip
-          retention-days: 1
-      - name: Publish Neon bundle payload
-        run: |
-          base64 -w0 neon-function.zip > neon-function.b64
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -f neon-function.b64
-          git commit -m "chore(neon): publish deployment bundle [skip ci]"
-          git push
-
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
