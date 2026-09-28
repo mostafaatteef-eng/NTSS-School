@@ -30,6 +30,14 @@ describe('Curriculum behavioral integrity',()=>{
     expect(result.totalItems).toBe(1);expect(result.unassignedCount).toBe(1);
   });
 
+  it('scopes teacher progress denominator to exact timetable assignments',()=>{
+    localStorage.setItem('ntss_curriculum_plans_v3',JSON.stringify([plan('TA','Math','G1','A'),plan('TB','Math','G1','B')]));
+    storageService.saveSchedule([slot('TA-SLOT','الأحد','Math','G1','A')]);
+    const result=curriculumPlanService.calculateProgress({schoolId:'SCH-1',subject:'Math',grade:'G1',teacherId:'EMP-T1',term:'T1'});
+    expect(result.totalItems).toBe(1);
+    expect(result.unassignedCount).toBe(1);
+  });
+
   it('keeps approved plans immutable for administrators',()=>{
     localStorage.setItem('ntss_curriculum_plans_v3',JSON.stringify([plan('LOCK','Math','G1','A')]));
     const admin:User={...teacher,id:'ADMIN',employeeId:'ADMIN',role:'Admin',fullName:'Admin'};storageService.setCurrentUser(admin);
