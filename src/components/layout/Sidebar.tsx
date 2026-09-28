@@ -431,7 +431,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Sidebar Container */}
       <aside
-        className={`fixed top-0 right-0 bottom-0 z-50 w-72 bg-white border-l border-slate-200/80 flex flex-col transition-transform duration-300 ease-in-out select-none lg:static lg:translate-x-0 ${
+        className={`fixed top-0 right-0 bottom-0 z-50 w-72 bg-white border-l border-slate-200 flex flex-col transition-transform duration-300 ease-in-out select-none lg:static lg:translate-x-0 ${
           isMobileOpen ? 'translate-x-0 shadow-2xl' : 'translate-x-full lg:shadow-none'
         }`}
         dir="rtl"
@@ -441,7 +441,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             1. Logo/Icon centered at the top
             2. NTSS word directly below
            ========================================================================= */}
-        <div className="relative pt-6 pb-5 px-4 border-b border-slate-100 flex flex-col items-center justify-center shrink-0 bg-white">
+        <div className="relative px-4 py-4 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white">
           {/* Close button for Mobile Drawer (positioned on top-left of RTL sidebar) */}
           <button
             type="button"
@@ -454,14 +454,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
 
           {/* Centered Brand Hierarchy */}
-          <div className="flex flex-col items-center text-center">
+          <div className="flex items-center gap-3 text-right">
             {/* 1. Logo / Icon at the top in center */}
-            <div className="mb-2 flex items-center justify-center transition-transform hover:scale-105 duration-200">
+            <div className="flex items-center justify-center">
               <NTSSLogo variant="icon" size="lg" />
             </div>
 
             {/* 2. NTSS word directly below */}
-            <div className="text-2xl font-black tracking-wider font-mono text-[#008e8b] leading-tight m-0">
+            <div className="text-lg font-black tracking-wider font-mono text-[#008e8b] leading-tight m-0">
               NTSS
             </div>
           </div>
@@ -470,7 +470,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {/* Navigation Sections */}
         <div
           ref={navContainerRef}
-          className="flex-1 overflow-y-auto custom-scrollbar p-3.5 space-y-5"
+          className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-4"
         >
           {navSections.map(section => {
             const visibleItems = section.items.filter(item => {
@@ -524,9 +524,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           id={`sidebar-item-${item.id}`}
                           onClick={() => handleSelect(item.id)}
                           aria-current={isActive ? 'page' : undefined}
-                          className={`w-full group flex items-center justify-between px-3.5 py-2.5 rounded-2xl font-bold text-xs transition-colors cursor-pointer select-none text-right outline-none focus-visible:ring-2 focus-visible:ring-[#008e8b] ${
+                          className={`w-full group flex items-center justify-between px-3 py-2.5 rounded-xl font-bold text-xs transition-colors cursor-pointer select-none text-right outline-none focus-visible:ring-2 focus-visible:ring-[#008e8b] ${
                             isActive
-                              ? 'bg-[#008e8b] text-white shadow-xs font-extrabold'
+                              ? 'bg-teal-50 text-teal-900 ring-1 ring-inset ring-teal-200 font-extrabold'
                               : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 active:bg-slate-100'
                           }`}
                         >
@@ -534,7 +534,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             <Icon
                               className={`w-4 h-4 shrink-0 transition-colors ${
                                 isActive
-                                  ? 'text-white'
+                                  ? 'text-[#008e8b]'
                                   : 'text-slate-400 group-hover:text-[#008e8b]'
                               }`}
                             />
@@ -545,8 +545,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             <span
                               className={`shrink-0 text-[9px] px-2 py-0.5 rounded-full font-bold transition-colors ${
                                 isActive
-                                  ? 'bg-white/20 text-white'
-                                  : 'bg-teal-50 text-[#008e8b] border border-teal-100/80 group-hover:bg-teal-100'
+                                  ? 'bg-white text-[#008e8b] border border-teal-200'
+                                  : 'bg-slate-100 text-slate-600 border border-slate-200 group-hover:bg-teal-50'
                               }`}
                             >
                               {item.badge}
