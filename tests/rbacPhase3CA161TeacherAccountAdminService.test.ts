@@ -4,6 +4,15 @@ import { teacherAccountAdminService } from '../src/services/teacherAccountAdminS
 import { storageService } from '../src/services/storageService';
 import { User } from '../src/types';
 
+vi.mock('../src/services/backend/postgresRuntime', async () => {
+  const actual:any = await vi.importActual('../src/services/backend/postgresRuntime');
+  return { ...actual, isPostgresBackendEnabled: () => true, postgresApiRequest: async (_path:string,_token:string,init:RequestInit={}) => {
+    const response = await fetch('https://central.example/api/teacher-accounts/manage', { ...init, credentials:'include', headers:{'Content-Type':'application/json',...(init.headers||{})} });
+    let body:any=null; try{body=await response.json();}catch{}
+    return { ok:response.ok, status:response.status, body };
+  }};
+});
+
 const sysAdmin: User = {
   id: 'sys-1',
   username: 'sys',
@@ -120,8 +129,8 @@ describe('PHASE 3C-A16.1 — Authoritative teacher account admin service', () =>
 
     const bodies = fetchSpy.mock.calls.map(call => JSON.parse(String((call[1] as RequestInit).body)));
     expect(bodies.map(body => body.action).sort()).toEqual(['getEmployees', 'getTeacherAccounts']);
-    expect(bodies.every(body => body.sessionToken === 'sys-token')).toBe(true);
-    expect(bodies.every(body => body.schoolId === undefined)).toBe(true);
+    expect(bodies.every(body => body.schoolId === 'SCH-BADR')).toBe(true);
+    expect(bodies.every(body => body.sessionToken === undefined)).toBe(true);
 
     expect(res.data?.effectiveSchoolId).toBe('SCH-BADR');
     expect(res.data?.accounts[0].teacherName).toBe('أحمد علي');
@@ -180,13 +189,13 @@ describe('PHASE 3C-A16.1 — Authoritative teacher account admin service', () =>
     expect(res.success).toBe(true);
     const body = JSON.parse(String((fetchSpy.mock.calls[0][1] as RequestInit).body));
     expect(body.action).toBe('createTeacherAccount');
-    expect(body.sessionToken).toBe('sys-token');
+    expect(body.sessionToken).toBeUndefined();
     expect(body.data).toEqual({
       employeeId: 'EMP1',
       username: 't001',
       temporaryPassword: 'Strong#Pass9',
     });
-    expect(body.schoolId).toBeUndefined();
+    expect(body.schoolId).toBe('SCH-BADR');
     expect(body.data.schoolId).toBeUndefined();
     expect(setItemSpy).not.toHaveBeenCalled();
   });
