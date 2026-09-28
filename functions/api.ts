@@ -642,6 +642,11 @@ export default {
         }
         if(action==='savePlan'){
           const status=String(data.status||'Draft'); const classroom=String(data.classroom||'').trim(); if(!classroom)return json({status:'error',code:'CLASSROOM_REQUIRED',message:'يجب تحديد الفصل؛ لكل فصل خطة منهج مستقلة.'},400,corsOrigin); if(isTeacher&&!['Draft','Submitted'].includes(status))return json({status:'error',code:'FORBIDDEN_STATUS'},403,corsOrigin);
+          if(isTeacher){
+            const norm=(v:any)=>String(v||'').trim().toLowerCase();
+            const assignment=await pool.query(`SELECT 1 FROM schedule WHERE school_id=$1 AND teacher_id=$2 AND lower(trim(grade))=$3 AND lower(trim(classroom))=$4 AND lower(trim(COALESCE(payload->>'subject','')))=$5 LIMIT 1`,[schoolId,actorTeacherId,norm(data.grade),norm(classroom),norm(data.subject)]);
+            if(!assignment.rowCount)return json({status:'error',code:'TEACHER_ASSIGNMENT_REQUIRED',message:'لا يمكن للمعلم حفظ خطة لمادة أو صف أو فصل غير مسند إليه في الجدول.'},403,corsOrigin);
+          }
           const id=String(data.id||('PLAN-'+crypto.randomBytes(8).toString('hex').toUpperCase()));
           const existing=await pool.query('SELECT * FROM curriculum_plans WHERE id=$1',[id]);
           if(existing.rowCount){
