@@ -231,9 +231,9 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
     return Array.from(new Set(allSchedule.filter(s => s.isActive !== false && !s.isCancelled && (!actorTeacherId || s.teacherId === actorTeacherId) && (!uploadGrade || s.grade === uploadGrade) && (!uploadSubject || s.subject === uploadSubject)).map(s => s.classroom).filter(Boolean))).sort();
   }, [allSchedule, isTeacher, currentUser, uploadGrade, uploadSubject]);
 
-  const handleAutoLinkWeek = (week: number) => {
+  const handleAutoLinkWeek = async (week: number) => {
     if (!selectedPlan) return;
-    const res = curriculumPlanService.autoLinkPlanWeekToSchedule({
+    const res = await curriculumPlanService.autoLinkPlanWeekToSchedule({
       planId: selectedPlan.id,
       week,
       user: currentUser,
@@ -246,11 +246,11 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
     alert(res.message);
   };
 
-  const handleLinkItem = (e: React.FormEvent) => {
+  const handleLinkItem = async (e: React.FormEvent) => {
     e.preventDefault();
     if (readOnly || !linkingItem || !selectedScheduleId) return;
 
-    const res = curriculumPlanService.linkPlanItemToSchedule({
+    const res = await curriculumPlanService.linkPlanItemToSchedule({
       planId: linkingItem.plan.id,
       planItemId: linkingItem.item.id,
       scheduleItemId: selectedScheduleId,
