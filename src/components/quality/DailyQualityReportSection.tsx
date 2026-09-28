@@ -34,6 +34,7 @@ export const DailyQualityReportSection: React.FC<Props> = ({
   canCreate,
   canApprove,
 }) => {
+  const schoolId = storageService.getActiveSchoolId() || currentUser?.schoolId || '';
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [viewingReport, setViewingReport] = useState<DailyQualityReport | null>(null);
 
@@ -125,7 +126,7 @@ export const DailyQualityReportSection: React.FC<Props> = ({
     }));
   };
 
-  const handleSaveReport = (asDraft: boolean) => {
+  const handleSaveReport = async (asDraft: boolean) => {
     if (!asDraft && dailyStandards.some((standard) => Number(dailyScores[standard.id]?.score || 0) <= 0)) {
       alert('لا يمكن إرسال التقرير للاعتماد قبل تقييم جميع مؤشرات الجودة اليومية. يمكنك حفظه كمسودة واستكماله لاحقاً.');
       return;
@@ -174,57 +175,32 @@ export const DailyQualityReportSection: React.FC<Props> = ({
       generalNotes: generalNotes.trim(),
     };
 
-    const res = storageService.saveDailyQualityReport(newReport, currentUser);
-
-    if (res.success) {
-      // If corrective action was added
-      if (includeAction && actionTitle.trim() && res.data?.id) {
-        storageService.saveCorrectiveAction(
-          {
-            sourceType: 'DAILY_REPORT',
-            sourceId: res.data.id,
-            title: actionTitle.trim(),
-            description: actionDesc.trim() || actionTitle.trim(),
-            ownerEmployeeId: currentUser?.id || 'STAFF',
-            ownerName: actionAssignedTo.trim() || 'الإدارة المدرسية',
-            assignedToName: actionAssignedTo.trim() || 'الإدارة المدرسية',
-            dueDate: actionDueDate || reportDate,
-            priority: actionPriority,
-            status: 'OPEN',
-          },
-          currentUser
-        );
+    try {
+      const saved = await storageService.saveAuthoritativeQualityRecord('DAILY_REPORT',newReport,schoolId);
+      if (includeAction && actionTitle.trim() && saved?.id) {
+        await storageService.saveAuthoritativeQualityRecord('CORRECTIVE_ACTION',{
+          sourceType:'DAILY_REPORT',sourceId:saved.id,title:actionTitle.trim(),
+          description:actionDesc.trim()||actionTitle.trim(),ownerEmployeeId:currentUser?.id||'STAFF',
+          ownerName:actionAssignedTo.trim()||'الإدارة المدرسية',assignedToName:actionAssignedTo.trim()||'الإدارة المدرسية',
+          dueDate:actionDueDate||reportDate,priority:actionPriority,status:'OPEN'
+        },schoolId);
       }
-
-      setIsModalOpen(false);
-      onRefresh();
-    } else {
-      alert(res.message);
-    }
+      setIsModalOpen(false); onRefresh();
+    } catch(error:any){ alert(error?.message || 'تعذر حفظ تقرير الجودة'); }
   };
 
-  const handleApprove = (report: DailyQualityReport) => {
+  const handleApprove = async (report: DailyQualityReport) => {
     if (!window.confirm('هل ترغب في اعتماد تقرير الجودة اليومي هذا؟')) return;
-    const res = storageService.approveDailyQualityReport(report.id, currentUser);
-    if (res.success) {
-      onRefresh();
-      if (viewingReport && viewingReport.id === report.id) {
-        setViewingReport({ ...viewingReport, status: 'APPROVED' });
-      }
-    } else {
-      alert(res.message);
-    }
+    try {
+      await storageService.approveAuthoritativeQualityRecord(report.id,schoolId); onRefresh();
+      if(viewingReport?.id===report.id)setViewingReport({...viewingReport,status:'APPROVED'});
+    } catch(error:any){ alert(error?.message || 'تعذر اعتماد التقرير'); }
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (!window.confirm('هل أنت متأكد من حذف هذا التقرير؟')) return;
-    const res = storageService.deleteDailyQualityReport(id, currentUser);
-    if (res.success) {
-      onRefresh();
-      if (viewingReport?.id === id) setViewingReport(null);
-    } else {
-      alert(res.message);
-    }
+    try { await storageService.deleteAuthoritativeQualityRecord(id,schoolId); onRefresh(); if(viewingReport?.id===id)setViewingReport(null); }
+    catch(error:any){ alert(error?.message || 'تعذر حذف التقرير'); }
   };
 
   return (
