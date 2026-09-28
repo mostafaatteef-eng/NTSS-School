@@ -105,3 +105,31 @@ CREATE TABLE IF NOT EXISTS curriculum_distributions (
 );
 CREATE INDEX IF NOT EXISTS curriculum_distributions_school_plan_idx ON curriculum_distributions(school_id,plan_id,plan_item_id);
 CREATE INDEX IF NOT EXISTS curriculum_distributions_slot_idx ON curriculum_distributions(school_id,schedule_item_id,status) WHERE schedule_item_id IS NOT NULL;
+
+
+-- Additive integrity hardening. Constraints are NOT VALID first so existing production
+-- data is never deleted or rewritten; they protect new writes and can be validated
+-- separately after an orphan audit.
+DO $ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='schedule_teacher_school_fkey') THEN
+    ALTER TABLE schedule ADD CONSTRAINT schedule_teacher_school_fkey
+      FOREIGN KEY (school_id,teacher_id) REFERENCES employees(school_id,id)
+      ON DELETE NO ACTION NOT VALID;
+  END IF;
+END $;
+
+DO $ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='curriculum_distribution_schedule_fkey') THEN
+    ALTER TABLE curriculum_distributions ADD CONSTRAINT curriculum_distribution_schedule_fkey
+      FOREIGN KEY (schedule_item_id) REFERENCES schedule(id)
+      ON DELETE SET NULL NOT VALID;
+  END IF;
+END $;
+
+CREATE UNIQUE INDEX IF NOT EXISTS schedule_teacher_slot_unique_idx
+  ON schedule(school_id,weekday,period_no,teacher_id)
+  WHERE teacher_id IS NOT NULL AND teacher_id <> '';
+
+CREATE UNIQUE INDEX IF NOT EXISTS schedule_class_slot_unique_idx
+  ON schedule(school_id,weekday,period_no,classroom)
+  WHERE classroom IS NOT NULL AND classroom <> '';
