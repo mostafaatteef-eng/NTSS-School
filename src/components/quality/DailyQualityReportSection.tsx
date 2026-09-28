@@ -51,11 +51,6 @@ export const DailyQualityReportSection: React.FC<Props> = ({
     (groups[domain] ||= []).push(standard);
     return groups;
   }, {});
-  const scoredItems = Object.values(dailyScores).filter(item => Number(item.score) > 0);
-  const liveAverage = scoredItems.length
-    ? scoredItems.reduce((sum, item) => sum + Number(item.score || 0), 0) / scoredItems.length
-    : 0;
-
   // Form state
   const [reportDate, setReportDate] = useState(new Date().toISOString().split('T')[0]);
   const [executiveSummary, setExecutiveSummary] = useState('');
@@ -64,6 +59,11 @@ export const DailyQualityReportSection: React.FC<Props> = ({
   const [recommendations, setRecommendations] = useState('');
   const [generalNotes, setGeneralNotes] = useState('');
   const [dailyScores, setDailyScores] = useState<Record<string, { score: number; notes: string }>>({});
+
+  const scoredItems = Object.values(dailyScores).filter(item => Number(item.score) > 0);
+  const liveAverage = scoredItems.length
+    ? scoredItems.reduce((sum, item) => sum + Number(item.score || 0), 0) / scoredItems.length
+    : 0;
 
   // Corrective action sub-form
   const [includeAction, setIncludeAction] = useState(false);
