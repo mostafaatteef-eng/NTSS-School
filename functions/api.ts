@@ -626,8 +626,12 @@ export default {
           const pq=await pool.query('SELECT status FROM curriculum_plans WHERE id=$1 AND school_id=$2',[planId,schoolId]);
           if(!pq.rowCount)return json({status:'error',code:'PLAN_NOT_FOUND'},404,corsOrigin);
           if(pq.rows[0].status!=='Approved')return json({status:'error',code:'PLAN_NOT_APPROVED'},409,corsOrigin);
-          const iq=await pool.query('SELECT 1 FROM curriculum_plan_items WHERE id=$1 AND plan_id=$2',[planItemId,planId]);if(!iq.rowCount)return json({status:'error',code:'PLAN_ITEM_NOT_FOUND'},404,corsOrigin);
-          if(scheduleItemId){const sq=await pool.query('SELECT teacher_id,grade,classroom,weekday,period_no,payload FROM schedule WHERE id=$1 AND school_id=$2',[scheduleItemId,schoolId]);if(!sq.rowCount)return json({status:'error',code:'SCHEDULE_NOT_FOUND'},404,corsOrigin);const s=sq.rows[0];if(isTeacher&&s.teacher_id!==actorTeacherId)return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);data.grade=s.grade;data.classroom=s.classroom;data.dayOfWeek=s.weekday;data.periodNumber=s.period_no;data.subject=(s.payload||{}).subject||data.subject;}
+          const iq=await pool.query('SELECT week FROM curriculum_plan_items WHERE id=$1 AND plan_id=$2',[planItemId,planId]);if(!iq.rowCount)return json({status:'error',code:'PLAN_ITEM_NOT_FOUND'},404,corsOrigin);
+          const curriculumWeek=Number(iq.rows[0].week||0);
+          if(scheduleItemId){const sq=await pool.query('SELECT teacher_id,grade,classroom,weekday,period_no,payload FROM schedule WHERE id=$1 AND school_id=$2',[scheduleItemId,schoolId]);if(!sq.rowCount)return json({status:'error',code:'SCHEDULE_NOT_FOUND'},404,corsOrigin);const s=sq.rows[0];if(isTeacher&&s.teacher_id!==actorTeacherId)return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);data.grade=s.grade;data.classroom=s.classroom;data.dayOfWeek=s.weekday;data.periodNumber=s.period_no;data.subject=(s.payload||{}).subject||data.subject;
+            const occupied=await pool.query(`SELECT d.id FROM curriculum_distributions d JOIN curriculum_plan_items pi ON pi.id=d.plan_item_id AND pi.plan_id=d.plan_id WHERE d.school_id=$1 AND d.schedule_item_id=$2 AND d.status<>'Cancelled' AND pi.week=$3 AND d.id<>$4 LIMIT 1`,[schoolId,scheduleItemId,curriculumWeek,String(data.id||'')]);
+            if(occupied.rowCount)return json({status:'error',code:'CURRICULUM_SLOT_OCCUPIED',message:'هذه الحصة مرتبطة بالفعل بموضوع آخر في نفس أسبوع المنهج.'},409,corsOrigin);
+          }
           const id=String(data.id||('DIST-'+crypto.randomBytes(8).toString('hex').toUpperCase()));
           const q=await pool.query(`INSERT INTO curriculum_distributions(id,school_id,plan_id,plan_item_id,schedule_item_id,teacher_id,teacher_name,grade,classroom,subject,day_of_week,period_number,target_date,status,notes)
             VALUES($1,$2,$3,$4,NULLIF($5,''),$6,$7,$8,$9,$10,$11,$12,NULLIF($13,'')::date,$14,$15)
