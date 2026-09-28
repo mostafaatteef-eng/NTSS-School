@@ -16,6 +16,7 @@ import { TeacherVisitReportSection } from './TeacherVisitReportSection';
 import { ComprehensiveEvaluationSection } from './ComprehensiveEvaluationSection';
 import { CorrectiveActionsSection } from './CorrectiveActionsSection';
 import { QualityDashboardSection } from './QualityDashboardSection';
+import { PageHeader } from '../common/UiStates';
 import {
   Award,
   FileText,
@@ -116,39 +117,12 @@ export const QualityModule: React.FC<QualityModuleProps> = ({ currentUser }) => 
 
   return (
     <div className="space-y-6 pb-12">
-      {/* School isolation Header Bar */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600">
-            <Award className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-lg font-black text-slate-900">
-                منظومة الجودة والاعتماد المدرسي
-              </h1>
-              <span className="px-2.5 py-0.5 text-xs font-bold rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100">
-                إتقان
-              </span>
-            </div>
-            <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-1.5">
-              <Building className="w-3.5 h-3.5 text-slate-400" />
-              المدرسة الحالية: <span className="font-bold text-slate-700">{activeSchool?.schoolName || 'مدرسة التميز النموذجية'}</span>
-              <span className="text-slate-300">•</span>
-              <span className="text-[11px] text-indigo-600 font-mono">عزل كامل لبيانات المدرسة ({schoolId})</span>
-            </p>
-          </div>
-        </div>
-
-        <button
-          onClick={loadData}
-          className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded-lg transition-colors flex items-center gap-1 text-xs font-medium"
-          title="تحديث البيانات"
-        >
-          <RefreshCw className="w-4 h-4" />
-          <span>تحديث</span>
-        </button>
-      </div>
+      <PageHeader
+        title="منظومة الجودة والاعتماد المدرسي"
+        description={<>إتقان • المدرسة الحالية: <span className="font-bold text-slate-700">{activeSchool?.schoolName || 'مدرسة التميز النموذجية'}</span> • <span className="font-mono text-[#008e8b]">عزل بيانات المدرسة ({schoolId})</span></>}
+        icon={<span className="rounded-xl bg-teal-50 p-2 text-[#008e8b]"><Award className="h-5 w-5" /></span>}
+        actions={<button onClick={loadData} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50" title="تحديث البيانات"><RefreshCw className="h-4 w-4" />تحديث</button>}
+      />
 
       {/* Sub-Tabs Navigation */}
       <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 pb-2">
@@ -157,7 +131,7 @@ export const QualityModule: React.FC<QualityModuleProps> = ({ currentUser }) => 
           onClick={() => setActiveSubTab('dashboard')}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm transition-all ${
             activeSubTab === 'dashboard'
-              ? 'bg-indigo-600 text-white shadow-sm'
+              ? 'bg-[#008e8b] text-white'
               : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
           }`}
         >
@@ -170,7 +144,7 @@ export const QualityModule: React.FC<QualityModuleProps> = ({ currentUser }) => 
           onClick={() => setActiveSubTab('daily')}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm transition-all ${
             activeSubTab === 'daily'
-              ? 'bg-indigo-600 text-white shadow-sm'
+              ? 'bg-[#008e8b] text-white'
               : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
           }`}
         >
@@ -183,7 +157,7 @@ export const QualityModule: React.FC<QualityModuleProps> = ({ currentUser }) => 
           onClick={() => setActiveSubTab('visits')}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm transition-all ${
             activeSubTab === 'visits'
-              ? 'bg-indigo-600 text-white shadow-sm'
+              ? 'bg-[#008e8b] text-white'
               : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
           }`}
         >
@@ -196,7 +170,7 @@ export const QualityModule: React.FC<QualityModuleProps> = ({ currentUser }) => 
           onClick={() => setActiveSubTab('comprehensive')}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm transition-all ${
             activeSubTab === 'comprehensive'
-              ? 'bg-indigo-600 text-white shadow-sm'
+              ? 'bg-[#008e8b] text-white'
               : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
           }`}
         >
@@ -209,7 +183,7 @@ export const QualityModule: React.FC<QualityModuleProps> = ({ currentUser }) => 
           onClick={() => setActiveSubTab('actions')}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm transition-all ${
             activeSubTab === 'actions'
-              ? 'bg-indigo-600 text-white shadow-sm'
+              ? 'bg-[#008e8b] text-white'
               : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
           }`}
         >
@@ -222,7 +196,7 @@ export const QualityModule: React.FC<QualityModuleProps> = ({ currentUser }) => 
           onClick={() => setActiveSubTab('standards')}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm transition-all ${
             activeSubTab === 'standards'
-              ? 'bg-indigo-600 text-white shadow-sm'
+              ? 'bg-[#008e8b] text-white'
               : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
           }`}
         >
