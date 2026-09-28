@@ -2357,7 +2357,8 @@ export interface AuditLogEntry {
     | 'SAMAT_MIGRATION'
     | 'SAMAT_SECURITY'
     | 'SAMAT_ASSESSMENT'
-    | 'QUALITY';
+    | 'QUALITY'
+    | 'CURRICULUM';
   targetEntity?: string;
   targetId?: string;
   details: string;
