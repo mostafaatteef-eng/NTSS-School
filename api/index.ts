@@ -683,11 +683,14 @@ const ntssHandler = {
         const namesById = new Map(people.rows.map((row: any) => [String(row.id), String(row.full_name || '')]));
         const missingId = requestedIds.find(id => !namesById.has(id));
         if (missingId) return json({ status:'error', code:isStudent?'STUDENT_NOT_FOUND':'EMPLOYEE_NOT_FOUND', [isStudent?'studentId':'employeeId']:missingId },404,corsOrigin);
-        for (const rec of records) {
+        const client = await pool.connect();
+        try {
+          await client.query('BEGIN');
+          for (const rec of records) {
           if (isStudent) {
             const studentId = String(rec.studentId || '').trim();
             const payload = JSON.stringify({ lateMinutes:Number(rec.lateMinutes||0), notes:String(rec.notes||'') });
-            const saved = await pool.query(
+            const saved = await client.query(
               `INSERT INTO student_attendance(school_id,student_id,attendance_date,status,payload) VALUES($1,$2,$3::date,$4,$5::jsonb)
                ON CONFLICT(school_id,student_id,attendance_date) DO UPDATE SET status=EXCLUDED.status,payload=EXCLUDED.payload RETURNING id,student_id,attendance_date,status,payload`,
               [schoolId,studentId,date,String(rec.status||'لم يسجل'),payload]
@@ -698,7 +701,7 @@ const ntssHandler = {
             const payload = JSON.stringify({ notes:String(rec.notes||'') });
             const checkIn = String(rec.checkIn||'').trim();
             const checkOut = String(rec.checkOut||'').trim();
-            const saved = await pool.query(
+            const saved = await client.query(
               `INSERT INTO employee_attendance(school_id,employee_id,attendance_date,status,check_in,check_out,payload)
                VALUES($1,$2,$3::date,$4,CASE WHEN $5='' THEN NULL ELSE ($3::date + $5::time) END,CASE WHEN $6='' THEN NULL ELSE ($3::date + $6::time) END,$7::jsonb)
                ON CONFLICT(school_id,employee_id,attendance_date) DO UPDATE SET status=EXCLUDED.status,check_in=EXCLUDED.check_in,check_out=EXCLUDED.check_out,payload=EXCLUDED.payload
@@ -708,7 +711,14 @@ const ntssHandler = {
             const row=saved.rows[0]; canonical.push({ id:String(row.id),schoolId,employeeId:row.employee_id,employeeName:namesById.get(employeeId)||'',date:String(row.attendance_date).slice(0,10),status:row.status,checkIn:checkIn,checkOut:checkOut,...(row.payload||{}) });
           }
         }
-        await pool.query('INSERT INTO audit_logs(school_id,user_id,username,role,action,entity,details) VALUES($1,$2,$3,$4,$5,$6,$7)', [schoolId,user.user_id,user.email,user.role,'BATCH_UPSERT',isStudent?'STUDENT_ATTENDANCE':'ATTENDANCE',`Saved ${canonical.length} records for ${date}`]);
+          await client.query('INSERT INTO audit_logs(school_id,user_id,username,role,action,entity,details) VALUES($1,$2,$3,$4,$5,$6,$7)', [schoolId,user.user_id,user.email,user.role,'BATCH_UPSERT',isStudent?'STUDENT_ATTENDANCE':'ATTENDANCE',`Saved ${canonical.length} records for ${date}`]);
+          await client.query('COMMIT');
+        } catch (error) {
+          await client.query('ROLLBACK');
+          throw error;
+        } finally {
+          client.release();
+        }
         return json({ status:'success', savedCount:canonical.length, records:canonical },200,corsOrigin);
       }
 
