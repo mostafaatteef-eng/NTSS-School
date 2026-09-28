@@ -34,7 +34,7 @@ async function authenticate(request: Request) {
   const token = String(request.headers.get('authorization') || '').replace(/^Bearer\s+/i, '').trim();
   if (!token) return null;
   const { rows } = await pool.query(
-    `SELECT s.id session_id,s.expires_at,s.active_school_id,u.id user_id,u.email,u.full_name,u.role,u.access_scope,u.school_id,u.employee_id
+    `SELECT s.id session_id,s.expires_at,s.active_school_id,u.id user_id,u.email,u.full_name,u.role,u.access_scope,u.school_id,u.employee_id,u.student_id
      FROM sessions s JOIN users u ON u.id=s.user_id
      WHERE s.token_hash=$1 AND s.status='ACTIVE' AND s.revoked_at IS NULL
        AND s.expires_at>now() AND u.is_active=true LIMIT 1`,
@@ -116,12 +116,40 @@ export default {
         console.log(JSON.stringify({ marker: 'NTSS_LOGIN_SUCCESS', requestId, userId: user.id, dbMs, authMs, sessionMs, totalMs }));
         return json({ status: 'success', sessionToken: token, expiresAt: expiresAt.toISOString(), user: {
           id: user.id, email: user.email, fullName: user.full_name, role: user.role, accessScope: user.access_scope,
-          schoolId: user.school_id || '', activeSchoolId: user.school_id || '', allowedSchoolIds: access.rows.map((x: any) => x.school_id), employeeId: user.employee_id || ''
+          schoolId: user.school_id || '', activeSchoolId: user.school_id || '', allowedSchoolIds: access.rows.map((x: any) => x.school_id), employeeId: user.employee_id || '', studentId: user.student_id || ''
         }}, 200, corsOrigin);
       }
 
       const user = await authenticate(request);
       if (!user) return json({ status: 'error', code: 'UNAUTHORIZED' }, 401, corsOrigin);
+
+      if (request.method === 'GET' && path === '/student/me') {
+        if (user.role !== 'Student' || user.access_scope !== 'SELF' || !user.student_id || !user.school_id) {
+          return json({ status: 'error', code: 'FORBIDDEN' }, 403, corsOrigin);
+        }
+        const studentResult = await pool.query(
+          `SELECT id,student_code,full_name,grade,classroom,section,status
+           FROM students WHERE school_id=$1 AND id=$2 LIMIT 1`,
+          [user.school_id, user.student_id]
+        );
+        const student = studentResult.rows[0];
+        if (!student) return json({ status: 'error', code: 'STUDENT_NOT_FOUND' }, 404, corsOrigin);
+        const attendance = await pool.query(
+          `SELECT attendance_date,status FROM student_attendance
+           WHERE school_id=$1 AND student_id=$2
+           ORDER BY attendance_date DESC LIMIT 180`,
+          [user.school_id, user.student_id]
+        );
+        const summary = attendance.rows.reduce((acc: any, row: any) => {
+          const status = String(row.status || '');
+          acc.total += 1;
+          if (status === 'غائب' || /absent/i.test(status)) acc.absent += 1;
+          else if (status === 'متأخر' || /late/i.test(status)) acc.late += 1;
+          else acc.present += 1;
+          return acc;
+        }, { total: 0, present: 0, absent: 0, late: 0 });
+        return json({ status: 'success', data: { student, attendance: attendance.rows, attendanceSummary: summary } }, 200, corsOrigin);
+      }
 
       if (request.method === 'POST' && path === '/validate-session') {
         const access = await pool.query("SELECT usa.school_id FROM user_school_access usa JOIN schools s ON s.id=usa.school_id WHERE usa.user_id=$1 AND s.status='ACTIVE' ORDER BY usa.school_id", [user.user_id]);
@@ -129,7 +157,7 @@ export default {
         const activeSchoolId = user.active_school_id && allowedSchoolIds.includes(user.active_school_id) ? user.active_school_id : (user.school_id && allowedSchoolIds.includes(user.school_id) ? user.school_id : '');
         return json({ status: 'success', valid: true, expiresAt: user.expires_at, user: {
           id: user.user_id, email: user.email, fullName: user.full_name, role: user.role, accessScope: user.access_scope,
-          schoolId: user.school_id || '', activeSchoolId, allowedSchoolIds, employeeId: user.employee_id || ''
+          schoolId: user.school_id || '', activeSchoolId, allowedSchoolIds, employeeId: user.employee_id || '', studentId: user.student_id || ''
         }}, 200, corsOrigin);
       }
 
