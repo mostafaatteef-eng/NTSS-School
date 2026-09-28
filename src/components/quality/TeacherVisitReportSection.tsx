@@ -36,6 +36,7 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
   canCreate,
   canApprove,
 }) => {
+  const schoolId = storageService.getActiveSchoolId() || currentUser?.schoolId || '';
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [viewingReport, setViewingReport] = useState<TeacherVisitReport | null>(null);
 
@@ -197,7 +198,7 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
     try {
       await storageService.saveAuthoritativeQualityRecord('TEACHER_VISIT',{...newReport,status: newReport.status || 'DRAFT'},schoolId);
       onRefresh();
-      setShowForm(false);
+      setIsModalOpen(false);
     } catch (error:any) { alert(error?.message || 'تعذر حفظ زيارة المعلم'); }
   };
 
