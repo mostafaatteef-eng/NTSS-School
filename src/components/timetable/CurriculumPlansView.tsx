@@ -62,6 +62,7 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
   const [linkingItem, setLinkingItem] = useState<{
     plan: CurriculumMasterPlan;
     item: CurriculumPlanItem;
+    distributionId?: string;
   } | null>(null);
   const [selectedScheduleId, setSelectedScheduleId] = useState<string>('');
   const [targetDate, setTargetDate] = useState<string>('');
@@ -234,6 +235,7 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
       planId: selectedPlan.id,
       week,
       user: currentUser,
+      replaceDistributionId: linkingItem.distributionId,
     });
     if (!res.success) {
       alert(res.message);
@@ -590,13 +592,19 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
                             {selectedPlan.status === 'Approved' ? 'عرض فقط' : 'يتاح الربط بعد اعتماد الخطة'}
                           </span>
                         ) : (
-                          <button
-                            type="button"
-                            onClick={() => setLinkingItem({ plan: selectedPlan, item })}
-                            className="px-3 py-1.5 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-xl border border-indigo-200 transition"
-                          >
-                            {linkedDist ? 'تعديل الربط' : 'ربط بحصة'}
-                          </button>
+                          <div className="flex flex-col items-center gap-1">
+                            {linkedDists.length === 0 ? (
+                              <button type="button" onClick={() => setLinkingItem({ plan: selectedPlan, item })} className="px-3 py-1.5 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-xl border border-indigo-200 transition">
+                                ربط بحصة
+                              </button>
+                            ) : (
+                              linkedDists.map(dist => (
+                                <button key={dist.id} type="button" onClick={() => { setSelectedScheduleId(dist.scheduleItemId || ''); setTargetDate(dist.targetDate || ''); setLinkNotes(dist.notes || ''); setLinkingItem({ plan: selectedPlan, item, distributionId: dist.id }); }} className="px-2 py-1 text-[10px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg border border-indigo-200 transition">
+                                  تعديل {dist.dayOfWeek} ح{dist.periodNumber}
+                                </button>
+                              ))
+                            )}
+                          </div>
                         )}
                       </td>
                     </tr>
