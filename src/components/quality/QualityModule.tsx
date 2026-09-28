@@ -80,12 +80,24 @@ export const QualityModule: React.FC<QualityModuleProps> = ({ currentUser }) => 
     true;
 
   // Load all Quality module data for current school
-  const loadData = () => {
+  const loadData = async () => {
     const stds = storageService.getQualityStandards(schoolId);
-    const daily = storageService.getDailyQualityReports(schoolId);
-    const visits = storageService.getTeacherVisitReports(schoolId);
-    const evals = storageService.getComprehensiveEvaluations(schoolId);
-    const acts = storageService.getCorrectiveActions(schoolId);
+    let daily = storageService.getDailyQualityReports(schoolId);
+    let visits = storageService.getTeacherVisitReports(schoolId);
+    let evals = storageService.getComprehensiveEvaluations(schoolId);
+    let acts = storageService.getCorrectiveActions(schoolId);
+    try {
+      const [serverDaily,serverVisits,serverEvals,serverActs]=await Promise.all([
+        storageService.getAuthoritativeQualityRecords('DAILY_REPORT',schoolId),
+        storageService.getAuthoritativeQualityRecords('TEACHER_VISIT',schoolId),
+        storageService.getAuthoritativeQualityRecords('COMPREHENSIVE_EVALUATION',schoolId),
+        storageService.getAuthoritativeQualityRecords('CORRECTIVE_ACTION',schoolId),
+      ]);
+      daily=serverDaily as DailyQualityReport[]; visits=serverVisits as TeacherVisitReport[];
+      evals=serverEvals as ComprehensiveEvaluation[]; acts=serverActs as CorrectiveAction[];
+    } catch (error) {
+      console.error('Authoritative quality load failed',error);
+    }
     const met = storageService.getQualityMetricOverview(schoolId);
 
     setStandards(stds);
@@ -97,7 +109,7 @@ export const QualityModule: React.FC<QualityModuleProps> = ({ currentUser }) => 
   };
 
   useEffect(() => {
-    loadData();
+    void loadData();
   }, [schoolId]);
 
   return (
