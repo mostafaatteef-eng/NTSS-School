@@ -237,27 +237,36 @@ export const TimetableWeeklyMatrixView: React.FC<TimetableWeeklyMatrixViewProps>
   };
 
   const handleExportExcel = () => {
-    const rows = filteredItems.map(item => ({
-      اليوم: item.dayOfWeek,
-      الحصة: item.periodNumber,
-      الفصل: item.classroom,
-      الصف: item.grade,
-      المادة: item.subject,
-      المعلم: item.teacherName,
-      'كود المعلم': item.teacherCode || '',
-      القاعة: item.room || '',
-      'أسبوع الخطة': item.cycleWeek || 'ALL',
-      مغلق: item.isLocked ? 'نعم' : 'لا',
-    }));
+    const rows = filteredItems.map(item => {
+      const lessonPlan = getLessonPlanForSchedule(item.id);
+      return {
+        اليوم: item.dayOfWeek,
+        الحصة: item.periodNumber,
+        الفصل: item.classroom,
+        الصف: item.grade,
+        المادة: item.subject,
+        'موضوع المنهج': lessonPlan?.item.lessonTitle || '',
+        'أسبوع المنهج': curriculumWeek,
+        'حالة تنفيذ المنهج': lessonPlan?.distribution.status || '',
+        المعلم: item.teacherName,
+        'كود المعلم': item.teacherCode || '',
+        القاعة: item.room || '',
+        'دورة الجدول': item.cycleWeek || 'ALL',
+        مغلق: item.isLocked ? 'نعم' : 'لا',
+      };
+    });
 
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'الجدول المدرسي');
-    XLSX.writeFile(wb, `الجدول_المدرسي_${viewMode}_${new Date().toISOString().split('T')[0]}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, ws, `الأسبوع ${curriculumWeek}`);
+    XLSX.writeFile(wb, `الجدول_المدرسي_${viewMode}_أسبوع_المنهج_${curriculumWeek}_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
   const handlePrint = () => {
+    const previousTitle = document.title;
+    document.title = `الجدول المدرسي - أسبوع المنهج ${curriculumWeek}`;
     window.print();
+    document.title = previousTitle;
   };
 
   return (
