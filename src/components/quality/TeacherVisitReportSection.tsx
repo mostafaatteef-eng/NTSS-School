@@ -43,9 +43,24 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
   const [filterTeacher, setFilterTeacher] = useState<string>('ALL');
 
   // Teacher Visit standards
-  const visitStandards = standards.filter(
-    (s) => s.isActive && s.applicableTo?.includes('TEACHER_VISIT')
+  const configuredVisitStandards = standards.filter(
+    (s) => s.isActive && s.applicableTo?.includes('TEACHER_VISIT') && Boolean(s.domain?.trim()) && Boolean(s.indicator?.trim())
   );
+  const fallbackVisitStandards: QualityStandard[] = [
+    ['TV-01', 'التخطيط للدرس', 'وضوح أهداف التعلم', 'الأهداف واضحة ومناسبة للدرس ويمكن ملاحظة تحققها'],
+    ['TV-02', 'إدارة بيئة التعلم', 'إدارة الوقت والفصل', 'استثمار زمن الحصة والمحافظة على بيئة تعلم منظمة وآمنة'],
+    ['TV-03', 'استراتيجيات التعليم', 'تنوع أساليب التدريس', 'استخدام أساليب مناسبة للمحتوى ومستويات الطلاب'],
+    ['TV-04', 'تفاعل الطلاب', 'مشاركة الطلاب في التعلم', 'مشاركة أغلب الطلاب بفاعلية وطرح أسئلة أو تنفيذ مهام'],
+    ['TV-05', 'التقويم أثناء التعلم', 'التحقق من الفهم', 'استخدام أسئلة أو مهام تكشف مستوى الفهم وتوجه التدريس'],
+    ['TV-06', 'الفروق الفردية', 'دعم احتياجات المتعلمين', 'مراعاة تفاوت المستويات وتقديم دعم أو تحديات مناسبة'],
+    ['TV-07', 'المحتوى والتطبيق', 'دقة المحتوى وربطه بالتطبيق', 'تقديم محتوى صحيح وربطه بمواقف أو تطبيقات مهنية مناسبة'],
+    ['TV-08', 'الإغلاق والمتابعة', 'تلخيص التعلم والخطوة التالية', 'إنهاء الدرس بخلاصة واضحة وتحديد متابعة أو مهمة لاحقة'],
+  ].map(([code, domain, standard, indicator], index) => ({
+    id: `VISIT-DEFAULT-${index + 1}`, schoolId: currentUser?.schoolId || '', code, domain,
+    standard, indicator, description: indicator, weight: 1, evaluationScale: 4,
+    evidenceRequired: false, applicableTo: ['TEACHER_VISIT'], isActive: true,
+  }));
+  const visitStandards = configuredVisitStandards.length >= 4 ? configuredVisitStandards : fallbackVisitStandards;
   const standardsByDomain = visitStandards.reduce((groups: Record<string, QualityStandard[]>, standard: QualityStandard) => {
     const domain = standard.domain?.trim() || 'الممارسة الصفية';
     (groups[domain] ||= []).push(standard);
