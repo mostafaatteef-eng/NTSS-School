@@ -138,28 +138,24 @@ export class CurriculumPlanService {
       return allPlans;
     }
 
-    // Identify teacher's assigned subjects & grades from active schedule
+    // Authorize against the exact timetable assignment tuple. Subject/grade
+    // sets must never be combined independently because that can create
+    // assignments the teacher does not actually own.
     const teacherId = user.employeeId || teacher?.id || user.id;
     const teacherSchedule = timetableService.getTeacherWeeklySchedule(teacherId);
+    const normalize = (value?: string) => String(value || '').trim().toLowerCase();
+    const assignmentKey = (subject?: string, grade?: string, classroom?: string) =>
+      `${normalize(subject)}|${normalize(grade)}|${normalize(classroom)}`;
+    const assignedKeys = new Set(
+      teacherSchedule
+        .filter(item => item.subject && item.grade && item.classroom)
+        .map(item => assignmentKey(item.subject, item.grade, item.classroom))
+    );
 
-    const assignedSubjects = new Set<string>();
-    const assignedGrades = new Set<string>();
-
-    teacherSchedule.forEach(item => {
-      if (item.subject) assignedSubjects.add(item.subject.trim().toLowerCase());
-      if (item.grade) assignedGrades.add(item.grade.trim().toLowerCase());
-    });
-
-    // Also match teacher subject if present on employee record
-    if (teacher?.specialization) {
-      assignedSubjects.add(teacher.specialization.trim().toLowerCase());
-    }
-
-    return allPlans.filter(plan => {
-      const planSub = plan.subject.trim().toLowerCase();
-      const planGrade = plan.grade.trim().toLowerCase();
-      return assignedSubjects.has(planSub) && assignedGrades.has(planGrade);
-    });
+    return allPlans.filter(plan =>
+      Boolean(plan.classroom) &&
+      assignedKeys.has(assignmentKey(plan.subject, plan.grade, plan.classroom))
+    );
   }
 
   /**
@@ -406,6 +402,7 @@ export class CurriculumPlanService {
       if (filters?.subject && p.subject !== filters.subject) return false;
       if (filters?.grade && p.grade !== filters.grade) return false;
       if (filters?.term && p.term !== filters.term) return false;
+      if (filters?.classroom && p.classroom !== filters.classroom) return false;
       return true;
     });
 
