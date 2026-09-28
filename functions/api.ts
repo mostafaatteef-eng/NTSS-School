@@ -413,10 +413,22 @@ export default {
         if(action==='toggleUserStatus'){
           if(targetId===user.user_id && String(data.newStatus)!=='Active')return json({status:'error',code:'SELF_DISABLE_DENIED'},409,corsOrigin);
           const status=['Active','Inactive','Suspended'].includes(String(data.newStatus))?String(data.newStatus):'Inactive';
-          const u=await pool.query('UPDATE users SET status=$2,is_active=$3,updated_at=now() WHERE id=$1 RETURNING *',[targetId,status,status==='Active']);
-          if(!u.rowCount)return json({status:'error',code:'NOT_FOUND'},404,corsOrigin);
-          if(status!=='Active')await pool.query("UPDATE sessions SET status='REVOKED',revoked_at=now() WHERE user_id=$1 AND status='ACTIVE'",[targetId]);
-          return json({status:'success',message:'تم تحديث حالة الحساب.',user:await project(u.rows[0])},200,corsOrigin);
+          const client=await pool.connect();
+          let updatedUser:any;
+          try {
+            await client.query('BEGIN');
+            const u=await client.query('UPDATE users SET status=$2,is_active=$3,updated_at=now() WHERE id=$1 RETURNING *',[targetId,status,status==='Active']);
+            if(!u.rowCount){ await client.query('ROLLBACK'); return json({status:'error',code:'NOT_FOUND'},404,corsOrigin); }
+            updatedUser=u.rows[0];
+            if(status!=='Active')await client.query("UPDATE sessions SET status='REVOKED',revoked_at=now() WHERE user_id=$1 AND status='ACTIVE'",[targetId]);
+            await client.query('COMMIT');
+          } catch(error) {
+            await client.query('ROLLBACK');
+            throw error;
+          } finally {
+            client.release();
+          }
+          return json({status:'success',message:'تم تحديث حالة الحساب.',user:await project(updatedUser)},200,corsOrigin);
         }
         if(action==='revokeUserSessions'){
           await pool.query("UPDATE sessions SET status='REVOKED',revoked_at=now() WHERE user_id=$1 AND status='ACTIVE'",[targetId]);
