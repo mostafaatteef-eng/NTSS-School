@@ -24,7 +24,7 @@ interface LoginViewProps {
   onOpenTeacherPortal?: () => void;
 }
 
-type LoginPortal = 'home' | 'system' | 'staff';
+type LoginPortal = 'home' | 'system' | 'staff' | 'student';
 
 const STAFF_PORTAL_ROLES = new Set([
   'SchoolAdmin',
@@ -44,6 +44,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
 }) => {
   const [portal, setPortal] = useState<LoginPortal>('home');
   const [email, setEmail] = useState('');
+  const [studentCode, setStudentCode] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -51,6 +52,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
 
   const resetForm = () => {
     setEmail('');
+    setStudentCode('');
     setPassword('');
     setShowPassword(false);
     setErrorMessage('');
@@ -65,7 +67,12 @@ export const LoginView: React.FC<LoginViewProps> = ({
     e.preventDefault();
     setErrorMessage('');
 
-    if (portal !== 'system' && portal !== 'staff') return;
+    if (portal !== 'system' && portal !== 'staff' && portal !== 'student') return;
+
+    if (portal === 'student' && !studentCode.trim()) {
+      setErrorMessage('يرجى إدخال كود الطالب');
+      return;
+    }
 
     if (!email.trim()) {
       setErrorMessage('يرجى إدخال البريد الإلكتروني');
@@ -79,7 +86,9 @@ export const LoginView: React.FC<LoginViewProps> = ({
 
     setIsLoading(true);
     try {
-      const result = await storageService.login(email.trim(), password);
+      const result = portal === 'student'
+        ? await storageService.loginStudent(studentCode.trim(), password)
+        : await storageService.login(email.trim(), password);
 
       if (!result.success || !result.user) {
         setErrorMessage(result.message || 'بيانات الدخول غير صحيحة.');
@@ -88,6 +97,12 @@ export const LoginView: React.FC<LoginViewProps> = ({
 
       const user = result.user;
       const isSystemAdmin = user.role === 'SystemAdmin' && user.accessScope === 'GLOBAL';
+
+      if (portal === 'student' && (user.role !== 'Student' || user.accessScope !== 'SELF')) {
+        await storageService.logoutStaffSession();
+        setErrorMessage('هذا الحساب ليس حساب طالب صالحًا.');
+        return;
+      }
 
       if (portal === 'system' && !isSystemAdmin) {
         await storageService.logoutStaffSession();
@@ -148,21 +163,23 @@ export const LoginView: React.FC<LoginViewProps> = ({
     },
     {
       id: 'student',
-      title: 'جدول الطلاب',
-      description: 'اختيار المدرسة ثم الصف والفصل لعرض الجدول الدراسي المنشور بدون حساب.',
-      action: 'اختيار المدرسة وعرض الجدول',
+      title: 'بوابة الطالب',
+      description: 'الحضور والغياب والتأخير والنتائج والمخالفات المسموح بنشرها للطالب.',
+      action: 'دخول الطالب',
       icon: CalendarDays,
       className: 'border-amber-200 bg-amber-50/50 hover:border-amber-300',
       iconClass: 'bg-amber-100 text-amber-700',
-      onClick: onOpenPublicSchedule,
+      onClick: () => openPortal('student'),
     },
   ] as const;
 
-  const formTitle = portal === 'system' ? 'دخول مدير النظام' : 'دخول إدارة المدرسة والعاملين';
+  const formTitle = portal === 'system' ? 'دخول مدير النظام' : portal === 'student' ? 'دخول الطالب' : 'دخول إدارة المدرسة والعاملين';
   const formDescription =
     portal === 'system'
       ? 'يتم تحديد صلاحية GLOBAL والمدارس المسموح بها من الخادم بعد تسجيل الدخول.'
-      : 'لا تحتاج لاختيار المدرسة؛ حسابك مرتبط بمدرستك وصلاحياتك من الخادم.';
+      : portal === 'student'
+        ? 'استخدم كود الطالب مع كلمة المرور أو PIN الآمن. الكود وحده لا يسمح بالدخول.'
+        : 'لا تحتاج لاختيار المدرسة؛ حسابك مرتبط بمدرستك وصلاحياتك من الخادم.';
 
   return (
     <div
@@ -269,6 +286,17 @@ export const LoginView: React.FC<LoginViewProps> = ({
                 )}
 
                 <form onSubmit={handleSubmit} className="space-y-4">
+                  {portal === 'student' ? (
+                    <div className="space-y-1.5">
+                      <label htmlFor="input-student-code" className="block text-xs font-bold text-slate-700">كود الطالب</label>
+                      <div className="relative flex items-center">
+                        <GraduationCap className="pointer-events-none absolute right-3.5 h-4 w-4 text-slate-400" />
+                        <input id="input-student-code" type="text" autoComplete="username" required value={studentCode}
+                          onChange={e => setStudentCode(e.target.value)} placeholder="Student Code"
+                          className="w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-4 pr-10 text-left text-sm font-medium outline-none transition focus:border-[#008e8b] focus:bg-white focus:ring-2 focus:ring-[#008e8b]/15" dir="ltr" />
+                      </div>
+                    </div>
+                  ) : (
                   <div className="space-y-1.5">
                     <label htmlFor="input-email" className="block text-xs font-bold text-slate-700">
                       البريد الإلكتروني
@@ -288,6 +316,8 @@ export const LoginView: React.FC<LoginViewProps> = ({
                       />
                     </div>
                   </div>
+
+                  )}
 
                   <div className="space-y-1.5">
                     <label htmlFor="input-password" className="block text-xs font-bold text-slate-700">
