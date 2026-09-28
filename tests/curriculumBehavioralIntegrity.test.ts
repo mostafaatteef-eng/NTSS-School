@@ -11,18 +11,6 @@ const teacher: User = { id:'USR-T1', employeeId:'EMP-T1', fullName:'Teacher One'
 const plan=(id:string,subject:string,grade:string,classroom:string):CurriculumMasterPlan=>({
   id,schoolId:'SCH-1',academicYear:'2026-2027',term:'T1',grade,classroom,subject,version:1,status:'Approved',uploadedBy:'EMP-T1',uploadedAt:new Date().toISOString(),updatedAt:new Date().toISOString(),
   items:[{id:id+'-I1',planId:id,week:1,unit:'U',lessonTitle:'L',estimatedPeriods:1,order:1}]
-  it('can cancel a stale distribution after its timetable slot is deleted',()=>{
-    const p=plan('STALE','Math','G1','A');
-    localStorage.setItem('ntss_curriculum_plans_v3',JSON.stringify([p]));
-    storageService.saveSchedule([slot('OLD','الأحد')]);
-    const linked=curriculumPlanService.linkPlanItemToSchedule({planId:'STALE',planItemId:'STALE-I1',scheduleItemId:'OLD',user:teacher});
-    expect(linked.success).toBe(true);
-    storageService.saveSchedule([]);
-    const cancelled=storageService.saveCurriculumDistribution({...linked.distribution!,status:'Cancelled'},teacher);
-    expect(cancelled.success).toBe(true);
-    expect(storageService.getCurriculumDistributions('SCH-1').find(d=>d.id===linked.distribution!.id)?.status).toBe('Cancelled');
-  });
-
 });
 const slot=(id:string,dayOfWeek:string,subject='Math',grade='G1',classroom='A'):ScheduleItem=>({
   id,academicYear:'2026-2027',grade,classroom,dayOfWeek,periodNumber:1,startTime:'08:00',endTime:'08:50',subject,teacherId:'EMP-T1',teacherName:'Teacher One',isActive:true
@@ -61,4 +49,16 @@ describe('Curriculum behavioral integrity',()=>{
     const after=storageService.getCurriculumDistributions('SCH-1').filter(d=>d.status!=='Cancelled');expect(after).toHaveLength(3);
     expect(new Set(after.map(d=>d.scheduleItemId))).toEqual(new Set(['M1','M3','M4']));
   });
+  it('can cancel a stale distribution after its timetable slot is deleted',()=>{
+    const p=plan('STALE','Math','G1','A');
+    localStorage.setItem('ntss_curriculum_plans_v3',JSON.stringify([p]));
+    storageService.saveSchedule([slot('OLD','الأحد')]);
+    const linked=curriculumPlanService.linkPlanItemToSchedule({planId:'STALE',planItemId:'STALE-I1',scheduleItemId:'OLD',user:teacher});
+    expect(linked.success).toBe(true);
+    storageService.saveSchedule([]);
+    const cancelled=storageService.saveCurriculumDistribution({...linked.distribution!,status:'Cancelled'},teacher);
+    expect(cancelled.success).toBe(true);
+    expect(storageService.getCurriculumDistributions('SCH-1').find(d=>d.id===linked.distribution!.id)?.status).toBe('Cancelled');
+  });
+
 });
