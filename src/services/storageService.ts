@@ -7535,8 +7535,8 @@ class StorageService {
       if (isTeacher && existing.uploadedBy !== teacherId) {
         return { success: false, message: 'غير مصرح لك بتعديل خطة تخص معلمًا آخر.' };
       }
-      if (isTeacher && existing.status === 'Approved') {
-        return { success: false, message: 'لا يمكن للمعلم تعديل خطة تم اعتمادها.' };
+      if (existing.status === 'Approved') {
+        return { success: false, message: 'الخطة المعتمدة مقفلة ولا يمكن تعديل محتواها مباشرة؛ أنشئ نسخة جديدة للتعديل.' };
       }
       if (isTeacher && existing.status === 'Submitted') {
         return { success: false, message: 'الخطة مرسلة للمراجعة ولا يمكن تعديل محتواها أو حالتها حتى تعتمدها الإدارة أو ترفضها.' };
