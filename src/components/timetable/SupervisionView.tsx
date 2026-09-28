@@ -185,14 +185,14 @@ export const SupervisionView: React.FC = () => {
             onChange={e => setSelectedDate(e.target.value)}
             className="bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-medium focus:ring-2 focus:ring-[#008e8b]/30"
           />
-          <span className="text-xs font-bold text-teal-800 bg-teal-50 px-2.5 py-1 rounded-md border border-indigo-200">
+          <span className="text-xs font-bold text-teal-800 bg-teal-50 px-2.5 py-1 rounded-md border border-teal-200">
             يوم {dayName}
           </span>
         </div>
 
         <button
           onClick={() => handleOpenAssignModal()}
-          className="px-4 py-2 bg-[#008e8b] hover:bg-teal-700 text-white rounded-xl text-xs font-bold shadow-sm transition flex items-center gap-2"
+          className="px-4 py-2 bg-[#008e8b] hover:bg-teal-700 text-white rounded-xl text-xs font-bold  transition flex items-center gap-2"
         >
           <Plus className="w-4 h-4" />
           إسناد مشرف لموقع جديد
@@ -215,7 +215,7 @@ export const SupervisionView: React.FC = () => {
                   </h3>
                   <span className="text-[11px] font-mono text-slate-500">{shiftMeta.time}</span>
                 </div>
-                <span className="text-xs font-bold bg-white text-indigo-700 px-2.5 py-1 rounded-md border border-slate-200 shadow-2xs">
+                <span className="text-xs font-bold bg-white text-teal-800 px-2.5 py-1 rounded-md border border-slate-200 shadow-2xs">
                   {shiftAssignments.length} مشرفين
                 </span>
               </div>
@@ -333,7 +333,7 @@ export const SupervisionView: React.FC = () => {
               </button>
               <button
                 onClick={handleSaveAssignment}
-                className="px-5 py-2 bg-[#008e8b] hover:bg-teal-700 text-white rounded-lg text-xs font-bold shadow-sm"
+                className="px-5 py-2 bg-[#008e8b] hover:bg-teal-700 text-white rounded-lg text-xs font-bold "
               >
                 حفظ التكليف
               </button>
