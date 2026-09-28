@@ -21,6 +21,7 @@ import {
 import { timetableService } from '../../services/timetableService';
 import { storageService } from '../../services/storageService';
 import * as XLSX from 'xlsx';
+import { PageHeader } from '../common/UiStates';
 
 export const SupervisionView: React.FC = () => {
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
@@ -152,19 +153,11 @@ export const SupervisionView: React.FC = () => {
 
   return (
     <div className="space-y-6" dir="rtl">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-        <div>
-          <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-            <Shield className="w-6 h-6 text-indigo-600" />
-            جدول الإشراف اليومي ونوبات المتابعة المدرسية
-          </h2>
-          <p className="text-sm text-slate-500 mt-1">
-            توزيع المعلمين على البوابات، الفناء، المعامل، والفسح مع منع تعارض أوقات الحصص والإشراف
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2">
+      <PageHeader
+        title="جدول الإشراف اليومي"
+        description="توزيع المعلمين على مواقع الإشراف مع منع تعارض الحصص والنوبات."
+        icon={<span className="rounded-xl bg-teal-50 p-2 text-[#008e8b]"><Shield className="h-5 w-5" /></span>}
+        actions={<div className="flex items-center gap-2">
           <button
             onClick={handleExportExcel}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-xl border border-emerald-200 transition"
@@ -179,8 +172,8 @@ export const SupervisionView: React.FC = () => {
             <Printer className="w-4 h-4" />
             طباعة كشف اليوم
           </button>
-        </div>
-      </div>
+        </div>}
+      />
 
       {/* Date Bar & New Assignment CTA */}
       <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-wrap items-center justify-between gap-3">
@@ -190,16 +183,16 @@ export const SupervisionView: React.FC = () => {
             type="date"
             value={selectedDate}
             onChange={e => setSelectedDate(e.target.value)}
-            className="bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-medium focus:ring-2 focus:ring-indigo-500"
+            className="bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-medium focus:ring-2 focus:ring-[#008e8b]/30"
           />
-          <span className="text-xs font-bold text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-md border border-indigo-200">
+          <span className="text-xs font-bold text-teal-800 bg-teal-50 px-2.5 py-1 rounded-md border border-indigo-200">
             يوم {dayName}
           </span>
         </div>
 
         <button
           onClick={() => handleOpenAssignModal()}
-          className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-sm transition flex items-center gap-2"
+          className="px-4 py-2 bg-[#008e8b] hover:bg-teal-700 text-white rounded-xl text-xs font-bold shadow-sm transition flex items-center gap-2"
         >
           <Plus className="w-4 h-4" />
           إسناد مشرف لموقع جديد
@@ -213,11 +206,11 @@ export const SupervisionView: React.FC = () => {
           const shiftAssignments = dailyAssignments.filter(a => a.shift === shift);
 
           return (
-            <div key={shift} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+            <div key={shift} className="bg-white rounded-2xl border border-slate-200 overflow-hidden flex flex-col">
               <div className="p-4 bg-slate-50/80 border-b border-slate-200 flex items-center justify-between">
                 <div>
                   <h3 className="font-bold text-sm text-slate-800 flex items-center gap-1.5">
-                    <Clock className="w-4 h-4 text-indigo-600" />
+                    <Clock className="w-4 h-4 text-[#008e8b]" />
                     {shiftMeta.label}
                   </h3>
                   <span className="text-[11px] font-mono text-slate-500">{shiftMeta.time}</span>
@@ -238,7 +231,7 @@ export const SupervisionView: React.FC = () => {
                       <div>
                         <div className="font-bold text-xs text-slate-900 flex items-center gap-1.5">
                           <span>{item.teacherName}</span>
-                          <span className="font-mono text-[10px] bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded">
+                          <span className="font-mono text-[10px] bg-teal-50 text-teal-800 px-1.5 py-0.5 rounded">
                             {item.teacherCode}
                           </span>
                         </div>
@@ -269,7 +262,7 @@ export const SupervisionView: React.FC = () => {
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-100 space-y-4">
             <div className="flex items-center justify-between border-b pb-3">
               <h3 className="font-bold text-base text-slate-800 flex items-center gap-2">
-                <Shield className="w-5 h-5 text-indigo-600" />
+                <Shield className="w-5 h-5 text-[#008e8b]" />
                 تكليف معلم بالإشراف
               </h3>
               <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600 text-lg">
@@ -340,7 +333,7 @@ export const SupervisionView: React.FC = () => {
               </button>
               <button
                 onClick={handleSaveAssignment}
-                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-sm"
+                className="px-5 py-2 bg-[#008e8b] hover:bg-teal-700 text-white rounded-lg text-xs font-bold shadow-sm"
               >
                 حفظ التكليف
               </button>
