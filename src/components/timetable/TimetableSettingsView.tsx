@@ -12,6 +12,7 @@ import {
 import { TeacherLoadPolicy, ScheduleBreak, ScheduleConfig } from '../../types';
 import { timetableService } from '../../services/timetableService';
 import { storageService } from '../../services/storageService';
+import { PageHeader } from '../common/UiStates';
 
 export const TimetableSettingsView: React.FC = () => {
   const [policy, setPolicy] = useState<TeacherLoadPolicy>(timetableService.getTeacherLoadPolicy());
@@ -66,26 +67,12 @@ export const TimetableSettingsView: React.FC = () => {
 
   return (
     <div className="space-y-6" dir="rtl">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-        <div>
-          <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-            <SettingsIcon className="w-6 h-6 text-indigo-600" />
-            إعدادات الجدول وسقف الأنصبة القانونية
-          </h2>
-          <p className="text-sm text-slate-500 mt-1">
-            ضبط معادلة ساعات العمل القانونية (25 ساعة = 1500 دقيقة)، مواعيد الحصص والفسح، وقواعد الاحتياطي
-          </p>
-        </div>
-
-        <button
-          onClick={handleSavePolicy}
-          className="inline-flex items-center gap-2 px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md transition"
-        >
-          <Save className="w-4 h-4" />
-          حفظ التعديلات
-        </button>
-      </div>
+      <PageHeader
+        title="إعدادات الجدول والأنصبة"
+        description="ضبط ساعات العمل وزمن الحصص والفترات وقواعد الاحتياطي والإشراف."
+        icon={<span className="rounded-xl bg-teal-50 p-2 text-[#008e8b]"><SettingsIcon className="h-5 w-5" /></span>}
+        actions={<button onClick={handleSavePolicy} className="inline-flex items-center gap-2 rounded-xl bg-[#008e8b] px-5 py-2.5 text-xs font-bold text-white transition hover:bg-teal-700"><Save className="h-4 w-4" />حفظ التعديلات</button>}
+      />
 
       {isSaved && (
         <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-xl flex items-center gap-3 text-emerald-800 text-xs font-bold">
@@ -97,13 +84,13 @@ export const TimetableSettingsView: React.FC = () => {
       {/* Grid: Policy & Breaks */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Section 1: 25h / 50m = 30 periods Policy */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 space-y-4">
           <h3 className="font-bold text-sm text-slate-800 flex items-center gap-2 border-b pb-3">
-            <Clock className="w-4 h-4 text-indigo-600" />
+            <Clock className="w-4 h-4 text-[#008e8b]" />
             سياسة سقف نصاب المعلم القانوني
           </h3>
 
-          <div className="bg-indigo-50/70 border border-indigo-200 p-3.5 rounded-xl text-xs text-indigo-900 space-y-1">
+          <div className="bg-teal-50/70 border border-teal-200 p-3.5 rounded-xl text-xs text-teal-950 space-y-1">
             <div className="font-bold">المعادلة المعتمدة بالمشروع:</div>
             <div>
               25 ساعة عمل أسبوعياً = <strong>1500 دقيقة</strong>. وبحساب زمن الحصة <strong>50 دقيقة</strong> ينتج الحد
@@ -145,7 +132,7 @@ export const TimetableSettingsView: React.FC = () => {
                 type="number"
                 value={policy.maxWeeklyPeriods}
                 onChange={e => setPolicy({ ...policy, maxWeeklyPeriods: Number(e.target.value) })}
-                className="w-full border border-slate-300 rounded-lg p-2 text-xs font-bold text-indigo-700"
+                className="w-full border border-slate-300 rounded-lg p-2 text-xs font-bold text-teal-800"
               />
             </div>
 
@@ -176,7 +163,7 @@ export const TimetableSettingsView: React.FC = () => {
                   type="checkbox"
                   checked={policy.includeReserveInTotalLoad}
                   onChange={e => setPolicy({ ...policy, includeReserveInTotalLoad: e.target.checked })}
-                  className="rounded text-indigo-600 focus:ring-indigo-500 h-4 w-4"
+                  className="rounded text-[#008e8b] focus:ring-[#008e8b]/30 h-4 w-4"
                 />
                 <span className="font-semibold text-slate-700">
                   احتساب حصص الاحتياطي الفعلية ضمن إجمالي نصاب المعلم الأسبوعي
@@ -188,7 +175,7 @@ export const TimetableSettingsView: React.FC = () => {
                   type="checkbox"
                   checked={policy.includeSupervisionInLoad}
                   onChange={e => setPolicy({ ...policy, includeSupervisionInLoad: e.target.checked })}
-                  className="rounded text-indigo-600 focus:ring-indigo-500 h-4 w-4"
+                  className="rounded text-[#008e8b] focus:ring-[#008e8b]/30 h-4 w-4"
                 />
                 <span className="font-semibold text-slate-700">
                   احتساب نوبات الإشراف المدرسي ضمن نصاب المعلم
@@ -199,9 +186,9 @@ export const TimetableSettingsView: React.FC = () => {
         </div>
 
         {/* Section 2: School Breaks */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 space-y-4">
           <h3 className="font-bold text-sm text-slate-800 flex items-center gap-2 border-b pb-3">
-            <Clock className="w-4 h-4 text-indigo-600" />
+            <Clock className="w-4 h-4 text-[#008e8b]" />
             فترات الفسح المدرسية (ممنوع الحصص أثناءها)
           </h3>
 
@@ -262,9 +249,9 @@ export const TimetableSettingsView: React.FC = () => {
       </div>
 
       {/* Section 3: Periods Timing */}
-      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+      <div className="bg-white p-5 rounded-2xl border border-slate-200 space-y-4">
         <h3 className="font-bold text-sm text-slate-800 flex items-center gap-2 border-b pb-3">
-          <Clock className="w-4 h-4 text-indigo-600" />
+          <Clock className="w-4 h-4 text-[#008e8b]" />
           توقيتات الحصص الدراسية (الحصة 1 إلى 8)
         </h3>
 
