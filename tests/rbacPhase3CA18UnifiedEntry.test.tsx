@@ -67,21 +67,26 @@ describe('PHASE 3C-A18 — Unified Multi-Portal Entry & School-Aware Public Sche
     expect(container.textContent || '').not.toContain('اختر دورك');
   });
 
-  it('teacher and student cards open their dedicated portals directly', async () => {
+  it('teacher card opens its portal and student card opens secure student credentials', async () => {
     const teacher = vi.fn();
-    const student = vi.fn();
 
     await act(async () => {
-      root.render(<LoginView onLoginSuccess={() => {}} onOpenTeacherPortal={teacher} onOpenPublicSchedule={student} />);
+      root.render(<LoginView onLoginSuccess={() => {}} onOpenTeacherPortal={teacher} onOpenPublicSchedule={() => {}} />);
     });
 
     await act(async () => {
       (container.querySelector('[data-testid="entry-teacher"]') as HTMLButtonElement).click();
-      (container.querySelector('[data-testid="entry-student"]') as HTMLButtonElement).click();
     });
 
     expect(teacher).toHaveBeenCalledTimes(1);
-    expect(student).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      (container.querySelector('[data-testid="entry-student"]') as HTMLButtonElement).click();
+    });
+    expect(container.querySelector('#input-student-code')).not.toBeNull();
+    expect(container.querySelector('#input-password')).not.toBeNull();
+    expect(container.querySelector('#input-email')).toBeNull();
+    expect(container.textContent || '').toContain('كود الطالب');
   });
 
   it('system portal rejects a school-bound staff account and revokes the created session', async () => {
