@@ -35,20 +35,38 @@ const loginKey = (request: Request, identifier: string) => {
   const forwarded = String(request.headers.get('x-forwarded-for') || '').split(',')[0].trim();
   return tokenHash(`${forwarded || 'unknown'}|${identifier.toLowerCase()}`);
 };
+const ensureLoginRateLimitStorage = async () => {
+  await pool.query(`CREATE TABLE IF NOT EXISTS login_rate_limits (
+    key_hash text PRIMARY KEY,
+    attempts integer NOT NULL DEFAULT 0,
+    window_started_at timestamptz NOT NULL DEFAULT now(),
+    blocked_until timestamptz,
+    updated_at timestamptz NOT NULL DEFAULT now()
+  )`);
+};
 const consumeLoginAttempt = async (key: string) => {
   const windowSeconds=Math.floor(LOGIN_WINDOW_MS/1000);
-  const q=await pool.query(`INSERT INTO login_rate_limits(key_hash,attempts,window_started_at,updated_at)
-    VALUES($1,1,now(),now())
-    ON CONFLICT(key_hash) DO UPDATE SET
-      attempts=CASE WHEN login_rate_limits.window_started_at <= now()-($2::int * interval '1 second') THEN 1 ELSE login_rate_limits.attempts+1 END,
-      window_started_at=CASE WHEN login_rate_limits.window_started_at <= now()-($2::int * interval '1 second') THEN now() ELSE login_rate_limits.window_started_at END,
-      updated_at=now()
-    RETURNING attempts,window_started_at`,[key,windowSeconds]);
-  const row=q.rows[0];
-  const retryAfter=Math.max(1,windowSeconds-Math.floor((Date.now()-new Date(row.window_started_at).getTime())/1000));
-  return {allowed:Number(row.attempts)<=LOGIN_MAX_ATTEMPTS,retryAfter:Number(row.attempts)>LOGIN_MAX_ATTEMPTS?retryAfter:0};
+  try {
+    const q=await pool.query(`INSERT INTO login_rate_limits(key_hash,attempts,window_started_at,updated_at)
+      VALUES($1,1,now(),now())
+      ON CONFLICT(key_hash) DO UPDATE SET
+        attempts=CASE WHEN login_rate_limits.window_started_at <= now()-($2::int * interval '1 second') THEN 1 ELSE login_rate_limits.attempts+1 END,
+        window_started_at=CASE WHEN login_rate_limits.window_started_at <= now()-($2::int * interval '1 second') THEN now() ELSE login_rate_limits.window_started_at END,
+        updated_at=now()
+      RETURNING attempts,window_started_at`,[key,windowSeconds]);
+    const row=q.rows[0];
+    const retryAfter=Math.max(1,windowSeconds-Math.floor((Date.now()-new Date(row.window_started_at).getTime())/1000));
+    return {allowed:Number(row.attempts)<=LOGIN_MAX_ATTEMPTS,retryAfter:Number(row.attempts)>LOGIN_MAX_ATTEMPTS?retryAfter:0};
+  } catch (error:any) {
+    if (String(error?.code||'') !== '42P01') throw error;
+    await ensureLoginRateLimitStorage();
+    return consumeLoginAttempt(key);
+  }
 };
-const clearLoginAttempts = async (key: string) => { await pool.query('DELETE FROM login_rate_limits WHERE key_hash=$1',[key]); };
+const clearLoginAttempts = async (key: string) => {
+  try { await pool.query('DELETE FROM login_rate_limits WHERE key_hash=$1',[key]); }
+  catch (error:any) { if (String(error?.code||'') !== '42P01') throw error; }
+};
 
 const legacyPasswordHash = (password: string, salt: string, iterations: number) => {
   let digest = crypto.createHmac('sha256', salt).update(password + salt).digest();
@@ -1141,3 +1159,22 @@ export default {
   }
 };
 
+export default async function vercelHandler(request: any, response: any) {
+  const protocol = request.headers['x-forwarded-proto'] || 'https';
+  const host = request.headers.host;
+  const url = protocol + '://' + host + request.url;
+  const headers = new Headers();
+  for (const [key, value] of Object.entries(request.headers || {})) {
+    if (Array.isArray(value)) value.forEach(v => headers.append(key, String(v)));
+    else if (value != null) headers.set(key, String(value));
+  }
+  let body: any = undefined;
+  if (!['GET','HEAD'].includes(String(request.method || 'GET').toUpperCase())) {
+    body = typeof request.body === 'string' ? request.body : JSON.stringify(request.body ?? {});
+  }
+  const webRequest = new Request(url, { method: request.method, headers, body });
+  const webResponse = await ntssHandler.fetch(webRequest);
+  response.status(webResponse.status);
+  webResponse.headers.forEach((value, key) => response.setHeader(key, value));
+  response.send(Buffer.from(await webResponse.arrayBuffer()));
+}
