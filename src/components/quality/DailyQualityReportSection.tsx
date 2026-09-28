@@ -46,6 +46,15 @@ export const DailyQualityReportSection: React.FC<Props> = ({
   const dailyStandards = standards.filter(
     (s) => s.isActive && s.applicableTo?.includes('DAILY_REPORT')
   );
+  const standardsByDomain = dailyStandards.reduce<Record<string, QualityStandard[]>>((groups, standard) => {
+    const domain = standard.domain?.trim() || 'محور عام';
+    (groups[domain] ||= []).push(standard);
+    return groups;
+  }, {});
+  const scoredItems = Object.values(dailyScores).filter(item => Number(item.score) > 0);
+  const liveAverage = scoredItems.length
+    ? scoredItems.reduce((sum, item) => sum + Number(item.score || 0), 0) / scoredItems.length
+    : 0;
 
   // Form state
   const [reportDate, setReportDate] = useState(new Date().toISOString().split('T')[0]);
@@ -374,10 +383,10 @@ export const DailyQualityReportSection: React.FC<Props> = ({
                 <div className="flex items-center justify-between">
                   <h4 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                     <Sparkles className="w-4 h-4 text-amber-500" />
-                    تقييم معايير إتقان الميدانية ({dailyStandards.length} معيار)
+                    محاور الرصد اليومي ومؤشرات الجودة ({dailyStandards.length} مؤشر)
                   </h4>
                   <span className="text-xs text-slate-400">
-                    الوزن والدرجات تُحسب تلقائياً وفق المعايير المسجلة
+                    قيّم الشاهد الفعلي فقط، وأضف ملاحظة محددة عند وجود فجوة أو فرصة تحسين
                   </span>
                 </div>
 
@@ -386,14 +395,30 @@ export const DailyQualityReportSection: React.FC<Props> = ({
                     لم يتم العثور على معايير مطبقة على تقرير الجودة اليومي. يرجى تفعيل أو إضافة معايير من تبويب "معايير إتقان".
                   </div>
                 ) : (
-                  <div className="space-y-3">
-                    {dailyStandards.map((std) => {
+                  <div className="space-y-5">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      <div className="rounded-xl border border-slate-200 bg-white p-3"><div className="text-[11px] text-slate-500">المحاور</div><div className="text-lg font-black text-slate-900">{Object.keys(standardsByDomain).length}</div></div>
+                      <div className="rounded-xl border border-slate-200 bg-white p-3"><div className="text-[11px] text-slate-500">المؤشرات</div><div className="text-lg font-black text-slate-900">{dailyStandards.length}</div></div>
+                      <div className="rounded-xl border border-slate-200 bg-white p-3"><div className="text-[11px] text-slate-500">تم تقييمها</div><div className="text-lg font-black text-slate-900">{scoredItems.length}</div></div>
+                      <div className="rounded-xl border border-slate-200 bg-white p-3"><div className="text-[11px] text-slate-500">متوسط الرصد</div><div className="text-lg font-black text-slate-900">{liveAverage ? liveAverage.toFixed(1) : '—'}</div></div>
+                    </div>
+                    {Object.entries(standardsByDomain).map(([domain, domainStandards]) => (
+                      <section key={domain} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                        <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3">
+                          <div>
+                            <h5 className="text-sm font-black text-slate-900">{domain}</h5>
+                            <p className="mt-0.5 text-[11px] text-slate-500">{domainStandards.length} مؤشر رصد ميداني</p>
+                          </div>
+                          <span className="rounded-full bg-slate-200/70 px-2.5 py-1 text-[11px] font-bold text-slate-600">محور جودة</span>
+                        </div>
+                        <div className="space-y-3 p-3">
+                    {domainStandards.map((std) => {
                       const curScore = dailyScores[std.id]?.score ?? 4;
                       const curNotes = dailyScores[std.id]?.notes ?? '';
                       return (
                         <div
                           key={std.id}
-                          className="p-3.5 border border-slate-200 rounded-xl bg-slate-50 space-y-2"
+                          className="p-4 border border-slate-200 rounded-xl bg-slate-50/70 space-y-3"
                         >
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                             <div>
@@ -438,12 +463,15 @@ export const DailyQualityReportSection: React.FC<Props> = ({
                             type="text"
                             value={curNotes}
                             onChange={(e) => handleNotesChange(std.id, e.target.value)}
-                            placeholder="ملاحظات الرصد الميداني لهذا المعيار..."
+                            placeholder="الشاهد أو الملاحظة: ماذا تم رصده؟ أين؟ وما الأثر أو الإجراء المطلوب؟"
                             className="w-full px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:ring-1 focus:ring-indigo-500"
                           />
                         </div>
                       );
                     })}
+                        </div>
+                      </section>
+                    ))}
                   </div>
                 )}
               </div>
@@ -452,13 +480,13 @@ export const DailyQualityReportSection: React.FC<Props> = ({
               <div className="space-y-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
-                    الملخص التنفيذي لليوم الدراسي
+                    الملخص التنفيذي — صورة مختصرة عن مستوى اليوم الدراسي
                   </label>
                   <textarea
                     rows={2}
                     value={executiveSummary}
                     onChange={(e) => setExecutiveSummary(e.target.value)}
-                    placeholder="نبذة عامة عن سير اليوم الدراسي وجاهزية الفصول والمرافق..."
+                    placeholder="لخّص مستوى التشغيل والانضباط والسلامة والتعلم، وأبرز ما يحتاج قرارًا أو متابعة..."
                     className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>
@@ -466,7 +494,7 @@ export const DailyQualityReportSection: React.FC<Props> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-emerald-800 mb-1">
-                      الملاحظات الإيجابية ونقاط التميز (سطر لكل نقطة)
+                      نقاط القوة والممارسات الجيدة المثبتة
                     </label>
                     <textarea
                       rows={3}
@@ -479,7 +507,7 @@ export const DailyQualityReportSection: React.FC<Props> = ({
 
                   <div>
                     <label className="block text-xs font-bold text-amber-800 mb-1">
-                      فرص التحسين والملاحظات السلبية (سطر لكل نقطة)
+                      الفجوات والمخاطر وفرص التحسين
                     </label>
                     <textarea
                       rows={3}
@@ -493,13 +521,13 @@ export const DailyQualityReportSection: React.FC<Props> = ({
 
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
-                    التوصيات المباشرة
+                    القرارات والتوصيات ذات الأولوية
                   </label>
                   <textarea
                     rows={2}
                     value={recommendations}
                     onChange={(e) => setRecommendations(e.target.value)}
-                    placeholder="التوجيه الفوري لمعالجة الملاحظات..."
+                    placeholder="اكتب توصية قابلة للتنفيذ: الإجراء المطلوب، المسؤول، والأولوية أو موعد المتابعة..."
                     className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>
