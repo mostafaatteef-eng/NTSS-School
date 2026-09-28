@@ -28,7 +28,7 @@ export const StudentPortalView: React.FC<Props> = ({ currentUser, onLogout }) =>
     finally { if(active) setLoading(false); }
   })(); return()=>{active=false}; },[]);
   if(loading) return <div dir="rtl" className="min-h-screen bg-slate-50 grid place-items-center"><div className="text-sm font-bold text-slate-600">جارٍ تحميل بياناتك...</div></div>;
-  if(error||!data) return <div dir="rtl" className="min-h-screen bg-slate-50 grid place-items-center p-4"><div className="max-w-md w-full rounded-3xl bg-white border p-6 text-center"><p className="text-rose-700 font-bold">{error||'لا توجد بيانات متاحة.'}</p><button onClick={onLogout} className="mt-4 text-sm font-bold text-slate-600">تسجيل الخروج</button></div></div>;
+  if(!data) return <div dir="rtl" className="min-h-screen bg-slate-50 grid place-items-center p-4"><div className="max-w-md w-full rounded-3xl bg-white border p-6 text-center"><p className="text-rose-700 font-bold">{error||'لا توجد بيانات متاحة.'}</p><div className="mt-4 flex justify-center gap-2"><button onClick={()=>{setLoading(true);setError('');storageService.requestCurrentStudentPortal().then(setData).catch(()=>setError('تعذر تحميل بيانات الطالب. حاول مرة أخرى.')).finally(()=>setLoading(false));}} className="rounded-xl border px-3 py-2 text-sm font-bold">إعادة المحاولة</button><button onClick={onLogout} className="rounded-xl border px-3 py-2 text-sm font-bold text-slate-600">تسجيل الخروج</button></div></div></div>;
   const refresh=async()=>{ setRefreshing(true); try{ await loadPortal(); } catch { setError('تعذر تحديث بيانات الطالب. حاول مرة أخرى.'); } finally { setRefreshing(false); } };
   const s=data.student, m=data.attendanceSummary;
   const pct=m.total ? Math.round((m.present/m.total)*100) : 0;
@@ -44,6 +44,7 @@ export const StudentPortalView: React.FC<Props> = ({ currentUser, onLogout }) =>
       <div className="flex items-center gap-2"><button onClick={refresh} disabled={refreshing} className="rounded-xl border px-3 py-2 text-xs font-bold disabled:opacity-50">{refreshing?'جارٍ التحديث...':'تحديث'}</button><button onClick={onLogout} className="flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-bold"><LogOut className="h-4 w-4"/>خروج</button></div>
     </div></header>
     <main className="mx-auto max-w-5xl p-4 sm:p-6 space-y-5">
+      {error&&<div role="alert" className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">{error}</div>}
       <section className="rounded-3xl bg-white border p-5">
         <div className="flex gap-4 items-center"><div className="h-12 w-12 rounded-2xl bg-[#008e8b]/10 text-[#008e8b] grid place-items-center"><UserRound/></div>
           <div><h1 className="text-lg font-black">{s.full_name}</h1><p className="text-xs text-slate-500 mt-1">كود الطالب: {s.student_code||currentUser.studentCode||'—'} · {s.grade||'—'} · فصل {s.classroom||'—'}</p></div>
