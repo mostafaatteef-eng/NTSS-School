@@ -7496,9 +7496,11 @@ class StorageService {
       };
     }
 
-    const plans = this.getCurriculumPlans();
+    const rawPlans = localStorage.getItem(STORAGE_KEYS.CURRICULUM_PLANS);
+    let plans: CurriculumMasterPlan[] = [];
+    try { plans = rawPlans ? JSON.parse(rawPlans) : []; } catch { plans = []; }
     const now = getCairoNowISO();
-    const existingIndex = plans.findIndex(p => p.id === plan.id);
+    const existingIndex = plans.findIndex(p => p.id === plan.id && p.schoolId === activeSchoolId);
 
     let finalPlan: CurriculumMasterPlan;
 
@@ -7569,11 +7571,20 @@ class StorageService {
       return { success: false, message: 'غير مصرح بحذف خطة المنهج' };
     }
 
-    const plans = this.getCurriculumPlans().filter(p => p.id !== id);
+    const activeSchoolId = (currentUser?.schoolId || this.getActiveSchoolId()).trim();
+    const rawPlans = localStorage.getItem(STORAGE_KEYS.CURRICULUM_PLANS);
+    let allPlans: CurriculumMasterPlan[] = [];
+    try { allPlans = rawPlans ? JSON.parse(rawPlans) : []; } catch { allPlans = []; }
+    const targetPlan = allPlans.find(p => p.id === id && (!activeSchoolId || p.schoolId === activeSchoolId));
+    if (!targetPlan) return { success: false, message: 'خطة المنهج غير موجودة في المدرسة الحالية' };
+    const plans = allPlans.filter(p => !(p.id === id && p.schoolId === targetPlan.schoolId));
     localStorage.setItem(STORAGE_KEYS.CURRICULUM_PLANS, JSON.stringify(plans));
 
-    // Also clean up distributions belonging to this plan
-    const dists = this.getCurriculumDistributions().filter(d => d.planId !== id);
+    // Also clean up only distributions belonging to this plan in the same school.
+    const rawDists = localStorage.getItem(STORAGE_KEYS.CURRICULUM_DISTRIBUTIONS);
+    let allDists: CurriculumLessonDistribution[] = [];
+    try { allDists = rawDists ? JSON.parse(rawDists) : []; } catch { allDists = []; }
+    const dists = allDists.filter(d => !(d.planId === id && d.schoolId === targetPlan.schoolId));
     localStorage.setItem(STORAGE_KEYS.CURRICULUM_DISTRIBUTIONS, JSON.stringify(dists));
 
     this.notifyChange();
