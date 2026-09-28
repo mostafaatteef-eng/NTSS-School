@@ -405,11 +405,25 @@ export class CurriculumPlanService {
     classroom?: string;
     term?: string;
   }): CurriculumProgressSummary {
+    const normalize = (value?: string) => String(value || '').trim().toLowerCase();
+    const teacherAssignments = filters?.teacherId
+      ? storageService.getSchedule().filter(s =>
+          s.isActive !== false &&
+          !s.isCancelled &&
+          s.teacherId === filters.teacherId &&
+          (!filters.schoolId || !s.schoolId || s.schoolId === filters.schoolId)
+        )
+      : [];
     const plans = storageService.getCurriculumPlans(filters?.schoolId).filter(p => {
       if (filters?.subject && p.subject !== filters.subject) return false;
       if (filters?.grade && p.grade !== filters.grade) return false;
       if (filters?.term && p.term !== filters.term) return false;
       if (filters?.classroom && p.classroom !== filters.classroom) return false;
+      if (filters?.teacherId && !teacherAssignments.some(s =>
+        normalize(s.subject) === normalize(p.subject) &&
+        normalize(s.grade) === normalize(p.grade) &&
+        normalize(s.classroom) === normalize(p.classroom)
+      )) return false;
       return true;
     });
 
