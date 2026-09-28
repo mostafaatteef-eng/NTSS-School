@@ -39,7 +39,7 @@ export const DailyQualityReportSection: React.FC<Props> = ({
 
   // Applicable standards for Daily Reports
   const configuredDailyStandards = standards.filter(
-    (s) => s.isActive && s.applicableTo?.includes('DAILY_REPORT')
+    (s) => s.isActive && s.applicableTo?.includes('DAILY_REPORT') && Boolean(s.domain?.trim()) && Boolean(s.indicator?.trim())
   );
   const fallbackDailyStandards: QualityStandard[] = [
     ['DQ-01', 'الانضباط والتشغيل', 'انتظام بداية اليوم الدراسي', 'انتظام الطابور وبداية الحصص والالتزام بالمواعيد'],
@@ -55,7 +55,10 @@ export const DailyQualityReportSection: React.FC<Props> = ({
     standard, indicator, description: indicator, weight: 1, evaluationScale: 4,
     evidenceRequired: false, applicableTo: ['DAILY_REPORT'], isActive: true,
   }));
-  const dailyStandards = configuredDailyStandards.length > 0 ? configuredDailyStandards : fallbackDailyStandards;
+  const dailyStandards =
+    configuredDailyStandards.length >= 4
+      ? configuredDailyStandards
+      : fallbackDailyStandards;
   const standardsByDomain = dailyStandards.reduce((groups: Record<string, QualityStandard[]>, standard: QualityStandard) => {
     const domain = standard.domain?.trim() || 'محور عام';
     (groups[domain] ||= []).push(standard);
@@ -404,7 +407,7 @@ export const DailyQualityReportSection: React.FC<Props> = ({
                   </span>
                 </div>
 
-                {dailyStandards.length === 0 ? (
+                {false ? (
                   <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-xs">
                     لم يتم العثور على معايير مطبقة على تقرير الجودة اليومي. يرجى تفعيل أو إضافة معايير من تبويب "معايير إتقان".
                   </div>
