@@ -37,22 +37,22 @@ describe('Curriculum week-aware timetable regression guards', () => {
   });
 
   it('preserves multiple timetable slots for curriculum items that need multiple periods', () => {
-    expect(serviceSource).toContain('replaceExisting?: boolean');
-    expect(serviceSource).toContain('if (params.replaceExisting !== false)');
-    expect(serviceSource).toContain('replaceExisting: false');
-    expect(serviceSource).toContain('const requestedPeriods = Math.max(1, Number(item.estimatedPeriods || 1))');
+    expect(service).toContain('replaceExisting?: boolean');
+    expect(service).toContain('if (params.replaceExisting !== false)');
+    expect(service).toContain('replaceExisting: false');
+    expect(service).toContain('const requestedPeriods = Math.max(1, Number(item.estimatedPeriods || 1))');
   });
 
 
   it('relinks one multi-period distribution without cancelling sibling periods', () => {
-    expect(serviceSource).toContain('replaceDistributionId?: string');
-    expect(serviceSource).toContain('previousItemLinks.find(d => d.id === params.replaceDistributionId)');
-    expect(serviceSource).toContain('replaceExisting: false');
+    expect(service).toContain('replaceDistributionId?: string');
+    expect(service).toContain('previousItemLinks.find(d => d.id === params.replaceDistributionId)');
+    expect(service).toContain('replaceExisting: false');
   });
 
   it('keeps classroom-specific curriculum plan guards in the timetable flow', () => {
-    expect(serviceSource).toContain('plan.classroom');
-    expect(timetableSource).toContain('curriculumWeek');
+    expect(service).toContain('plan.classroom');
+    expect(matrix).toContain('curriculumWeek');
   });
 
 });
