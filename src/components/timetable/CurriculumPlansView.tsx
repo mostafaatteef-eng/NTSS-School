@@ -51,6 +51,7 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [uploadSubject, setUploadSubject] = useState('');
   const [uploadGrade, setUploadGrade] = useState('الصف الأول الثانوي');
+  const [uploadClassroom, setUploadClassroom] = useState('');
   const [uploadTerm, setUploadTerm] = useState('الفصل الدراسي الأول');
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -124,6 +125,10 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
       setUploadError('يرجى تحديد المادة الدراسية');
       return;
     }
+    if (!uploadClassroom.trim()) {
+      setUploadError('يرجى تحديد الفصل؛ يجب إنشاء خطة مستقلة لكل فصل.');
+      return;
+    }
     if (!uploadFile && !rawTextPlan.trim()) {
       setUploadError('يرجى رفع ملف الخطة (Excel/CSV/TXT) أو لصق نص الخطة');
       return;
@@ -175,6 +180,7 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
       const res = storageService.saveCurriculumPlan(
         {
           grade: uploadGrade,
+          classroom: uploadClassroom,
           subject: uploadSubject,
           term: uploadTerm,
           fileMeta,
@@ -211,10 +217,16 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
       if (selectedPlan.schoolId && s.schoolId && s.schoolId !== selectedPlan.schoolId) return false;
       const matchSub = s.subject.trim().toLowerCase() === selectedPlan.subject.trim().toLowerCase();
       const matchGrade = s.grade.trim().toLowerCase() === selectedPlan.grade.trim().toLowerCase();
+      const matchClassroom = !selectedPlan.classroom || s.classroom.trim().toLowerCase() === selectedPlan.classroom.trim().toLowerCase();
       const matchTeacher = !actorTeacherId || s.teacherId === actorTeacherId;
-      return matchSub && matchGrade && matchTeacher;
+      return matchSub && matchGrade && matchClassroom && matchTeacher;
     });
   }, [allSchedule, selectedPlan, isTeacher, currentUser]);
+
+  const uploadClassrooms = useMemo(() => {
+    const actorTeacherId = isTeacher ? (currentUser?.employeeId || currentUser?.id) : undefined;
+    return Array.from(new Set(allSchedule.filter(s => s.isActive !== false && !s.isCancelled && (!actorTeacherId || s.teacherId === actorTeacherId) && (!uploadGrade || s.grade === uploadGrade) && (!uploadSubject || s.subject === uploadSubject)).map(s => s.classroom).filter(Boolean))).sort();
+  }, [allSchedule, isTeacher, currentUser, uploadGrade, uploadSubject]);
 
   const handleAutoLinkWeek = (week: number) => {
     if (!selectedPlan) return;
@@ -608,7 +620,7 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
             )}
 
             <form onSubmit={handleFileUpload} className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">المادة الدراسية</label>
                   <select
@@ -635,6 +647,14 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
                     <option value="الصف الأول الثانوي">الصف الأول الثانوي</option>
                     <option value="الصف الثاني الثانوي">الصف الثاني الثانوي</option>
                     <option value="الصف الثالث الثانوي">الصف الثالث الثانوي</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">الفصل / الشعبة</label>
+                  <select value={uploadClassroom} onChange={e => setUploadClassroom(e.target.value)} className="w-full border border-slate-300 rounded-xl p-2.5 font-bold" required>
+                    <option value="">— اختر الفصل —</option>
+                    {uploadClassrooms.map(classroom => <option key={classroom} value={classroom}>{classroom}</option>)}
                   </select>
                 </div>
 
