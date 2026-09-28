@@ -9,6 +9,8 @@ import {
 import { storageService } from '../../services/storageService';
 import {
   CheckCircle2,
+  UserCheck,
+  Plus,
   Clock,
   Send,
   Eye,
@@ -44,11 +46,11 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
   const visitStandards = standards.filter(
     (s) => s.isActive && s.applicableTo?.includes('TEACHER_VISIT')
   );
-  const standardsByDomain = visitStandards.reduce<Record<string, QualityStandard[]>>((groups, standard) => {
+  const standardsByDomain = visitStandards.reduce((groups: Record<string, QualityStandard[]>, standard: QualityStandard) => {
     const domain = standard.domain?.trim() || 'الممارسة الصفية';
     (groups[domain] ||= []).push(standard);
     return groups;
-  }, {});
+  }, {} as Record<string, QualityStandard[]>);
 
   // Form states
   const [visitDate, setVisitDate] = useState(new Date().toISOString().split('T')[0]);
@@ -66,7 +68,7 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
   const [teacherFeedback, setTeacherFeedback] = useState('');
   const [scores, setScores] = useState<Record<string, { score: number; notes: string }>>({});
 
-  const scoredItems = Object.values(scores).filter(item => Number(item.score) > 0);
+  const scoredItems = (Object.values(scores) as Array<{ score: number; notes: string }>).filter((item) => Number(item.score) > 0);
   const liveAverage = scoredItems.length
     ? scoredItems.reduce((sum, item) => sum + Number(item.score || 0), 0) / scoredItems.length
     : 0;
