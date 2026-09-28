@@ -68,6 +68,13 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const isTeacher = currentUser?.role === 'Teacher';
+  const canUploadPlan = !readOnly && (isTeacher ||
+    currentUser?.role === 'Admin' ||
+    currentUser?.role === 'SchoolDirector' ||
+    currentUser?.role === 'TeacherAffairs' ||
+    Boolean(currentUser?.permissions && currentUser.permissions.includes('settings.manage' as any)));
+
   const isCurriculumAdmin =
     currentUser?.role === 'Admin' ||
     currentUser?.role === 'SchoolDirector' ||
@@ -298,16 +305,16 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
         </div>
 
         <div className="flex items-center gap-2">
-          {isCurriculumAdmin && !readOnly ? (
+          {canUploadPlan ? (
             <button
               onClick={() => setIsUploadModalOpen(true)}
               className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-sm transition"
             >
-              <Plus className="w-4 h-4" /> رفع وتوثيق خطة منهج جديدة
+              <Plus className="w-4 h-4" /> {isTeacher ? 'رفع خطة منهج جديدة' : 'رفع وتوثيق خطة منهج جديدة'}
             </button>
           ) : (
             <div className="text-xs font-semibold text-slate-500 bg-slate-100 px-3 py-1.5 rounded-xl border">
-              {readOnly ? 'وضع المعلم: استعراض فقط' : 'وضع المعلم: استعراض الخطة وربط الحصص المجدولة'}
+              {readOnly ? 'استعراض فقط' : 'لا توجد صلاحية لرفع خطط المناهج'}
             </div>
           )}
         </div>
@@ -417,7 +424,7 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
                 المعتمد بواسطة: {selectedPlan.uploadedByName || 'مدير المناهج'} • السنة الدراسية: {selectedPlan.academicYear}
               </p>
             </div>
-            {!readOnly && (
+            {!readOnly && selectedPlan.status === 'Approved' && (
               <div className="flex flex-wrap gap-2">
                 {Array.from<number>(new Set<number>(selectedPlan.items.map(i => Number(i.week)))).sort((a: number, b: number) => a - b).map((week: number) => (
                   <button
