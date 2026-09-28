@@ -561,13 +561,31 @@ const ntssHandler = {
         if (action !== 'saveScheduleEntry') return json({status:'error',code:'ACTION_NOT_MIGRATED'},400,corsOrigin);
         const collision=await pool.query('SELECT school_id FROM schedule WHERE id=$1 AND school_id<>$2',[id,schoolId]);
         if(collision.rowCount)return json({status:'error',code:'CROSS_SCHOOL_ID_COLLISION'},409,corsOrigin);
-        const payload=JSON.stringify({...data,id});
+        const weekday=String(data.weekday||data.dayOfWeek||data.dayName||data.day||'').trim();
+        const periodNo=Number(data.periodNo||data.periodNumber||data.period||0);
+        const teacherId=String(data.teacherId||'').trim();
+        const classroom=String(data.classroomId||data.classroom||'').trim();
+        const subject=String(data.subjectId||data.subject||'').trim();
+        if(!weekday||!Number.isInteger(periodNo)||periodNo<=0||!teacherId||!classroom||!subject){
+          return json({status:'error',code:'INVALID_SCHEDULE_SLOT',message:'بيانات الحصة غير مكتملة: اليوم والحصة والمعلم والفصل والمادة مطلوبة.'},400,corsOrigin);
+        }
+        const teacherOk=await pool.query('SELECT 1 FROM employees WHERE school_id=$1 AND id=$2 AND COALESCE(status,\'Active\')=\'Active\' LIMIT 1',[schoolId,teacherId]);
+        if(!teacherOk.rowCount)return json({status:'error',code:'INVALID_TEACHER_ASSIGNMENT',message:'المعلم المحدد غير موجود أو غير نشط في هذه المدرسة.'},409,corsOrigin);
+        const slotConflicts=await pool.query(
+          `SELECT id,teacher_id,classroom,payload FROM schedule
+           WHERE school_id=$1 AND id<>$2 AND weekday=$3 AND period_no=$4
+             AND (teacher_id=$5 OR classroom=$6 OR NULLIF(payload->>'room','')=NULLIF($7,''))
+           LIMIT 1`,
+          [schoolId,id,weekday,periodNo,teacherId,String(data.classroom||classroom),String(data.roomId||data.room||data.roomNumber||'')]
+        );
+        if(slotConflicts.rowCount)return json({status:'error',code:'SCHEDULE_CONFLICT',message:'يوجد تعارض في نفس اليوم والحصة للمعلم أو الفصل أو القاعة.'},409,corsOrigin);
+        const payload=JSON.stringify({...data,id,schoolId,weekday,periodNo});
         const saved=await pool.query(
           `INSERT INTO schedule(id,school_id,academic_year_id,teacher_id,grade,classroom,weekday,period_no,payload)
            VALUES($1,$2,NULLIF($3,''),NULLIF($4,''),$5,$6,$7,$8,$9::jsonb)
            ON CONFLICT(id) DO UPDATE SET academic_year_id=EXCLUDED.academic_year_id,teacher_id=EXCLUDED.teacher_id,grade=EXCLUDED.grade,classroom=EXCLUDED.classroom,weekday=EXCLUDED.weekday,period_no=EXCLUDED.period_no,payload=EXCLUDED.payload,updated_at=now()
            WHERE schedule.school_id=EXCLUDED.school_id RETURNING *`,
-          [id,schoolId,data.academicYearId ? schoolId+'::'+String(data.academicYearId) : '',String(data.teacherId||''),String(data.grade||''),String(data.classroom||''),String(data.weekday||data.day||''),Number(data.periodNo||data.period||0)||null,payload]
+          [id,schoolId,data.academicYearId ? schoolId+'::'+String(data.academicYearId) : '',teacherId,String(data.grade||''),String(data.classroom||classroom),weekday,periodNo,payload]
         );
         if(!saved.rowCount)return json({status:'error',code:'SCHEDULE_WRITE_REJECTED'},409,corsOrigin);
         await pool.query('INSERT INTO audit_logs(school_id,user_id,username,role,action,entity,target_id,details) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[schoolId,user.user_id,user.email,user.role,'UPSERT','SCHEDULE',id,'Saved through Neon API']);
