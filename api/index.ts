@@ -45,7 +45,11 @@ async function authenticate(request: Request) {
 
 async function canAccessSchool(user: any, schoolId: string) {
   if (!schoolId) return false;
-  if (user.access_scope !== 'GLOBAL' && user.school_id === schoolId) {
+  if (user.access_scope === 'GLOBAL') {
+    const school = await pool.query("SELECT 1 FROM schools WHERE id=$1 AND status='ACTIVE' LIMIT 1", [schoolId]);
+    return school.rowCount > 0;
+  }
+  if (user.school_id === schoolId) {
     const school = await pool.query("SELECT 1 FROM schools WHERE id=$1 AND status='ACTIVE' LIMIT 1", [schoolId]);
     return school.rowCount > 0;
   }
