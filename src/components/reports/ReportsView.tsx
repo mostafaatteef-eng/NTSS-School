@@ -36,6 +36,7 @@ import {
 import { ReportService } from '../../services/reportService';
 import { storageService } from '../../services/storageService';
 import { formatEgyptianDate, getCairoCurrentDate } from '../../utils/egyptianTime';
+import { PageHeader } from '../common/UiStates';
 
 interface ReportsViewProps {
   currentUser: User | null;
@@ -199,24 +200,11 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Header Banner */}
-      <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-teal-500 text-white flex items-center justify-center shadow-md shadow-teal-500/20">
-              <FileText className="w-6 h-6" />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold text-slate-800">مركز التقارير والإحصائيات المدرسية الشامل</h1>
-              <p className="text-xs text-slate-500 mt-1">
-                استخراج وطباعة كشوفات وبيانات الطلاب، الحضور والغياب، الدوام، وجداول الحصص باحترافية
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Global Export Actions */}
-        <div className="flex items-center gap-2 w-full md:w-auto">
+      <PageHeader
+        title="مركز التقارير والإحصائيات"
+        description="استخراج وطباعة بيانات الطلاب والحضور والدوام والجداول من مكان واحد."
+        icon={<span className="rounded-xl bg-teal-50 p-2 text-[#008e8b]"><FileText className="h-5 w-5" /></span>}
+        actions={<div className="flex w-full items-center gap-2 md:w-auto">
           <button
             onClick={() => ReportService.exportToExcel(activeDef.key, filterValues, activeColumns, currentUser)}
             className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold shadow-xs transition-colors"
@@ -238,8 +226,8 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
             <Printer className="w-4 h-4" />
             <span>طباعة (PDF)</span>
           </button>
-        </div>
-      </div>
+        </div>}
+      />
 
       {/* Module Tabs */}
       <div className="flex items-center gap-2 overflow-x-auto pb-1 custom-scrollbar">
@@ -254,13 +242,13 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
                 const firstInMod = availableDefs.find(d => d.module === tab.id);
                 if (firstInMod) setActiveReportKey(firstInMod.key);
               }}
-              className={`flex items-center gap-2.5 px-5 py-3 rounded-2xl text-xs font-bold transition-all shrink-0 ${
+              className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-xs font-bold transition-colors shrink-0 ${
                 isSelected
-                  ? 'bg-slate-900 text-white shadow-md shadow-slate-900/10'
+                  ? 'bg-teal-50 text-teal-900 ring-1 ring-inset ring-teal-200'
                   : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200/80'
               }`}
             >
-              <Icon className={`w-4 h-4 ${isSelected ? 'text-teal-400' : 'text-slate-400'}`} />
+              <Icon className={`w-4 h-4 ${isSelected ? 'text-[#008e8b]' : 'text-slate-400'}`} />
               <span>{tab.label}</span>
               {tab.adminOnly && (
                 <span className="px-1.5 py-0.5 text-[10px] rounded bg-rose-500/20 text-rose-300 font-medium">
@@ -273,7 +261,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
       </div>
 
       {/* Report Selector Dropdown & Saved Filters Bar */}
-      <div className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-xs space-y-4">
+      <div className="bg-white rounded-2xl p-5 border border-slate-200 space-y-4">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-4">
           <div className="flex items-center gap-3">
             <span className="text-xs font-bold text-slate-500">اختر التقرير:</span>
