@@ -475,9 +475,10 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {selectedPlan.items.map(item => {
-                  const linkedDist = distributions.find(
+                  const linkedDists = distributions.filter(
                     d => d.planItemId === item.id && d.status !== 'Cancelled'
                   );
+                  const linkedDist = linkedDists[0];
 
                   return (
                     <tr key={item.id} className="hover:bg-slate-50/60 transition">
@@ -497,14 +498,18 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
                         {item.estimatedPeriods} حصة
                       </td>
                       <td className="p-3">
-                        {linkedDist ? (
-                          <div className="space-y-0.5">
-                            <div className="font-bold text-slate-800">
-                              {linkedDist.dayOfWeek} — الحصة {linkedDist.periodNumber} ({linkedDist.classroom})
-                            </div>
-                            <div className="text-[10px] text-slate-500">
-                              المعلم: {linkedDist.teacherName || '—'}
-                            </div>
+                        {linkedDists.length > 0 ? (
+                          <div className="space-y-1">
+                            {linkedDists.map((dist, index) => (
+                              <div key={dist.id} className="rounded-lg border border-slate-200 px-2 py-1 bg-slate-50">
+                                <div className="font-bold text-slate-800">
+                                  {linkedDists.length > 1 ? `الحصة ${index + 1}: ` : ''}{dist.dayOfWeek} — الحصة {dist.periodNumber} ({dist.classroom})
+                                </div>
+                                <div className="text-[10px] text-slate-500">
+                                  المعلم: {dist.teacherName || '—'}
+                                </div>
+                              </div>
+                            ))}
                           </div>
                         ) : (
                           <span className="text-amber-700 bg-amber-50 px-2 py-0.5 rounded text-[11px] font-semibold border border-amber-200">
