@@ -7863,7 +7863,30 @@ class StorageService {
     if (!raw) return [];
     try {
       const all: TeacherVisitReport[] = JSON.parse(raw);
-      return all.filter(r => (r.schoolId || '').trim() === activeSchoolId);
+      return all
+        .filter(r => (r.schoolId || '').trim() === activeSchoolId)
+        .map(r => ({
+          ...r,
+          visitDate: r.visitDate || r.date,
+          date: r.date || r.visitDate,
+          periodNumber: r.periodNumber || r.period || 1,
+          period: r.period || r.periodNumber || 1,
+          standardScores: r.standardScores || (r.evaluations as any[]) || [],
+          evaluations: r.evaluations || (r.standardScores as any[]) || [],
+          percentage: r.percentage ?? r.overallScore ?? 0,
+          overallScore: r.overallScore ?? r.percentage ?? 0,
+          totalScore: r.totalScore ?? 0,
+          earnedScore: r.earnedScore ?? 0,
+          weaknesses: r.weaknesses || r.improvementAreas || [],
+          improvementAreas: r.improvementAreas || r.weaknesses || [],
+          recommendations: r.recommendations || [],
+          status:
+            r.status === 'Draft' ? 'DRAFT' :
+            r.status === 'Submitted' ? 'SUBMITTED' :
+            r.status === 'Approved' ? 'APPROVED' :
+            r.status === 'RequiresRevision' ? 'REQUIRES_REVISION' :
+            r.status,
+        }));
     } catch {
       return [];
     }
@@ -7893,31 +7916,46 @@ class StorageService {
     const teacher = employees.find(e => e.id === report.teacherId || e.employeeNumber === report.teacherId);
     const teacherName = report.teacherName || teacher?.name || 'معلم غير محدد';
 
-    // Calculate weighted overall score if evaluations exist
+    // Accept both the legacy quality contract (evaluations/date/period) and the
+    // current teacher-visit UI contract (standardScores/visitDate/periodNumber).
     const standards = this.getQualityStandards(activeSchoolId);
-    let calculatedOverallScore: number | undefined;
-    if (report.evaluations && report.evaluations.length > 0) {
-      calculatedOverallScore = this.calculateWeightedScore(report.evaluations, standards).percentage;
-    }
+    const evaluations = (report.evaluations?.length ? report.evaluations : report.standardScores || []) as any[];
+    const weighted = evaluations.length > 0 ? this.calculateWeightedScore(evaluations, standards) : undefined;
+    const percentage = report.percentage ?? weighted?.percentage ?? report.overallScore ?? 0;
 
     const record: TeacherVisitReport = {
       id: report.id || `TVR-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       schoolId: activeSchoolId,
       teacherId: report.teacherId,
       teacherName,
-      date: report.date || getCairoCurrentDate(),
+      date: report.date || report.visitDate || getCairoCurrentDate(),
+      visitDate: report.visitDate || report.date || getCairoCurrentDate(),
       classroom: report.classroom,
       subject: report.subject,
-      period: report.period || 1,
+      period: report.period || report.periodNumber || 1,
+      periodNumber: report.periodNumber || report.period || 1,
+      visitType: report.visitType || 'DIAGNOSTIC',
       evaluatorId: report.evaluatorId || caller?.id || 'USR-EVALUATOR',
-      evaluatorName: report.evaluatorName || caller?.fullName || 'الموجه الفني / مسؤول الجودة',
-      evaluations: report.evaluations || [],
+      evaluatorName: report.evaluatorName || report.visitorName || caller?.fullName || caller?.name || 'الموجه الفني / مسؤول الجودة',
+      visitorId: report.visitorId || report.evaluatorId || caller?.id,
+      visitorName: report.visitorName || report.evaluatorName || caller?.fullName || caller?.name,
+      visitorRole: report.visitorRole || caller?.role,
+      grade: report.grade,
+      lessonTopic: report.lessonTopic,
+      evaluations,
+      standardScores: (report.standardScores?.length ? report.standardScores : evaluations) as any,
+      totalScore: report.totalScore ?? weighted?.totalScore ?? 0,
+      earnedScore: report.earnedScore ?? weighted?.earnedScore ?? 0,
+      percentage,
       strengths: report.strengths || [],
-      improvementAreas: report.improvementAreas || [],
+      weaknesses: report.weaknesses || report.improvementAreas || [],
+      improvementAreas: report.improvementAreas || report.weaknesses || [],
+      recommendations: report.recommendations || [],
+      teacherFeedback: report.teacherFeedback,
       correctiveActionNotes: report.correctiveActionNotes || '',
       followUpDate: report.followUpDate,
-      overallScore: calculatedOverallScore ?? report.overallScore,
-      status: report.status || 'Submitted',
+      overallScore: percentage,
+      status: report.status || 'SUBMITTED',
       approvedBy: report.approvedBy,
       approvedAt: report.approvedAt,
       createdAt: report.createdAt || now,
@@ -7949,7 +7987,10 @@ class StorageService {
   public deleteTeacherVisitReport(id: string, user?: User | null): { success: boolean; message?: string } {
     const caller = user || this.getCurrentUser();
     const activeSchoolId = (caller?.schoolId || this.getActiveSchoolId()).trim();
-    const list = this.getTeacherVisitReports(activeSchoolId).filter(r => r.id !== id);
+    const raw = localStorage.getItem(STORAGE_KEYS.TEACHER_VISIT_REPORTS);
+    let all: TeacherVisitReport[] = [];
+    try { all = raw ? JSON.parse(raw) : []; } catch { all = []; }
+    const list = all.filter(r => !(r.id === id && (r.schoolId || '').trim() === activeSchoolId));
     localStorage.setItem(STORAGE_KEYS.TEACHER_VISIT_REPORTS, JSON.stringify(list));
     this.notifyChange();
     return { success: true, message: 'تم حذف تقرير الزيارة بنجاح' };
