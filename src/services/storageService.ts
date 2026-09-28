@@ -939,6 +939,15 @@ class StorageService {
     }
   }
 
+  public async requestCurrentStudentPortal(): Promise<any> {
+    const user = this.getCurrentUser();
+    if (!user?.sessionToken || user.role !== 'Student' || user.accessScope !== 'SELF') throw new Error('STUDENT_SESSION_REQUIRED');
+    const response = await this.postgresRequest('/api/student/me', { method:'GET' });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || result.status !== 'success' || !result.data) throw new Error(result.code || 'STUDENT_PORTAL_UNAVAILABLE');
+    return result.data;
+  }
+
   public async loginStudent(
     studentCode: string,
     password: string
