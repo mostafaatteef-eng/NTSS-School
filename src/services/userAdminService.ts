@@ -43,7 +43,7 @@ class UserAdminService {
 
   private guard(permission: PermissionKey, caller?: User | null): { user?: User; error?: UserAdminResult } {
     const user = this.caller(caller);
-    if (!user?.sessionToken) {
+    if (!user) {
       return { error: { success: false, code: 'AUTH_REQUIRED', message: 'يجب تسجيل الدخول بجلسة معتمدة.' } };
     }
     if (!hasPermission(user, permission)) {
