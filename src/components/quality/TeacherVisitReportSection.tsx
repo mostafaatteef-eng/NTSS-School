@@ -234,10 +234,10 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+      <div className="bg-white p-5 rounded-xl border border-slate-200  flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
           <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-            <UserCheck className="w-6 h-6 text-indigo-600" />
+            <UserCheck className="w-6 h-6 text-[#008e8b]" />
             تقارير زيارات المعلمين الصفية (Teacher Visit Reports)
           </h2>
           <p className="text-sm text-slate-500 mt-1">
@@ -249,7 +249,7 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
           <button
             id="create-teacher-visit-report-btn"
             onClick={handleOpenNew}
-            className="px-4 py-2 text-sm bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg flex items-center gap-2 transition-colors shadow-sm"
+            className="px-4 py-2 text-sm bg-[#008e8b] hover:bg-teal-700 text-white font-medium rounded-lg flex items-center gap-2 transition-colors "
           >
             <Plus className="w-4 h-4" />
             تسجيل زيارة صفية جديدة
@@ -265,7 +265,7 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
           <select
             value={filterTeacher}
             onChange={(e) => setFilterTeacher(e.target.value)}
-            className="px-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 font-medium"
+            className="px-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#008e8b]/30 font-medium"
           >
             <option value="ALL">جميع المعلمين ({reports.length} تقرير)</option>
             {uniqueTeacherNames.map((t) => (
@@ -278,7 +278,7 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
       )}
 
       {/* Reports Table */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-xl border border-slate-200  overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-right border-collapse text-sm">
             <thead>
@@ -394,7 +394,7 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
           <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[92vh] overflow-y-auto shadow-2xl border border-slate-200">
             <div className="p-5 border-b border-slate-200 flex items-center justify-between sticky top-0 bg-white z-10">
               <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <UserCheck className="w-5 h-5 text-indigo-600" />
+                <UserCheck className="w-5 h-5 text-[#008e8b]" />
                 تسجيل زيارة صفية وتقويم معلم
               </h3>
               <button
@@ -417,7 +417,7 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
                     required
                     value={visitDate}
                     onChange={(e) => setVisitDate(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#008e8b]/30"
                   />
                 </div>
                 <div>
@@ -427,7 +427,7 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
                   <select
                     value={periodNumber}
                     onChange={(e) => setPeriodNumber(parseInt(e.target.value, 10))}
-                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#008e8b]/30"
                   >
                     {[1, 2, 3, 4, 5, 6, 7, 8].map((p) => (
                       <option key={p} value={p}>
@@ -443,7 +443,7 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
                   <select
                     value={visitType}
                     onChange={(e) => setVisitType(e.target.value as VisitType)}
-                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#008e8b]/30"
                   >
                     <option value="DIAGNOSTIC">تشخيصية استطلاعية</option>
                     <option value="DEVELOPMENTAL">تطويرية إشرافية</option>
@@ -463,7 +463,7 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
                     <select
                       value={teacherId}
                       onChange={(e) => handleTeacherSelect(e.target.value)}
-                      className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                      className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#008e8b]/30"
                     >
                       <option value="">-- اختر المعلم من القائمة --</option>
                       {allTeachers.map((t) => (
@@ -479,7 +479,7 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
                       placeholder="اسم المعلم..."
                       value={teacherName}
                       onChange={(e) => setTeacherName(e.target.value)}
-                      className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                      className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#008e8b]/30"
                     />
                   )}
                 </div>
@@ -494,7 +494,7 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
                     placeholder="مثال: الرياضيات، اللغة العربية..."
                     value={subject}
                     onChange={(e) => setSubject(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#008e8b]/30"
                   />
                 </div>
               </div>
@@ -507,7 +507,7 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
                     placeholder="مثال: الأول الثانوي"
                     value={grade}
                     onChange={(e) => setGrade(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#008e8b]/30"
                   />
                 </div>
                 <div>
@@ -517,7 +517,7 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
                     placeholder="مثال: 1/1"
                     value={classroom}
                     onChange={(e) => setClassroom(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#008e8b]/30"
                   />
                 </div>
                 <div>
@@ -530,7 +530,7 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
                     placeholder="مثال: حل المعادلات الخطية"
                     value={lessonTopic}
                     onChange={(e) => setLessonTopic(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#008e8b]/30"
                   />
                 </div>
               </div>
@@ -539,7 +539,7 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <h4 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 text-indigo-600" />
+                    <Sparkles className="w-4 h-4 text-[#008e8b]" />
                     محاور الملاحظة الصفية المهنية ({visitStandards.length} مؤشر)
                   </h4>
                   <span className="text-xs text-slate-400">
@@ -560,10 +560,10 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
                       <div className="rounded-xl border border-slate-200 bg-white p-3"><div className="text-[11px] text-slate-500">متوسط المستوى</div><div className="text-lg font-black text-slate-900">{liveAverage ? liveAverage.toFixed(1) : '—'}</div></div>
                     </div>
                     {(Object.entries(standardsByDomain) as [string, QualityStandard[]][]).map(([domain, domainStandards]) => (
-                      <section key={domain} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                      <section key={domain} className="overflow-hidden rounded-2xl border border-slate-200 bg-white ">
                         <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3">
                           <div><h5 className="text-sm font-black text-slate-900">{domain}</h5><p className="mt-0.5 text-[11px] text-slate-500">{domainStandards.length} مؤشر ملاحظة</p></div>
-                          <span className="rounded-full bg-indigo-50 px-2.5 py-1 text-[11px] font-bold text-indigo-700">محور زيارة</span>
+                          <span className="rounded-full bg-teal-50 px-2.5 py-1 text-[11px] font-bold text-teal-800">محور زيارة</span>
                         </div>
                         <div className="space-y-3 p-3">
                     {domainStandards.map((std) => {
@@ -577,7 +577,7 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                             <div>
                               <div className="flex items-center gap-2">
-                                <span className="font-mono text-xs font-bold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded">
+                                <span className="font-mono text-xs font-bold text-teal-800 bg-teal-50 px-1.5 py-0.5 rounded">
                                   {std.code}
                                 </span>
                                 <span className="text-sm font-bold text-slate-800">
@@ -601,7 +601,7 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
                                       onClick={() => handleScoreChange(std.id, val)}
                                       className={`w-7 h-7 text-xs font-bold rounded-md transition-colors ${
                                         curScore === val
-                                          ? 'bg-indigo-600 text-white shadow-sm'
+                                          ? 'bg-[#008e8b] text-white '
                                           : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
                                       }`}
                                     >
@@ -618,7 +618,7 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
                             value={curNotes}
                             onChange={(e) => handleNotesChange(std.id, e.target.value)}
                             placeholder="الشاهد الملاحظ: ماذا فعل المعلم؟ كيف استجاب الطلاب؟ وما الأثر الظاهر على التعلم؟"
-                            className="w-full px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:ring-1 focus:ring-indigo-500"
+                            className="w-full px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:ring-1 focus:ring-[#008e8b]/30"
                           />
                         </div>
                       );
@@ -668,7 +668,7 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
                   value={recommendations}
                   onChange={(e) => setRecommendations(e.target.value)}
                   placeholder="إجراء تطويري محدد وقابل للمتابعة: ماذا سيُنفذ؟ متى؟ وما الشاهد المتوقع في الزيارة التالية؟"
-                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#008e8b]/30"
                 />
               </div>
 
@@ -681,14 +681,14 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
                   value={teacherFeedback}
                   onChange={(e) => setTeacherFeedback(e.target.value)}
                   placeholder="ملاحظات المعلم أثناء جلسة النقاش الختامية للزيارة..."
-                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#008e8b]/30"
                 />
               </div>
 
               {viewingReport.teacherFeedback?.trim() && (
-                <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-4">
-                  <h4 className="text-xs font-bold text-indigo-900 mb-1">انعكاس المعلم واتفاق المتابعة</h4>
-                  <p className="text-xs leading-6 text-indigo-900/80 whitespace-pre-wrap">{viewingReport.teacherFeedback}</p>
+                <div className="rounded-xl border border-teal-100 bg-teal-50/60 p-4">
+                  <h4 className="text-xs font-bold text-teal-950 mb-1">انعكاس المعلم واتفاق المتابعة</h4>
+                  <p className="text-xs leading-6 text-teal-950/80 whitespace-pre-wrap">{viewingReport.teacherFeedback}</p>
                 </div>
               )}
 
@@ -713,7 +713,7 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
                   <button
                     type="button"
                     onClick={() => handleSaveVisit(false)}
-                    className="px-5 py-2 text-sm bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors font-semibold shadow-sm flex items-center gap-2"
+                    className="px-5 py-2 text-sm bg-[#008e8b] hover:bg-teal-700 text-white rounded-lg transition-colors font-semibold  flex items-center gap-2"
                   >
                     <Send className="w-4 h-4" />
                     تقديم تقرير الزيارة للاعتماد
@@ -732,7 +732,7 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
             <div className="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50 rounded-t-2xl">
               <div>
                 <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                  <UserCheck className="w-5 h-5 text-indigo-600" />
+                  <UserCheck className="w-5 h-5 text-[#008e8b]" />
                   تقرير زيارة صفية - المعلم: {viewingReport.teacherName}
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
@@ -749,18 +749,18 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
 
             <div className="p-6 space-y-6">
               {/* Score Highlight */}
-              <div className="bg-gradient-to-r from-indigo-50 to-purple-50 p-4 rounded-xl border border-indigo-100 flex items-center justify-between">
+              <div className="bg-gradient-to-r from-indigo-50 to-purple-50 p-4 rounded-xl border border-teal-100 flex items-center justify-between">
                 <div>
-                  <div className="text-xs font-bold text-indigo-800">الدرجة الموزونة المحققة</div>
+                  <div className="text-xs font-bold text-teal-900">الدرجة الموزونة المحققة</div>
                   <div className="text-2xl font-black text-indigo-950 mt-0.5">
                     {viewingReport.earnedScore.toFixed(1)}{' '}
-                    <span className="text-sm font-normal text-indigo-600">
+                    <span className="text-sm font-normal text-[#008e8b]">
                       / {viewingReport.totalScore.toFixed(1)}
                     </span>
                   </div>
                 </div>
                 <div className="text-right">
-                  <div className="text-xs font-bold text-indigo-800">مستوى الأداء الصفّي</div>
+                  <div className="text-xs font-bold text-teal-900">مستوى الأداء الصفّي</div>
                   <span
                     className={`inline-block px-3 py-1 text-sm font-bold rounded-full mt-1 ${
                       viewingReport.percentage >= 85
@@ -818,7 +818,7 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
                     <tbody className="divide-y divide-slate-100">
                       {viewingReport.standardScores.map((sc, i) => (
                         <tr key={i}>
-                          <td className="p-2.5 font-mono font-bold text-indigo-600">{sc.standardCode}</td>
+                          <td className="p-2.5 font-mono font-bold text-[#008e8b]">{sc.standardCode}</td>
                           <td className="p-2.5 text-slate-800">
                             {(() => { const std = standards.find((s) => s.id === sc.standardId); return std ? `${std.domain} — ${std.standard}` : 'معيار'; })()}
                           </td>
@@ -885,7 +885,7 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
                   <button
                     type="button"
                     onClick={() => handleApprove(viewingReport)}
-                    className="px-5 py-2 text-sm bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors font-semibold shadow-sm flex items-center gap-2"
+                    className="px-5 py-2 text-sm bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors font-semibold  flex items-center gap-2"
                   >
                     <CheckCircle2 className="w-4 h-4" />
                     اعتماد تقرير الزيارة
