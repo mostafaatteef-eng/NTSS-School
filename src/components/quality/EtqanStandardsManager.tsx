@@ -33,6 +33,7 @@ export const EtqanStandardsManager: React.FC<Props> = ({
   onRefresh,
   canManage,
 }) => {
+  const schoolId = storageService.getActiveSchoolId() || currentUser?.schoolId || '';
   const [activeDomainFilter, setActiveDomainFilter] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -96,37 +97,23 @@ export const EtqanStandardsManager: React.FC<Props> = ({
     setIsFormOpen(true);
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.code || !formData.domain || !formData.standard || !formData.indicator) {
       alert('يرجى ملء جميع الحقول المطلوبة للمعيار والمؤشر.');
       return;
     }
 
-    const res = storageService.saveQualityStandard(
-      {
-        ...formData,
-        id: editingStandard ? editingStandard.id : undefined,
-      },
-      currentUser
-    );
-
-    if (res.success) {
-      setIsFormOpen(false);
-      onRefresh();
-    } else {
-      alert(res.message);
-    }
+    try {
+      await storageService.saveAuthoritativeQualityRecord('QUALITY_STANDARD',{...formData,id:editingStandard?.id,status:'DRAFT'},schoolId);
+      setIsFormOpen(false); onRefresh();
+    } catch(error:any){ alert(error?.message || 'تعذر حفظ معيار الجودة'); }
   };
 
-  const handleDelete = (std: QualityStandard) => {
+  const handleDelete = async (std: QualityStandard) => {
     if (!window.confirm(`هل أنت متأكد من رغبتك في حذف المعيار [${std.code}]؟`)) return;
-    const res = storageService.deleteQualityStandard(std.id, currentUser);
-    if (res.success) {
-      onRefresh();
-    } else {
-      alert(res.message);
-    }
+    try { await storageService.deleteAuthoritativeQualityRecord(std.id,schoolId); onRefresh(); }
+    catch(error:any){ alert(error?.message || 'تعذر حذف معيار الجودة'); }
   };
 
   // --- XLSX / CSV Import Handling ---
