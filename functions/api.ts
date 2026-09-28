@@ -12,6 +12,21 @@ const allowedOrigins = new Set([
 ]);
 const isAllowedOrigin = (origin: string) => allowedOrigins.has(origin.replace(/\/$/, ''));
 const tokenHash = (value: string) => crypto.createHash('sha256').update(value).digest('hex');
+const scryptPasswordHash = (password: string) => {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const derived = crypto.scryptSync(password, salt, 64).toString('hex');
+  return ['scrypt', salt, derived].join(':');
+};
+const isScryptPasswordHash = (hash: string) => String(hash || '').startsWith('scrypt:');
+const verifyScryptPassword = (password: string, stored: string) => {
+  const parts = String(stored || '').split(':');
+  if (parts.length !== 3 || parts[0] !== 'scrypt' || !parts[1] || !/^[0-9a-f]+$/i.test(parts[2])) return false;
+  const expected = Buffer.from(parts[2], 'hex');
+  if (!expected.length) return false;
+  const computed = crypto.scryptSync(password, parts[1], expected.length);
+  return computed.length === expected.length && crypto.timingSafeEqual(computed, expected);
+};
+
 const dummyPasswordSalt = 'ntss-login-timing-equalizer';
 const consumeDummyPasswordHash = (password: string) => legacyPasswordHash(password, dummyPasswordSalt, 10000);
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
@@ -42,6 +57,18 @@ const legacyPasswordHash = (password: string, salt: string, iterations: number) 
   }
   return digest.toString('hex');
 };
+const verifyPassword = (password: string, user: any) => {
+  const stored = String(user.password_hash || '');
+  if (isScryptPasswordHash(stored)) return { valid: verifyScryptPassword(password, stored), legacy: false };
+  const computed = Buffer.from(legacyPasswordHash(password, String(user.password_salt || ''), Number(user.password_iterations || 10000)));
+  const expected = Buffer.from(stored);
+  return { valid: computed.length === expected.length && crypto.timingSafeEqual(computed, expected), legacy: true };
+};
+const upgradeLegacyPassword = async (userId: string, password: string) => {
+  const hash = scryptPasswordHash(password);
+  await pool.query('UPDATE users SET password_hash=$2,password_salt=NULL,password_iterations=NULL,updated_at=now() WHERE id=$1', [userId, hash]);
+};
+
 
 function json(data: unknown, status = 200, origin = '') {
   return new Response(JSON.stringify(data), { status, headers: {
@@ -133,12 +160,12 @@ export default {
         }
         const user = result.rows[0];
         if (!user.is_active || user.status !== 'Active') return json({ status: 'error', code: 'INVALID_CREDENTIALS' }, 401, corsOrigin);
-        const computed = Buffer.from(legacyPasswordHash(password, String(user.password_salt || ''), Number(user.password_iterations || 10000)));
-        const expected = Buffer.from(String(user.password_hash || ''));
-        if (computed.length !== expected.length || !crypto.timingSafeEqual(computed, expected)) {
+        const passwordCheck = verifyPassword(password, user);
+        if (!passwordCheck.valid) {
           console.log(JSON.stringify({ marker: 'NTSS_STUDENT_LOGIN_DENIED', requestId, reason: 'password', totalMs: Math.round(performance.now()-startedAt) }));
           return json({ status: 'error', code: 'INVALID_CREDENTIALS' }, 401, corsOrigin);
         }
+        if (passwordCheck.legacy) await upgradeLegacyPassword(user.id, password);
         const token = crypto.randomBytes(32).toString('base64url');
         const sessionId = crypto.randomUUID();
         const expiresAt = new Date(Date.now() + 86400000);
@@ -180,14 +207,14 @@ export default {
         }
 
         const authStartedAt = performance.now();
-        const computed = Buffer.from(legacyPasswordHash(password, String(user.password_salt || ''), Number(user.password_iterations || 10000)));
-        const expected = Buffer.from(String(user.password_hash || ''));
+        const passwordCheck = verifyPassword(password, user);
         const authMs = Math.round(performance.now() - authStartedAt);
-        if (computed.length !== expected.length || !crypto.timingSafeEqual(computed, expected)) {
+        if (!passwordCheck.valid) {
           console.log(JSON.stringify({ marker: 'NTSS_LOGIN_DENIED', requestId, reason: 'password', dbMs, authMs, totalMs: Math.round(performance.now() - loginStartedAt) }));
           return json({ status: 'error', code: 'INVALID_CREDENTIALS' }, 401, corsOrigin);
         }
 
+        if (passwordCheck.legacy) await upgradeLegacyPassword(user.id, password);
         const token = crypto.randomBytes(32).toString('base64url');
         const sessionId = crypto.randomUUID();
         const expiresAt = new Date(Date.now() + 86400000);
@@ -403,7 +430,7 @@ export default {
           const bound=await pool.query('SELECT id FROM users WHERE school_id=$1 AND student_id=$2 LIMIT 1',[schoolId,studentId]);
           if(bound.rowCount)return json({status:'error',code:'STUDENT_ACCOUNT_EXISTS'},409,corsOrigin);
           const id='STU-'+crypto.randomBytes(8).toString('hex').toUpperCase();
-          const salt=crypto.randomBytes(16).toString('hex'); const iterations=10000; const hash=legacyPasswordHash(password,salt,iterations);
+          const salt=null; const iterations=null; const hash=scryptPasswordHash(password);
           const syntheticEmail=`${id.toLowerCase()}@student.local`;
           const created=await pool.query(
             `INSERT INTO users(id,email,username,full_name,role,access_scope,school_id,student_id,password_hash,password_salt,password_iterations,status,is_active)
@@ -447,8 +474,8 @@ export default {
         if(action==='resetUserPassword'){
           const password=String(data.newPassword||'');
           if(password.length<8)return json({status:'error',code:'PASSWORD_TOO_SHORT'},400,corsOrigin);
-          const salt=crypto.randomBytes(16).toString('hex'); const iterations=10000;
-          const hash=legacyPasswordHash(password,salt,iterations);
+          const salt=null; const iterations=null;
+          const hash=scryptPasswordHash(password);
           const client=await pool.connect();
           try {
             await client.query('BEGIN');
@@ -502,7 +529,7 @@ export default {
         if(!targetId){
           if(user.role!=='SystemAdmin' && !requestedSchoolId)return json({status:'error',code:'SCHOOL_REQUIRED'},400,corsOrigin);
           const password=String(data.password||''); if(!email||!username||!fullName||password.length<8)return json({status:'error',code:'INVALID_USER'},400,corsOrigin);
-          const id='USR-'+crypto.randomBytes(8).toString('hex').toUpperCase(); const salt=crypto.randomBytes(16).toString('hex'); const iterations=10000; const hash=legacyPasswordHash(password,salt,iterations);
+          const id='USR-'+crypto.randomBytes(8).toString('hex').toUpperCase(); const salt=null; const iterations=null; const hash=scryptPasswordHash(password);
           const scope=role==='SystemAdmin'?'GLOBAL':'SCHOOL'; const schoolId=scope==='GLOBAL'?null:String(data.schoolId||'').trim().toUpperCase()||null;
           const s=await pool.query('INSERT INTO users(id,email,username,full_name,role,access_scope,school_id,employee_id,password_hash,password_salt,password_iterations,status,is_active) VALUES($1,$2,$3,$4,$5,$6,$7,NULLIF($8,\'\'),$9,$10,$11,\'Active\',true) RETURNING *',[id,email,username,fullName,role,scope,schoolId,String(data.employeeId||''),hash,salt,iterations]);
           for(const sid of allowed.length?allowed:(schoolId?[schoolId]:[])) await pool.query('INSERT INTO user_school_access(user_id,school_id) SELECT $1,$2 WHERE EXISTS(SELECT 1 FROM schools WHERE id=$2) ON CONFLICT DO NOTHING',[id,sid]);
