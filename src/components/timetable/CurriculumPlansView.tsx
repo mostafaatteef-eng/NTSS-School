@@ -87,7 +87,8 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
   const grades = useMemo(() => storageService.getGrades(), []);
   const allSchedule = useMemo(() => storageService.getSchedule(), []);
 
-  const loadData = () => {
+  const loadData = async () => {
+    await storageService.getCurriculumPlansAuthoritative(currentUser);
     const authorized = curriculumPlanService.getAuthorizedPlansForUser(currentUser);
     setPlans(authorized);
     if (authorized.length > 0 && !selectedPlanId) {
@@ -98,8 +99,8 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
   };
 
   useEffect(() => {
-    loadData();
-    const unsub = storageService.subscribe(loadData);
+    void void loadData();
+    const unsub = storageService.subscribe(() => { void void loadData(); });
     return unsub;
   }, [currentUser]);
 
@@ -178,7 +179,7 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
           }
         : undefined;
 
-      const res = storageService.saveCurriculumPlan(
+      const res = await storageService.saveCurriculumPlanAuthoritative(
         {
           grade: uploadGrade,
           classroom: uploadClassroom,
@@ -197,7 +198,7 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
         setUploadFile(null);
         setRawTextPlan('');
         setUploadError(null);
-        loadData();
+        void loadData();
       } else {
         setUploadError(res.message);
       }
@@ -240,7 +241,7 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
       alert(res.message);
       return;
     }
-    loadData();
+    void loadData();
     alert(res.message);
   };
 
@@ -263,7 +264,7 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
       setSelectedScheduleId('');
       setTargetDate('');
       setLinkNotes('');
-      loadData();
+      void loadData();
     } else {
       alert(res.message);
     }
@@ -288,17 +289,17 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
       alert(result.message);
       return;
     }
-    loadData();
+    void loadData();
   };
 
-  const handlePlanWorkflowStatus = (status: 'Submitted' | 'Approved' | 'Rejected') => {
+  const handlePlanWorkflowStatus = async (status: 'Submitted' | 'Approved' | 'Rejected') => {
     if (!selectedPlan || readOnly) return;
-    const res = storageService.saveCurriculumPlan({ ...selectedPlan, status }, currentUser);
+    const res = await storageService.saveCurriculumPlanAuthoritative({ ...selectedPlan, status }, currentUser);
     if (!res.success) {
       alert(res.message);
       return;
     }
-    loadData();
+    void loadData();
   };
 
   const handleDeletePlan = (planId: string) => {
@@ -306,7 +307,7 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
     if (!window.confirm('هل أنت متأكد من حذف هذه الخطة وتوزيعاتها؟')) return;
     const res = storageService.deleteCurriculumPlan(planId, currentUser);
     if (res.success) {
-      loadData();
+      void loadData();
     } else {
       alert(res.message);
     }
