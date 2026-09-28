@@ -71,18 +71,23 @@ const upgradeLegacyPassword = async (userId: string, password: string) => {
 };
 
 
-function json(data: unknown, status = 200, origin = '') {
+function json(data: unknown, status = 200, origin = '', extraHeaders: Record<string,string> = {}) {
   return new Response(JSON.stringify(data), { status, headers: {
     'content-type': 'application/json',
     'access-control-allow-origin': origin || '*',
     'access-control-allow-headers': 'content-type, authorization',
     'access-control-allow-methods': 'GET,POST,OPTIONS',
+    'access-control-allow-credentials': 'true',
     vary: 'Origin',
+    ...extraHeaders,
   }});
 }
 
 async function authenticate(request: Request) {
-  const token = String(request.headers.get('authorization') || '').replace(/^Bearer\s+/i, '').trim();
+  const bearer = String(request.headers.get('authorization') || '').replace(/^Bearer\s+/i, '').trim();
+  const cookieHeader = String(request.headers.get('cookie') || '');
+  const cookieToken = cookieHeader.split(';').map(x => x.trim()).find(x => x.startsWith('ntss_session='))?.slice('ntss_session='.length) || '';
+  const token = bearer || decodeURIComponent(cookieToken);
   if (!token) return null;
   const { rows } = await pool.query(
     `SELECT s.id session_id,s.expires_at,s.active_school_id,u.id user_id,u.email,u.full_name,u.role,u.access_scope,u.school_id,u.employee_id,u.student_id
@@ -123,7 +128,7 @@ const ntssHandler = {
     }
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: {
       ...(corsOrigin ? { 'access-control-allow-origin': corsOrigin } : {}),
-      'access-control-allow-headers': 'content-type, authorization', 'access-control-allow-methods': 'GET,POST,OPTIONS', vary: 'Origin'
+      'access-control-allow-headers': 'content-type, authorization', 'access-control-allow-methods': 'GET,POST,OPTIONS', 'access-control-allow-credentials': 'true', vary: 'Origin'
     }});
 
     console.log(JSON.stringify({ marker: 'NTSS_REQ', method: request.method, origin, corsOrigin, url: request.url }));
@@ -179,7 +184,7 @@ const ntssHandler = {
         return json({ status:'success', sessionToken:token, expiresAt:expiresAt.toISOString(), user:{
           id:user.id, fullName:user.full_name, role:'Student', accessScope:'SELF', schoolId:user.school_id,
           activeSchoolId:user.school_id, allowedSchoolIds:[user.school_id], studentId:user.student_id, studentCode:user.student_code
-        }},200,corsOrigin);
+        }},200,corsOrigin, {'set-cookie': `ntss_session=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=86400`});
       }
 
       if (request.method === 'POST' && path === '/login') {
@@ -231,7 +236,7 @@ const ntssHandler = {
         return json({ status: 'success', sessionToken: token, expiresAt: expiresAt.toISOString(), user: {
           id: user.id, email: user.email, fullName: user.full_name, role: user.role, accessScope: user.access_scope,
           schoolId: user.school_id || '', activeSchoolId: user.school_id || '', allowedSchoolIds: access.rows.map((x: any) => x.school_id), employeeId: user.employee_id || '', studentId: user.student_id || ''
-        }}, 200, corsOrigin);
+        }}, 200, corsOrigin, {'set-cookie': `ntss_session=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=86400`});
       }
 
       const user = await authenticate(request);
@@ -284,7 +289,7 @@ const ntssHandler = {
 
       if (request.method === 'POST' && path === '/logout') {
         await pool.query("UPDATE sessions SET status='REVOKED',revoked_at=now() WHERE id=$1 AND user_id=$2 AND status='ACTIVE'", [user.session_id, user.user_id]);
-        return json({ status: 'success', message: 'تم إنهاء الجلسة.' }, 200, corsOrigin);
+        return json({ status: 'success', message: 'تم إنهاء الجلسة.' }, 200, corsOrigin, {'set-cookie':'ntss_session=; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=0'});
       }
 
       if (request.method === 'GET' && path === '/schools') {
