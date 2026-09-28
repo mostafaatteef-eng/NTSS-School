@@ -29,6 +29,7 @@ import {
 } from '../../types';
 import { storageService } from '../../services/storageService';
 import { timetableService } from '../../services/timetableService';
+import { PageHeader } from '../common/UiStates';
 import {
   clearImportMappingMemory,
   getRememberedMapping,
@@ -594,7 +595,7 @@ export const TimetableImportWizardView: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => updateSelection(bucket, entry, suggested.id)}
-                      className="mt-1.5 text-[11px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
+                      className="mt-1.5 text-[11px] font-bold text-[#008e8b] hover:text-teal-900 flex items-center gap-1"
                     >
                       استخدام الاقتراح: {suggested.label}{suggested.teacherCode ? ` (${suggested.teacherCode})` : ''}
                     </button>
@@ -648,31 +649,24 @@ export const TimetableImportWizardView: React.FC = () => {
 
   return (
     <div className="space-y-6" dir="rtl">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-        <div>
-          <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-            <FileSpreadsheet className="w-6 h-6 text-indigo-600" />
-            استيراد جدول aSc Timetables ومطابقة البيانات (Adapter)
-          </h2>
-          <p className="text-sm text-slate-500 mt-1">
-            يدعم تلقائياً صيغ aSc XML و XLSX و CSV و PDF، مع التحقق الصارم من أنصبة المعلمين (30 حصة) وخطة الفصول (39 حصة).
-          </p>
-        </div>
-        <button
+      <PageHeader
+        title="استيراد الجدول ومطابقة البيانات"
+        description="استيراد ملفات aSc وExcel وCSV وPDF مع مطابقة آمنة والتحقق قبل الاعتماد."
+        icon={<span className="rounded-xl bg-teal-50 p-2 text-[#008e8b]"><FileSpreadsheet className="h-5 w-5" /></span>}
+        actions={<button
           onClick={handleDownloadTemplate}
-          className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-xl border border-indigo-200 transition"
+          className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-teal-800 bg-teal-50 hover:bg-indigo-100 rounded-xl border border-teal-200 transition"
         >
           <Download className="w-4 h-4" /> تحميل نموذج Excel
-        </button>
-      </div>
+        </button>}
+      />
 
       {/* Upload Zone */}
       <div
         onDragOver={e => e.preventDefault()}
         onDrop={handleDrop}
         onClick={() => fileInputRef.current?.click()}
-        className="border-2 border-dashed border-slate-300 hover:border-indigo-500 rounded-2xl p-7 bg-white hover:bg-slate-50/50 transition cursor-pointer text-center space-y-3"
+        className="border-2 border-dashed border-slate-300 hover:border-[#008e8b] rounded-2xl p-7 bg-white hover:bg-slate-50/50 transition cursor-pointer text-center space-y-3"
       >
         <input
           ref={fileInputRef}
@@ -681,14 +675,14 @@ export const TimetableImportWizardView: React.FC = () => {
           onChange={handleFileUpload}
           className="hidden"
         />
-        <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center mx-auto">
+        <div className="w-12 h-12 bg-teal-50 text-[#008e8b] rounded-2xl flex items-center justify-center mx-auto">
           <UploadCloud className="w-6 h-6" />
         </div>
         <div className="text-sm font-bold text-slate-800">
           {file ? file.name : 'اضغط لاختيار ملف aSc Timetables أو اسحب الملف هنا'}
         </div>
         <div className="flex items-center justify-center gap-3 text-xs text-slate-500 font-semibold">
-          <span className="flex items-center gap-1"><FileCode className="w-3.5 h-3.5 text-indigo-600" /> aSc XML</span>
+          <span className="flex items-center gap-1"><FileCode className="w-3.5 h-3.5 text-[#008e8b]" /> aSc XML</span>
           <span>•</span>
           <span className="flex items-center gap-1"><FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" /> XLSX</span>
           <span>•</span>
@@ -697,7 +691,7 @@ export const TimetableImportWizardView: React.FC = () => {
           <span>PDF</span>
         </div>
         {isLoading && (
-          <div className="flex items-center justify-center gap-2 text-xs text-indigo-600 font-semibold">
+          <div className="flex items-center justify-center gap-2 text-xs text-[#008e8b] font-semibold">
             <RefreshCw className="w-4 h-4 animate-spin" /> جارِ تحليل وتفكيك الملف بواسطة المحول (Adapter)...
           </div>
         )}
@@ -705,10 +699,10 @@ export const TimetableImportWizardView: React.FC = () => {
 
       {/* Format Detection Info */}
       {fileFormat !== 'UNKNOWN' && (
-        <div className="bg-indigo-50/70 border border-indigo-200 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3 text-xs">
+        <div className="bg-teal-50/70 border border-teal-200 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3 text-xs">
           <div className="flex items-center gap-2">
-            <span className="font-bold text-indigo-900">الصيغة المكتشفة:</span>
-            <span className="font-mono px-2 py-0.5 rounded bg-indigo-200/60 font-black text-indigo-800">
+            <span className="font-bold text-teal-950">الصيغة المكتشفة:</span>
+            <span className="font-mono px-2 py-0.5 rounded bg-indigo-200/60 font-black text-teal-900">
               {fileFormat}
             </span>
             {detectedMeta.classesCount && (
@@ -717,7 +711,7 @@ export const TimetableImportWizardView: React.FC = () => {
               </span>
             )}
           </div>
-          <div className="text-indigo-700 font-bold">
+          <div className="text-teal-800 font-bold">
             عدد الحصص المستخرجة: {canonicalRows.length} حصة
           </div>
         </div>
@@ -743,7 +737,7 @@ export const TimetableImportWizardView: React.FC = () => {
           <div
             className={`rounded-xl border p-3 text-center ${
               mappingOpen
-                ? 'border-indigo-300 bg-indigo-50 text-indigo-700'
+                ? 'border-teal-300 bg-teal-50 text-teal-800'
                 : 'border-emerald-200 bg-emerald-50 text-emerald-700'
             }`}
           >
@@ -752,7 +746,7 @@ export const TimetableImportWizardView: React.FC = () => {
           <div
             className={`rounded-xl border p-3 text-center ${
               !mappingOpen && summary
-                ? 'border-indigo-300 bg-indigo-50 text-indigo-700'
+                ? 'border-teal-300 bg-teal-50 text-teal-800'
                 : 'border-slate-200 bg-slate-50 text-slate-400'
             }`}
           >
@@ -764,11 +758,11 @@ export const TimetableImportWizardView: React.FC = () => {
       {/* Step 2: Mapping Screen */}
       {mappingOpen && !!canonicalRows.length && (
         <div className="space-y-4">
-          <div className="rounded-2xl border border-indigo-200 bg-indigo-50/70 p-5">
+          <div className="rounded-2xl border border-teal-200 bg-teal-50/70 p-5">
             <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
               <div>
                 <div className="flex items-center gap-2 text-base font-black text-slate-900">
-                  <WandSparkles className="w-5 h-5 text-indigo-600" />
+                  <WandSparkles className="w-5 h-5 text-[#008e8b]" />
                   مطابقة حقول aSc Timetables مع النظام المدرسي
                 </div>
                 <p className="text-xs text-slate-600 mt-1 leading-relaxed">
@@ -779,7 +773,7 @@ export const TimetableImportWizardView: React.FC = () => {
                 <button
                   type="button"
                   onClick={reapplyAutomaticMappings}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-indigo-300 bg-white px-3 py-2 text-xs font-bold text-indigo-700 shadow-sm"
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-teal-300 bg-white px-3 py-2 text-xs font-bold text-teal-800 shadow-sm"
                 >
                   <WandSparkles className="w-4 h-4" /> مطابقة تلقائية آمنة
                 </button>
@@ -826,11 +820,11 @@ export const TimetableImportWizardView: React.FC = () => {
             ))}
           </div>
 
-          {renderMappingSection('teacher', 'مطابقة المعلمين (aSc Teacher → teacherCode)', <UserRound className="w-4 h-4 text-indigo-600" />, teacherOptions)}
-          {renderMappingSection('subject', 'مطابقة المواد (aSc Subject → Subject Master)', <BookOpen className="w-4 h-4 text-indigo-600" />, subjectOptions)}
-          {renderMappingSection('classroom', 'مطابقة الفصول (aSc Class → Classroom)', <School className="w-4 h-4 text-indigo-600" />, classroomOptions)}
-          {renderMappingSection('grade', 'مطابقة الصفوف الدراسية', <Layers className="w-4 h-4 text-indigo-600" />, gradeOptions)}
-          {renderMappingSection('day', 'توحيد أيام الدراسة', <CalendarDays className="w-4 h-4 text-indigo-600" />, dayOptions)}
+          {renderMappingSection('teacher', 'مطابقة المعلمين (aSc Teacher → teacherCode)', <UserRound className="w-4 h-4 text-[#008e8b]" />, teacherOptions)}
+          {renderMappingSection('subject', 'مطابقة المواد (aSc Subject → Subject Master)', <BookOpen className="w-4 h-4 text-[#008e8b]" />, subjectOptions)}
+          {renderMappingSection('classroom', 'مطابقة الفصول (aSc Class → Classroom)', <School className="w-4 h-4 text-[#008e8b]" />, classroomOptions)}
+          {renderMappingSection('grade', 'مطابقة الصفوف الدراسية', <Layers className="w-4 h-4 text-[#008e8b]" />, gradeOptions)}
+          {renderMappingSection('day', 'توحيد أيام الدراسة', <CalendarDays className="w-4 h-4 text-[#008e8b]" />, dayOptions)}
 
           <div className="sticky bottom-3 rounded-2xl border border-slate-200 bg-white/95 backdrop-blur p-4 shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-3">
             <div className="text-xs text-slate-600">
@@ -880,7 +874,7 @@ export const TimetableImportWizardView: React.FC = () => {
             <button
               type="button"
               onClick={() => setMappingOpen(true)}
-              className="inline-flex items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2 text-xs font-bold text-indigo-700"
+              className="inline-flex items-center gap-2 rounded-xl border border-teal-200 bg-teal-50 px-4 py-2 text-xs font-bold text-teal-800"
             >
               <WandSparkles className="w-4 h-4" /> العودة لشاشة المطابقة
             </button>
@@ -904,7 +898,7 @@ export const TimetableImportWizardView: React.FC = () => {
               <div className="text-xs text-slate-500">معلم غير معتمد</div>
             </div>
             <div className="bg-white p-4 rounded-xl border border-slate-200 text-center shadow-sm">
-              <div className="text-2xl font-black text-indigo-600">{summary.conflictsFound}</div>
+              <div className="text-2xl font-black text-[#008e8b]">{summary.conflictsFound}</div>
               <div className="text-xs text-slate-500">تعارضات مجدولة</div>
             </div>
             <div className="bg-white p-4 rounded-xl border border-slate-200 text-center shadow-sm">
@@ -927,7 +921,7 @@ export const TimetableImportWizardView: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => handleConfirmNewClassroom(c)}
-                      className="text-[11px] text-indigo-700 font-bold hover:underline"
+                      className="text-[11px] text-teal-800 font-bold hover:underline"
                     >
                       تأكيد إنشاء الفصل
                     </button>
@@ -941,7 +935,7 @@ export const TimetableImportWizardView: React.FC = () => {
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="p-4 border-b border-slate-200 flex flex-col xl:flex-row xl:items-center justify-between gap-3">
               <h3 className="font-bold text-sm text-slate-800 flex items-center gap-2">
-                <Layers className="w-4 h-4 text-indigo-600" /> معاينة الحصص وحالة التدقيق
+                <Layers className="w-4 h-4 text-[#008e8b]" /> معاينة الحصص وحالة التدقيق
               </h3>
               <div className="flex flex-col md:flex-row md:items-center gap-3">
                 <label className="flex items-center gap-2 text-xs font-semibold text-slate-700">
@@ -1002,7 +996,7 @@ export const TimetableImportWizardView: React.FC = () => {
                         {row.gradeName} - {row.classroomName}
                       </td>
                       <td className="p-2.5 font-semibold">{row.subjectName}</td>
-                      <td className="p-2.5 font-mono font-bold text-indigo-700">
+                      <td className="p-2.5 font-mono font-bold text-teal-800">
                         {row.teacherCode || '—'}
                       </td>
                       <td className="p-2.5">{row.teacherName || '—'}</td>
