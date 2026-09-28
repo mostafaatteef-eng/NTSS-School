@@ -104,7 +104,7 @@ export default {
         const token = crypto.randomBytes(32).toString('base64url');
         const sessionId = crypto.randomUUID();
         const expiresAt = new Date(Date.now() + 86400000);
-        await pool.query('INSERT INTO sessions(id,user_id,token_hash,active_school_id,expires_at) VALUES($1,$2,$3,$4,$5)', [sessionId,user.id,tokenHash(token),user.school_id,expiresAt]);
+        await Promise.all([\n          pool.query('INSERT INTO sessions(id,user_id,token_hash,active_school_id,expires_at) VALUES($1,$2,$3,$4,$5)', [sessionId,user.id,tokenHash(token),user.school_id,expiresAt]),\n          pool.query('UPDATE users SET last_login_at=now(), updated_at=now() WHERE id=$1', [user.id])\n        ]);
         console.log(JSON.stringify({ marker: 'NTSS_STUDENT_LOGIN_SUCCESS', requestId, userId:user.id, totalMs:Math.round(performance.now()-startedAt) }));
         return json({ status:'success', sessionToken:token, expiresAt:expiresAt.toISOString(), user:{
           id:user.id, fullName:user.full_name, role:'Student', accessScope:'SELF', schoolId:user.school_id,
