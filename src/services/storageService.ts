@@ -7635,6 +7635,21 @@ class StorageService {
     };
   }
 
+  public async deleteCurriculumPlanAuthoritative(id: string, user?: User | null): Promise<{ success:boolean; message:string }> {
+    const caller=user||this.getCurrentUser();
+    if(!isPostgresBackendEnabled())return this.deleteCurriculumPlan(id,caller);
+    if(!caller?.sessionToken||!this.isAuthenticated(caller))return {success:false,message:'يجب تسجيل الدخول لحذف خطة المنهج.'};
+    const schoolId=(caller.activeSchoolId||caller.schoolId||this.getActiveSchoolId()).trim();
+    const pg=await postgresApiRequest<any>('/curriculum/manage',caller.sessionToken,{method:'POST',body:JSON.stringify({action:'deletePlan',schoolId,data:{id}})});
+    const res=pg.body||{};if(!pg.ok||res.status!=='success')return {success:false,message:res.message||'رفض الخادم حذف خطة المنهج.'};
+    const raw=localStorage.getItem(STORAGE_KEYS.CURRICULUM_PLANS);let plans:CurriculumMasterPlan[]=[];try{plans=raw?JSON.parse(raw):[];}catch{}
+    localStorage.setItem(STORAGE_KEYS.CURRICULUM_PLANS,JSON.stringify(plans.filter(p=>!(p.id===id&&p.schoolId===schoolId))));
+    const rawD=localStorage.getItem(STORAGE_KEYS.CURRICULUM_DISTRIBUTIONS);let dists:CurriculumLessonDistribution[]=[];try{dists=rawD?JSON.parse(rawD):[];}catch{}
+    localStorage.setItem(STORAGE_KEYS.CURRICULUM_DISTRIBUTIONS,JSON.stringify(dists.filter(d=>!(d.planId===id&&d.schoolId===schoolId))));
+    this.logAudit('DELETE','CURRICULUM',`حذف خطة منهج من PostgreSQL: ${id}`,undefined,undefined,id);this.notifyChange();
+    return {success:true,message:res.message||'تم حذف الخطة من PostgreSQL.'};
+  }
+
   public deleteCurriculumPlan(id: string, user?: User | null): { success: boolean; message: string } {
     const currentUser = user || this.getCurrentUser();
     const isCurriculumAdmin =
