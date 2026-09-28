@@ -4,8 +4,6 @@ import {
   ArrowRight,
   Building2,
   CalendarDays,
-  Eye,
-  EyeOff,
   GraduationCap,
   Lock,
   LogIn,
@@ -46,7 +44,6 @@ export const LoginView: React.FC<LoginViewProps> = ({
   const [email, setEmail] = useState('');
   const [studentCode, setStudentCode] = useState('');
   const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
@@ -54,7 +51,6 @@ export const LoginView: React.FC<LoginViewProps> = ({
     setEmail('');
     setStudentCode('');
     setPassword('');
-    setShowPassword(false);
     setErrorMessage('');
   };
 
@@ -74,7 +70,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
       return;
     }
 
-    if (!email.trim()) {
+    if (portal !== 'student' && !email.trim()) {
       setErrorMessage('يرجى إدخال البريد الإلكتروني');
       return;
     }
@@ -327,7 +323,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
                       <Lock className="pointer-events-none absolute right-3.5 h-4 w-4 text-slate-400" />
                       <input
                         id="input-password"
-                        type={showPassword ? 'text' : 'password'}
+                        type="password"
                         autoComplete="current-password"
                         required
                         value={password}
@@ -335,15 +331,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
                         placeholder="••••••••"
                         className="w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-11 pr-10 text-sm font-medium outline-none transition focus:border-[#008e8b] focus:bg-white focus:ring-2 focus:ring-[#008e8b]/15"
                       />
-                      <button
-                        type="button"
-                        onClick={() => setShowPassword(value => !value)}
-                        className="absolute left-3 rounded-lg p-1 text-slate-400 transition hover:text-slate-700"
-                        title={showPassword ? 'إخفاء كلمة المرور' : 'إظهار كلمة المرور'}
-                        tabIndex={-1}
-                      >
-                        {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                      </button>
+
                     </div>
                   </div>
 
