@@ -24,6 +24,7 @@ import { storageService } from '../../services/storageService';
 import { ExportService } from '../../services/exportService';
 import { StaffImportModal } from './StaffImportModal';
 import { hasPermission } from '../../utils/permissions';
+import { ErrorState, LoadingState, PageHeader } from '../common/UiStates';
 
 interface EmployeesViewProps {
   employees: Employee[];
@@ -272,26 +273,16 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
 
   return (
     <div className="space-y-5">
-      {/* Top Header & Actions */}
-      <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-2xl bg-teal-50 text-teal-600 flex items-center justify-center">
-              <Users className="w-5 h-5" />
-            </div>
-            <span>دليل وهيكل المعلمين والموظفين (Staff Structure)</span>
-          </h2>
-          <p className="text-xs text-slate-500 mt-1">
-            إدارة الكادر التعليمي والإداري، المسميات الوظيفية، التخصصات، وأكواد التدريس
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
+      <PageHeader
+        title="دليل المعلمين والموظفين"
+        description="إدارة الكادر التعليمي والإداري، المسميات الوظيفية، التخصصات وأكواد التدريس."
+        icon={<span className="rounded-xl bg-teal-50 p-2 text-teal-700"><Users className="h-5 w-5" /></span>}
+        actions={<div className="flex flex-wrap items-center gap-2">
           {canImport && (
             <button
               id="btn-import-staff-data"
               onClick={() => setIsImportModalOpen(true)}
-              className="text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2.5 rounded-2xl transition-colors flex items-center gap-1.5 border border-slate-200 shadow-xs"
+              className="text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2.5 rounded-xl transition-colors flex items-center gap-1.5 border border-slate-200 shadow-xs"
             >
               <UploadCloud className="w-4 h-4 text-teal-700" />
               <span>استيراد بيانات العاملين</span>
@@ -302,7 +293,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
             <button
               id="btn-add-new-employee"
               onClick={openAddModal}
-              className="text-xs font-bold bg-[#008e8b] hover:bg-teal-700 text-white px-4 py-2.5 rounded-2xl shadow-sm transition-colors flex items-center gap-1.5"
+              className="text-xs font-bold bg-[#008e8b] hover:bg-teal-700 text-white px-4 py-2.5 rounded-xl transition-colors flex items-center gap-1.5"
             >
               <UserPlus className="w-4 h-4" />
               <span>إضافة موظف / معلم جديد</span>
@@ -311,31 +302,16 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
 
           <button
             onClick={handleExport}
-            className="text-xs font-bold bg-white hover:bg-slate-50 text-slate-700 px-4 py-2.5 rounded-2xl transition-colors flex items-center gap-1.5 border border-slate-200 shadow-xs"
+            className="text-xs font-bold bg-white hover:bg-slate-50 text-slate-700 px-4 py-2.5 rounded-xl transition-colors flex items-center gap-1.5 border border-slate-200 shadow-xs"
           >
             <Download className="w-4 h-4 text-slate-600" />
             <span>تصدير الموظفين Excel</span>
           </button>
-        </div>
-      </div>
+        </div>}
+      />
 
-      {employeesError && (
-        <div className="flex items-center justify-between gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-xs font-bold text-rose-800">
-          <span className="flex items-center gap-2">
-            <AlertCircle className="h-4 w-4 shrink-0" />
-            {employeesError}
-          </span>
-          <button type="button" onClick={() => void loadEmployees()} className="underline">
-            إعادة المحاولة
-          </button>
-        </div>
-      )}
-
-      {employeesLoading && (
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-center text-xs font-bold text-slate-500">
-          جارٍ تحميل بيانات العاملين من الخادم المعتمد...
-        </div>
-      )}
+      {employeesError && <ErrorState message={employeesError} onRetry={() => void loadEmployees()} />}
+      {employeesLoading && <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white"><LoadingState label="جارٍ تحميل بيانات العاملين من الخادم المعتمد" rows={3} /></div>}
 
       {/* Filter and Search Bar - Phase 2: employeeType, jobTitle, specialization */}
       <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-xs flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
