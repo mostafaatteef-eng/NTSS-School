@@ -197,7 +197,9 @@ const ntssHandler = {
         const isSelfScopedStudent = user.role === 'Student' && user.access_scope === 'SELF';
         const access = isSelfScopedStudent
           ? { rows: user.school_id ? [{ school_id: user.school_id }] : [] }
-          : await pool.query("SELECT usa.school_id FROM user_school_access usa JOIN schools s ON s.id=usa.school_id WHERE usa.user_id=$1 AND s.status='ACTIVE' ORDER BY usa.school_id", [user.user_id]);
+          : user.access_scope === 'GLOBAL'
+            ? await pool.query("SELECT id AS school_id FROM schools WHERE status='ACTIVE' ORDER BY id")
+            : await pool.query("SELECT usa.school_id FROM user_school_access usa JOIN schools s ON s.id=usa.school_id WHERE usa.user_id=$1 AND s.status='ACTIVE' ORDER BY usa.school_id", [user.user_id]);
         const allowedSchoolIds = access.rows.map((x: any) => x.school_id);
         const activeSchoolId = isSelfScopedStudent
           ? (user.school_id || '')
@@ -215,7 +217,7 @@ const ntssHandler = {
 
       if (request.method === 'GET' && path === '/schools') {
         const query = user.access_scope === 'GLOBAL'
-          ? await pool.query("SELECT s.id,s.code,s.name,s.status FROM schools s JOIN user_school_access usa ON usa.school_id=s.id WHERE usa.user_id=$1 ORDER BY s.name", [user.user_id])
+          ? await pool.query("SELECT id,code,name,status FROM schools WHERE status='ACTIVE' ORDER BY name")
           : await pool.query("SELECT id,code,name,status FROM schools WHERE id=$2 OR id IN (SELECT school_id FROM user_school_access WHERE user_id=$1) ORDER BY name", [user.user_id, user.school_id]);
         return json({ status: 'success', data: query.rows }, 200, corsOrigin);
       }
