@@ -397,6 +397,9 @@ export default {
         const role=String(data.role||'').trim(); const fullName=String(data.fullName||'').trim();
         if(role==='SystemAdmin' && user.role!=='SystemAdmin')return json({status:'error',code:'ROLE_ESCALATION_DENIED'},403,corsOrigin);
         const allowed=Array.isArray(data.allowedSchoolIds)?[...new Set(data.allowedSchoolIds.map((x:any)=>String(x||'').trim().toUpperCase()).filter(Boolean))]:[];
+        const requestedSchoolId=String(data.schoolId||'').trim().toUpperCase();
+        if(requestedSchoolId && !(await canAccessSchool(user,requestedSchoolId)))return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);
+        for(const sid of allowed) if(!(await canAccessSchool(user,sid)))return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);
         if(!targetId){
           const password=String(data.password||''); if(!email||!username||!fullName||password.length<8)return json({status:'error',code:'INVALID_USER'},400,corsOrigin);
           const id='USR-'+crypto.randomBytes(8).toString('hex').toUpperCase(); const salt=crypto.randomBytes(16).toString('hex'); const iterations=10000; const hash=legacyPasswordHash(password,salt,iterations);
