@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { PublicClassScheduleDTO, PublicClassScheduleLesson, SystemSettings } from '../../types';
 import { storageService } from '../../services/storageService';
+import { ErrorState, LoadingState, PageHeader } from '../common/UiStates';
 
 export const StudentScheduleAccessView: React.FC = () => {
   const [settings, setSettings] = useState<SystemSettings>(storageService.getSettings());
@@ -88,32 +89,19 @@ export const StudentScheduleAccessView: React.FC = () => {
 
   return (
     <div dir="rtl" className="space-y-6">
-      {/* Header Card */}
-      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="p-2 bg-teal-50 text-[#008e8b] rounded-xl">
-              <School className="w-5 h-5" />
-            </span>
-            <h2 className="text-base font-bold text-slate-900">جدول الحصص الأسبوعي للفصول</h2>
-            <span className="text-[11px] font-medium bg-slate-100 text-slate-600 px-2.5 py-0.5 rounded-full">
-              عام (بدون تسجيل دخول • بدون كود طالب • بدون بيانات شخصية)
-            </span>
-          </div>
-          <p className="text-xs text-slate-500 mt-1">
-            عرض جدول الفصل الدراسي المنشور رسمياً للطلاب وأولياء الأمور مباشرة.
-          </p>
-        </div>
-
-        <button
+      <PageHeader
+        title="جدول الحصص الأسبوعي للفصول"
+        description="عرض الجدول الرسمي المنشور للطلاب وأولياء الأمور دون بيانات شخصية."
+        icon={<span className="rounded-xl bg-teal-50 p-2 text-[#008e8b]"><School className="h-5 w-5" /></span>}
+        actions={<button
           type="button"
           onClick={() => window.print()}
           className="inline-flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition shadow-xs cursor-pointer print:hidden"
         >
           <Printer className="w-4 h-4" />
           <span>طباعة الجدول</span>
-        </button>
-      </div>
+        </button>}
+      />
 
       {/* Classroom Selection Filter */}
       <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs print:hidden">
@@ -170,7 +158,7 @@ export const StudentScheduleAccessView: React.FC = () => {
       </div>
 
       {/* Schedule Grid Table */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
         <div className="p-4 border-b border-slate-200 bg-slate-50/75 flex items-center justify-between">
           <div className="flex items-center gap-2 text-xs font-bold text-slate-800">
             <CalendarDays className="w-4 h-4 text-[#008e8b]" />
@@ -189,7 +177,7 @@ export const StudentScheduleAccessView: React.FC = () => {
 
         <div className="overflow-x-auto">
           <table className="w-full border-collapse text-xs text-right">
-            <thead>
+            <thead className="sticky top-0 z-10">
               <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
                 <th className="p-3 w-28 text-center border-l border-slate-200">اليوم / الحصة</th>
                 {PERIODS.map(p => (
