@@ -1,4 +1,4 @@
-// deployment sync marker: timetable validation rollout
+// deployment sync marker: 2026-09-28T20:10:00.000Z
 import pg from 'pg';
 import crypto from 'node:crypto';
 
