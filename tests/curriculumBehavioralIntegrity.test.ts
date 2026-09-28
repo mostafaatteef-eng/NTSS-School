@@ -61,4 +61,15 @@ describe('Curriculum behavioral integrity',()=>{
     expect(storageService.getCurriculumDistributions('SCH-1').find(d=>d.id===linked.distribution!.id)?.status).toBe('Cancelled');
   });
 
+  it('protects submitted and approved plans from deletion',()=>{
+    const submitted={...plan('SUB','Math','G1','A'),status:'Submitted' as const};
+    const approved=plan('APP','Math','G1','A');
+    localStorage.setItem('ntss_curriculum_plans_v3',JSON.stringify([submitted,approved]));
+    const admin:User={...teacher,id:'ADMIN2',employeeId:'ADMIN2',role:'Admin',fullName:'Admin'};
+    storageService.setCurrentUser(admin);
+    expect(storageService.deleteCurriculumPlan('SUB',admin).success).toBe(false);
+    expect(storageService.deleteCurriculumPlan('APP',admin).success).toBe(false);
+    expect(storageService.getCurriculumPlans('SCH-1').map(p=>p.id).sort()).toEqual(['APP','SUB']);
+  });
+
 });
