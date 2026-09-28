@@ -133,3 +133,19 @@ CREATE UNIQUE INDEX IF NOT EXISTS schedule_teacher_slot_unique_idx
 CREATE UNIQUE INDEX IF NOT EXISTS schedule_class_slot_unique_idx
   ON schedule(school_id,weekday,period_no,classroom)
   WHERE classroom IS NOT NULL AND classroom <> '';
+
+
+-- Canonical quality persistence shared by visits, daily reports, evaluations and corrective actions.
+CREATE TABLE IF NOT EXISTS quality_records (
+  id text PRIMARY KEY,
+  school_id text NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+  record_type text NOT NULL,
+  status text NOT NULL DEFAULT 'DRAFT',
+  payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_by text REFERENCES users(id) ON DELETE SET NULL,
+  approved_by text REFERENCES users(id) ON DELETE SET NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  approved_at timestamptz
+);
+CREATE INDEX IF NOT EXISTS quality_records_school_type_idx ON quality_records(school_id,record_type,updated_at DESC);
