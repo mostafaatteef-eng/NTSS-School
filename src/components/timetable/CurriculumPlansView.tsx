@@ -541,37 +541,37 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
                             </div>
                           ) : readOnly ? (
                             <span className={`inline-flex text-xs font-bold rounded-lg border px-2 py-1 ${
-                              linkedDist.status === 'Delivered'
+                              linkedDist!.status === 'Delivered'
                                 ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
-                                : linkedDist.status === 'Deferred'
+                                : linkedDist!.status === 'Deferred'
                                 ? 'bg-amber-50 text-amber-800 border-amber-300'
-                                : linkedDist.status === 'Cancelled'
+                                : linkedDist!.status === 'Cancelled'
                                 ? 'bg-rose-50 text-rose-800 border-rose-300'
                                 : 'bg-indigo-50 text-indigo-800 border-indigo-300'
                             }`}>
-                              {linkedDist.status === 'Delivered'
+                              {linkedDist!.status === 'Delivered'
                                 ? 'تم التدريس'
-                                : linkedDist.status === 'Deferred'
+                                : linkedDist!.status === 'Deferred'
                                   ? 'مؤجل'
-                                  : linkedDist.status === 'Cancelled'
+                                  : linkedDist!.status === 'Cancelled'
                                     ? 'ملغي'
                                     : 'مجدول'}
                             </span>
                           ) : (
                             <select
-                              value={linkedDist.status}
+                              value={linkedDist!.status}
                               onChange={e =>
                                 handleUpdateStatus(
-                                  linkedDist.id,
+                                  linkedDist!.id,
                                   e.target.value as CurriculumDistributionStatus
                                 )
                               }
                               className={`text-xs font-bold rounded-lg border px-2 py-1 ${
-                                linkedDist.status === 'Delivered'
+                                linkedDist!.status === 'Delivered'
                                   ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
-                                  : linkedDist.status === 'Deferred'
+                                  : linkedDist!.status === 'Deferred'
                                     ? 'bg-amber-50 text-amber-800 border-amber-300'
-                                    : linkedDist.status === 'Cancelled'
+                                    : linkedDist!.status === 'Cancelled'
                                       ? 'bg-rose-50 text-rose-800 border-rose-300'
                                       : 'bg-indigo-50 text-indigo-800 border-indigo-300'
                               }`}
