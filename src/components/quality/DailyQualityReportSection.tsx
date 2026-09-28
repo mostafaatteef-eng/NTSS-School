@@ -38,9 +38,24 @@ export const DailyQualityReportSection: React.FC<Props> = ({
   const [viewingReport, setViewingReport] = useState<DailyQualityReport | null>(null);
 
   // Applicable standards for Daily Reports
-  const dailyStandards = standards.filter(
+  const configuredDailyStandards = standards.filter(
     (s) => s.isActive && s.applicableTo?.includes('DAILY_REPORT')
   );
+  const fallbackDailyStandards: QualityStandard[] = [
+    ['DQ-01', 'الانضباط والتشغيل', 'انتظام بداية اليوم الدراسي', 'انتظام الطابور وبداية الحصص والالتزام بالمواعيد'],
+    ['DQ-02', 'الحضور والالتزام', 'متابعة الحضور والغياب', 'اكتمال الرصد والتعامل مع حالات الغياب والتأخير'],
+    ['DQ-03', 'التعليم والتعلم', 'انتظام العملية التعليمية', 'تنفيذ الحصص وتفاعل الطلاب وتوافر المعلم داخل الفصل'],
+    ['DQ-04', 'البيئة والسلامة', 'سلامة البيئة المدرسية', 'خلو الممرات والفصول من المخاطر ووضوح إجراءات السلامة'],
+    ['DQ-05', 'النظافة والمرافق', 'جاهزية المرافق والخدمات', 'نظافة الفصول ودورات المياه وجاهزية المياه والكهرباء'],
+    ['DQ-06', 'السلوك والانضباط', 'الانضباط السلوكي', 'رصد المخالفات والتعامل معها وفق الإجراءات المعتمدة'],
+    ['DQ-07', 'التجهيزات والدعم', 'جاهزية التجهيزات التعليمية', 'توافر الأدوات والمعامل والتجهيزات اللازمة للتعلم'],
+    ['DQ-08', 'المتابعة والتحسين', 'إغلاق الملاحظات اليومية', 'تحديد مسؤول وإجراء وموعد متابعة للفجوات ذات الأولوية'],
+  ].map(([code, domain, standard, indicator], index) => ({
+    id: `DAILY-DEFAULT-${index + 1}`, schoolId: currentUser?.schoolId || '', code, domain,
+    standard, indicator, description: indicator, weight: 1, evaluationScale: 4,
+    evidenceRequired: false, applicableTo: ['DAILY_REPORT'], isActive: true,
+  }));
+  const dailyStandards = configuredDailyStandards.length > 0 ? configuredDailyStandards : fallbackDailyStandards;
   const standardsByDomain = dailyStandards.reduce((groups: Record<string, QualityStandard[]>, standard: QualityStandard) => {
     const domain = standard.domain?.trim() || 'محور عام';
     (groups[domain] ||= []).push(standard);
