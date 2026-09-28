@@ -7670,6 +7670,36 @@ class StorageService {
     return { success: true, message: 'تم حذف الخطة وتوزيعاتها' };
   }
 
+  public async getCurriculumDistributionsAuthoritative(user?: User | null): Promise<{ success: boolean; distributions?: CurriculumLessonDistribution[]; message?: string }> {
+    const caller = user || this.getCurrentUser();
+    if (!caller?.sessionToken || !this.isAuthenticated(caller)) return { success: false, message: 'يجب تسجيل الدخول لتحميل توزيع المنهج.' };
+    if (!isPostgresBackendEnabled()) return { success: true, distributions: this.getCurriculumDistributions(caller.schoolId) };
+    const schoolId = (caller.activeSchoolId || caller.schoolId || this.getActiveSchoolId()).trim();
+    const pg = await postgresApiRequest<any>('/curriculum/manage', caller.sessionToken, { method: 'POST', body: JSON.stringify({ action: 'getDistributions', schoolId }) });
+    const res = pg.body || {}; if (!pg.ok || res.status !== 'success') return { success: false, message: res.message || 'تعذر تحميل توزيع المنهج من PostgreSQL.' };
+    const distributions = Array.isArray(res.data) ? res.data as CurriculumLessonDistribution[] : [];
+    const raw=localStorage.getItem(STORAGE_KEYS.CURRICULUM_DISTRIBUTIONS);let all:CurriculumLessonDistribution[]=[];try{all=raw?JSON.parse(raw):[];}catch{}
+    localStorage.setItem(STORAGE_KEYS.CURRICULUM_DISTRIBUTIONS,JSON.stringify([...all.filter(d=>d.schoolId!==schoolId),...distributions]));
+    return { success:true, distributions };
+  }
+
+  public async saveCurriculumDistributionAuthoritative(
+    dist: Partial<CurriculumLessonDistribution> & { planId:string; planItemId:string; teacherId:string },
+    user?: User | null
+  ): Promise<{ success:boolean; data?:CurriculumLessonDistribution; message:string }> {
+    const caller=user||this.getCurrentUser();
+    if(!isPostgresBackendEnabled())return this.saveCurriculumDistribution(dist,caller);
+    if(!caller?.sessionToken||!this.isAuthenticated(caller))return {success:false,message:'يجب تسجيل الدخول لحفظ توزيع المنهج.'};
+    const schoolId=(dist.schoolId||caller.activeSchoolId||caller.schoolId||this.getActiveSchoolId()).trim();
+    const pg=await postgresApiRequest<any>('/curriculum/manage',caller.sessionToken,{method:'POST',body:JSON.stringify({action:'saveDistribution',schoolId,data:dist})});
+    const res=pg.body||{};if(!pg.ok||res.status!=='success')return {success:false,message:res.message||'رفض الخادم حفظ توزيع المنهج.'};
+    const serverId=String(res.data?.id||dist.id||'');const saved={...dist,id:serverId,schoolId} as CurriculumLessonDistribution;
+    const raw=localStorage.getItem(STORAGE_KEYS.CURRICULUM_DISTRIBUTIONS);let all:CurriculumLessonDistribution[]=[];try{all=raw?JSON.parse(raw):[];}catch{}
+    const idx=all.findIndex(d=>d.id===serverId&&d.schoolId===schoolId);if(idx>=0)all[idx]={...all[idx],...saved};else all.push(saved);
+    localStorage.setItem(STORAGE_KEYS.CURRICULUM_DISTRIBUTIONS,JSON.stringify(all));this.logAudit('UPSERT','CURRICULUM',`تحديث توزيع المنهج: ${saved.subject||''} - ${saved.grade||''} - ${saved.classroom||''} (${saved.status||'Planned'})`,undefined,saved.status,serverId);this.notifyChange();
+    return {success:true,data:saved,message:res.message||'تم حفظ توزيع المنهج في PostgreSQL.'};
+  }
+
   public getCurriculumDistributions(schoolId?: string): CurriculumLessonDistribution[] {
     const raw = localStorage.getItem(STORAGE_KEYS.CURRICULUM_DISTRIBUTIONS);
     if (!raw) return [];
