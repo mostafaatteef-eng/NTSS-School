@@ -688,8 +688,27 @@ class TimetableService {
     const conflicts: string[] = [];
     const warnings: string[] = [];
     const schedule = (existingSchedule || storageService.getSchedule()).filter(
-      s => s.id !== (options?.ignoreSelfId || item.id) && s.isActive !== false && !s.isCancelled
+      s =>
+        s.id !== (options?.ignoreSelfId || item.id) &&
+        s.isActive !== false &&
+        !s.isCancelled &&
+        (!item.schoolId || !s.schoolId || s.schoolId === item.schoolId)
     );
+
+    if (!item.dayOfWeek && !item.dayName) conflicts.push('بيانات الجدول غير مكتملة: يجب تحديد اليوم.');
+    if (!Number.isInteger(Number(item.periodNumber)) || Number(item.periodNumber) <= 0) {
+      conflicts.push('بيانات الجدول غير مكتملة: رقم الحصة غير صالح.');
+    }
+    if (!item.subjectId && !item.subject?.trim()) conflicts.push('بيانات الجدول غير مكتملة: يجب تحديد المادة.');
+    if (!item.classroomId && !item.classroom?.trim()) conflicts.push('بيانات الجدول غير مكتملة: يجب تحديد الفصل.');
+    if (!item.teacherId) conflicts.push('بيانات الجدول غير مكتملة: يجب إسناد الحصة إلى معلم.');
+
+    if (item.teacherId) {
+      const teacher = this.findTeacherById(item.teacherId);
+      if (!teacher || teacher.status !== 'Active') {
+        conflicts.push('إسناد غير صالح: المعلم المحدد غير موجود أو غير نشط.');
+      }
+    }
 
     const day = item.dayOfWeek || item.dayName;
     const period = item.periodNumber;
@@ -748,10 +767,10 @@ class TimetableService {
       }
     }
 
-    // 4. Supervision conflict: Teacher assigned to supervision at this time
+    // 4. Supervision conflict: same teacher, same day AND same period.
     if (item.teacherId) {
       const supervisions = this.getSupervisionAssignments({ teacherId: item.teacherId }).filter(
-        s => s.status !== 'Cancelled' && (s.dayOfWeek === day || s.periodNumber === period)
+        s => s.status !== 'Cancelled' && s.dayOfWeek === day && s.periodNumber === period
       );
       if (supervisions.length > 0) {
         warnings.push(`تنبيه إشراف: المعلم مسند إليه نوبة إشراف في (${supervisions[0].locationName || 'الموقع'}) في نفس اليوم.`);
