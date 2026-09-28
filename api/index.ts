@@ -911,6 +911,62 @@ const ntssHandler = {
         return json({status:'success',[isLeave?'leave':'permission']:mapRow(s.rows[0],isLeave?'leave':'permission')},201,corsOrigin);
       }
 
+      if (request.method === 'POST' && path === '/teacher-accounts/manage') {
+        const body:any=await request.json();
+        const action=String(body.action||'');
+        const data:any=body.data||{};
+        const schoolId=String(body.schoolId||user.active_school_id||user.school_id||'').trim();
+        const allowedRoles=new Set(['SystemAdmin','Admin','SchoolAdmin','SchoolDirector','TeacherAffairs']);
+        if(!allowedRoles.has(String(user.role||''))) return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);
+        if(!(await canAccessSchool(user,schoolId))) return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);
+        if(action==='getEmployees'){
+          const r=await pool.query('SELECT id,employee_code AS "teacherCode",full_name AS name,job_title AS "jobTitle",department AS specialization,status,payload FROM employees WHERE school_id=$1 ORDER BY full_name',[schoolId]);
+          return json({status:'success',data:r.rows.map((x:any)=>({...x,...(x.payload||{}),id:x.id,name:x.name,teacherCode:x.teacherCode||x.employee_code||x.id}))},200,corsOrigin);
+        }
+        if(action==='getTeacherAccounts'){
+          const r=await pool.query(`SELECT u.id,u.employee_id AS "employeeId",u.username,u.status,u.is_active AS "isActive",u.last_login_at AS "lastLoginAt",u.created_at AS "createdAt",u.updated_at AS "updatedAt",e.employee_code AS "teacherCode"
+            FROM users u JOIN employees e ON e.school_id=$1 AND e.id=u.employee_id
+            WHERE u.school_id=$1 AND u.role='Teacher' ORDER BY e.full_name`,[schoolId]);
+          return json({status:'success',data:r.rows},200,corsOrigin);
+        }
+        const employeeId=String(data.employeeId||'').trim();
+        if(!employeeId)return json({status:'error',code:'MISSING_FIELDS'},400,corsOrigin);
+        const emp=await pool.query('SELECT id,full_name,employee_code FROM employees WHERE school_id=$1 AND id=$2 LIMIT 1',[schoolId,employeeId]);
+        if(!emp.rowCount)return json({status:'error',code:'EMPLOYEE_NOT_FOUND'},404,corsOrigin);
+        const existing=await pool.query("SELECT id FROM users WHERE school_id=$1 AND employee_id=$2 AND role='Teacher' LIMIT 1",[schoolId,employeeId]);
+        if(action==='createTeacherAccount'){
+          if(existing.rowCount)return json({status:'error',code:'ACCOUNT_EXISTS'},409,corsOrigin);
+          const username=String(data.username||'').trim().toLowerCase(), password=String(data.temporaryPassword||'');
+          if(!/^[a-zA-Z0-9._-]+$/.test(username)||password.length<8)return json({status:'error',code:'INVALID_ACCOUNT_DATA'},400,corsOrigin);
+          const duplicate=await pool.query('SELECT 1 FROM users WHERE lower(username)=lower($1) OR lower(email)=lower($1) LIMIT 1',[username]);
+          if(duplicate.rowCount)return json({status:'error',code:'USERNAME_EXISTS'},409,corsOrigin);
+          const id='USR-'+crypto.randomBytes(8).toString('hex').toUpperCase(), hash=scryptPasswordHash(password);
+          const email=username+'@teacher.ntss.local';
+          const saved=await pool.query(`INSERT INTO users(id,email,username,full_name,role,access_scope,school_id,employee_id,password_hash,password_salt,password_iterations,is_active,status)
+            VALUES($1,$2,$3,$4,'Teacher','SCHOOL',$5,$6,$7,NULL,NULL,true,'Active') RETURNING id,employee_id AS "employeeId",username,status,is_active AS "isActive",created_at AS "createdAt",updated_at AS "updatedAt"`,
+            [id,email,username,String(emp.rows[0].full_name||username),schoolId,employeeId,hash]);
+          await pool.query('INSERT INTO audit_logs(school_id,user_id,username,role,action,entity,target_id,details) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[schoolId,user.user_id,user.email,user.role,'CREATE','TEACHER_ACCOUNT',id,employeeId]);
+          return json({status:'success',data:saved.rows[0]},201,corsOrigin);
+        }
+        if(!existing.rowCount)return json({status:'error',code:'NOT_FOUND'},404,corsOrigin);
+        const targetUserId=String(existing.rows[0].id);
+        if(action==='resetTeacherPassword'){
+          const password=String(data.temporaryPassword||'');
+          if(password.length<8)return json({status:'error',code:'INVALID_PASSWORD'},400,corsOrigin);
+          await pool.query('UPDATE users SET password_hash=$2,password_salt=NULL,password_iterations=NULL,updated_at=now() WHERE id=$1',[targetUserId,scryptPasswordHash(password)]);
+          await pool.query("UPDATE sessions SET status='REVOKED',revoked_at=now() WHERE user_id=$1 AND status='ACTIVE'",[targetUserId]);
+          return json({status:'success'},200,corsOrigin);
+        }
+        if(action==='setTeacherAccountStatus'){
+          const status=String(data.status||'');
+          if(!['Active','Suspended','Inactive'].includes(status))return json({status:'error',code:'INVALID_STATUS'},400,corsOrigin);
+          await pool.query('UPDATE users SET status=$2,is_active=$3,updated_at=now() WHERE id=$1',[targetUserId,status,status==='Active']);
+          if(status!=='Active')await pool.query("UPDATE sessions SET status='REVOKED',revoked_at=now() WHERE user_id=$1 AND status='ACTIVE'",[targetUserId]);
+          return json({status:'success'},200,corsOrigin);
+        }
+        return json({status:'error',code:'ACTION_NOT_MIGRATED'},400,corsOrigin);
+      }
+
       if (request.method === 'POST' && (path === '/students/manage' || path === '/employees/manage')) {
         const body: any = await request.json();
         const action = String(body.action || '');
