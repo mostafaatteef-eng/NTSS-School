@@ -222,6 +222,17 @@ export class CurriculumPlanService {
       };
     }
 
+    const occupiedByAnotherItem = existingDists.find(
+      d => d.scheduleItemId === params.scheduleItemId && d.status !== 'Cancelled'
+    );
+    if (occupiedByAnotherItem) {
+      return {
+        success: false,
+        distribution: occupiedByAnotherItem,
+        message: 'هذه الحصة مرتبطة بالفعل بموضوع آخر من خطة المنهج. ألغِ الربط الحالي أولاً.',
+      };
+    }
+
     const res = storageService.saveCurriculumDistribution(
       {
         schoolId: plan.schoolId,
