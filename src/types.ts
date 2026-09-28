@@ -327,6 +327,8 @@ export interface User {
   allowedSchoolIds?: string[];
   activeSchoolId?: string;
   employeeId?: string;
+  studentId?: string;
+  studentCode?: string;
   email?: string;
   password?: string; // write-only when creating/resetting
   passwordHash?: string;
