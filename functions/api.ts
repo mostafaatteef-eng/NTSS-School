@@ -395,10 +395,20 @@ export default {
           if(password.length<8)return json({status:'error',code:'PASSWORD_TOO_SHORT'},400,corsOrigin);
           const salt=crypto.randomBytes(16).toString('hex'); const iterations=10000;
           const hash=legacyPasswordHash(password,salt,iterations);
-          const u=await pool.query('UPDATE users SET password_hash=$2,password_salt=$3,password_iterations=$4,updated_at=now() WHERE id=$1 RETURNING id',[targetId,hash,salt,iterations]);
-          if(!u.rowCount)return json({status:'error',code:'NOT_FOUND'},404,corsOrigin);
-          await pool.query("UPDATE sessions SET status='REVOKED',revoked_at=now() WHERE user_id=$1 AND status='ACTIVE'",[targetId]);
-          return json({status:'success',message:'تم تحديث كلمة المرور وإلغاء الجلسات السابقة.'},200,corsOrigin);
+          const client=await pool.connect();
+          try {
+            await client.query('BEGIN');
+            const u=await client.query('UPDATE users SET password_hash=$2,password_salt=$3,password_iterations=$4,updated_at=now() WHERE id=$1 RETURNING id',[targetId,hash,salt,iterations]);
+            if(!u.rowCount){ await client.query('ROLLBACK'); return json({status:'error',code:'NOT_FOUND'},404,corsOrigin); }
+            await client.query("UPDATE sessions SET status='REVOKED',revoked_at=now() WHERE user_id=$1 AND status='ACTIVE'",[targetId]);
+            await client.query('COMMIT');
+            return json({status:'success',message:'تم تحديث كلمة المرور وإلغاء الجلسات السابقة.'},200,corsOrigin);
+          } catch(error) {
+            await client.query('ROLLBACK');
+            throw error;
+          } finally {
+            client.release();
+          }
         }
         if(action==='toggleUserStatus'){
           if(targetId===user.user_id && String(data.newStatus)!=='Active')return json({status:'error',code:'SELF_DISABLE_DENIED'},409,corsOrigin);
