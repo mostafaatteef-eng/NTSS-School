@@ -35,6 +35,8 @@ import {
 } from '../../utils/attendanceUtils';
 import { storageService } from '../../services/storageService';
 import { ExportService } from '../../services/exportService';
+import { PageHeader } from '../common/UiStates';
+import { StatCard } from '../common/UiMetrics';
 
 interface DailyAttendanceViewProps {
   employees: Employee[];
@@ -304,26 +306,11 @@ export const DailyAttendanceView: React.FC<DailyAttendanceViewProps> = ({
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
-      {/* 1. Header & Live Date Navigation Bar */}
-      <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-[#008e8b]/10 text-[#008e8b] flex items-center justify-center">
-              <Briefcase className="w-5 h-5" />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold text-slate-900 tracking-tight">
-                تسجيل حضور المعلمين والموظفين اليومي
-              </h1>
-              <p className="text-xs text-slate-500 font-medium mt-0.5">
-                رصد الدوام اليومي للمعلمين والإداريين وحفظ الدفعة إلى الخادم مباشرة
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Date Navigator & Action Controls */}
-        <div className="flex items-center gap-2 flex-wrap w-full lg:w-auto justify-between lg:justify-end">
+      <PageHeader
+        title="تسجيل حضور المعلمين والموظفين اليومي"
+        description="رصد الدوام اليومي للمعلمين والإداريين وحفظ الدفعة إلى الخادم مباشرة."
+        icon={<span className="rounded-xl bg-teal-50 p-2 text-[#008e8b]"><Briefcase className="h-5 w-5" /></span>}
+        actions={<div className="flex items-center gap-2 flex-wrap w-full lg:w-auto justify-between lg:justify-end">
           {/* Date Navigator Controls */}
           <div className="flex items-center bg-slate-50 p-1 rounded-2xl border border-slate-200">
             <button
@@ -377,7 +364,7 @@ export const DailyAttendanceView: React.FC<DailyAttendanceViewProps> = ({
           <button
             id="staff-export-excel-btn"
             onClick={handleExportDaily}
-            className="flex items-center gap-1.5 px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-2xl text-xs font-bold transition shadow-xs"
+            className="flex items-center gap-1.5 px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-xl text-xs font-bold transition"
             title="تصدير كشف الحضور اليومي إلى Excel"
           >
             <Download className="w-4 h-4 text-emerald-600" />
@@ -389,7 +376,7 @@ export const DailyAttendanceView: React.FC<DailyAttendanceViewProps> = ({
             id="save-staff-attendance-batch-button"
             onClick={handleBatchSaveToBackend}
             disabled={isSaving || filteredEmployees.length === 0}
-            className="flex items-center gap-2 px-6 py-2.5 bg-[#008e8b] hover:bg-teal-700 disabled:opacity-50 text-white rounded-2xl text-xs font-bold transition shadow-md cursor-pointer"
+            className="flex items-center gap-2 px-6 py-2.5 bg-[#008e8b] hover:bg-teal-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition cursor-pointer"
           >
             {isSaving ? (
               <>
@@ -403,8 +390,8 @@ export const DailyAttendanceView: React.FC<DailyAttendanceViewProps> = ({
               </>
             )}
           </button>
-        </div>
-      </div>
+        </div>}
+      />
 
       {/* Notifications */}
       {successMessage && (
