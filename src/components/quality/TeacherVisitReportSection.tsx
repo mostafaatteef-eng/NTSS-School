@@ -10,16 +10,12 @@ import { storageService } from '../../services/storageService';
 import {
   UserCheck,
   Plus,
-  Calendar,
   CheckCircle2,
   Clock,
   Send,
   Eye,
   Trash2,
-  Award,
   Sparkles,
-  BookOpen,
-  GraduationCap,
   Filter,
 } from 'lucide-react';
 
