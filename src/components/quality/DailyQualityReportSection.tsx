@@ -106,6 +106,10 @@ export const DailyQualityReportSection: React.FC<Props> = ({
   };
 
   const handleSaveReport = (asDraft: boolean) => {
+    if (!asDraft && dailyStandards.some((standard) => Number(dailyScores[standard.id]?.score || 0) <= 0)) {
+      alert('لا يمكن إرسال التقرير للاعتماد قبل تقييم جميع مؤشرات الجودة اليومية. يمكنك حفظه كمسودة واستكماله لاحقاً.');
+      return;
+    }
     if (!reportDate) {
       alert('يرجى تحديد تاريخ التقرير.');
       return;
