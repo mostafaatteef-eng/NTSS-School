@@ -384,6 +384,20 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
                 المعتمد بواسطة: {selectedPlan.uploadedByName || 'مدير المناهج'} • السنة الدراسية: {selectedPlan.academicYear}
               </p>
             </div>
+            {!readOnly && (
+              <div className="flex flex-wrap gap-2">
+                {Array.from(new Set(selectedPlan.items.map(i => Number(i.week)))).sort((a, b) => a - b).map(week => (
+                  <button
+                    key={week}
+                    type="button"
+                    onClick={() => handleAutoLinkWeek(week)}
+                    className="px-3 py-1.5 rounded-lg border border-indigo-200 bg-indigo-50 text-indigo-700 text-xs font-bold hover:bg-indigo-100"
+                  >
+                    ربط الأسبوع {week} تلقائيًا
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="overflow-x-auto">
