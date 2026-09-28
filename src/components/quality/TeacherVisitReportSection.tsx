@@ -121,7 +121,7 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
     setScores((prev) => ({
       ...prev,
       [stdId]: {
-        ...(prev[stdId] || { score: 4 }),
+        ...(prev[stdId] || { score: 0 }),
         notes: txt,
       },
     }));
