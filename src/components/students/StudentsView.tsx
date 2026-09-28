@@ -34,6 +34,7 @@ import { ImportWizardModal } from '../import/ImportWizardModal';
 import { StudentProfileModal } from './StudentProfileModal';
 import { StudentPromotionWizard } from './StudentPromotionWizard';
 import { formatEgyptianDate } from '../../utils/egyptianTime';
+import { ErrorState, LoadingState, PageHeader } from '../common/UiStates';
 
 export const StudentsView: React.FC = () => {
   const [students, setStudents] = useState<Student[]>(() => storageService.getStudents());
@@ -400,21 +401,11 @@ export const StudentsView: React.FC = () => {
 
   return (
     <div className="space-y-6" dir="rtl">
-      {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-6 rounded-3xl border border-slate-200 shadow-xs">
-        <div>
-          <h1 className="text-xl font-bold text-slate-800 flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-[#008e8b]/10 text-[#008e8b] flex items-center justify-center">
-              <GraduationCap className="w-6 h-6" />
-            </div>
-            <span>إدارة شؤون الطلاب والصفوف</span>
-          </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            سجل الطلاب العام، بيانات أولياء الأمور، توزيع الفصول، واستيراد وتصدير القوائم
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2 flex-wrap">
+      <PageHeader
+        title="إدارة شؤون الطلاب والصفوف"
+        description="سجل الطلاب، بيانات أولياء الأمور، توزيع الفصول والاستيراد والتصدير."
+        icon={<span className="rounded-xl bg-teal-50 p-2 text-[#008e8b]"><GraduationCap className="h-5 w-5" /></span>}
+        actions={<div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => setIsPromotionWizardOpen(true)}
             className="inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs rounded-2xl border border-indigo-200 transition-colors shadow-xs cursor-pointer"
@@ -444,32 +435,20 @@ export const StudentsView: React.FC = () => {
           {canCreateStudent && (
           <button
             onClick={handleOpenAdd}
-            className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#008e8b] hover:bg-teal-700 text-white font-bold text-xs rounded-2xl transition-colors shadow-md cursor-pointer"
+            className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#008e8b] hover:bg-teal-700 text-white font-bold text-xs rounded-xl transition-colors cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             <span>إضافة طالب جديد</span>
           </button>
           )}
-        </div>
-      </div>
+        </div>}
+      />
 
-      {managementError && (
-        <div className="flex items-center justify-between gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-xs font-bold text-rose-800">
-          <span>{managementError}</span>
-          <button type="button" onClick={() => void reloadStudents()} className="underline">
-            إعادة المحاولة
-          </button>
-        </div>
-      )}
-
-      {managementLoading && (
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-center text-xs font-bold text-slate-500">
-          جارٍ تحميل سجل الطلاب من الخادم المعتمد...
-        </div>
-      )}
+      {managementError && <ErrorState message={managementError} onRetry={() => void reloadStudents()} />}
+      {managementLoading && <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white"><LoadingState label="جارٍ تحميل سجل الطلاب من الخادم المعتمد" rows={3} /></div>}
 
       {/* Advanced Filter Bar */}
-      <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs space-y-4">
+      <div className="bg-white p-4 rounded-2xl border border-slate-200 space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
             <Filter className="w-4 h-4 text-[#008e8b]" />
