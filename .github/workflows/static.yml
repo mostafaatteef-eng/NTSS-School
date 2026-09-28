@@ -40,6 +40,7 @@ jobs:
       - name: Build application
         env:
           VITE_POSTGRES_API_URL: https://ntss-school.vercel.app
+          VITE_BASE_PATH: /NTSS-School/
         run: npm run build
       - name: Setup Pages
         uses: actions/configure-pages@v5
