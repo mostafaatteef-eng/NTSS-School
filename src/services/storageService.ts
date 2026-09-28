@@ -8306,14 +8306,16 @@ class StorageService {
   public approveTeacherVisitReport(id: string, user?: User | null): { success: boolean; message: string } {
     const caller = user || this.getCurrentUser();
     const activeSchoolId = (caller?.schoolId || this.getActiveSchoolId()).trim();
-    const list = this.getTeacherVisitReports(activeSchoolId);
-    const item = list.find((r) => r.id === id);
+    const raw = localStorage.getItem(STORAGE_KEYS.TEACHER_VISIT_REPORTS);
+    let all: TeacherVisitReport[] = [];
+    try { all = raw ? JSON.parse(raw) : []; } catch { all = []; }
+    const item = all.find((r) => r.id === id && (r.schoolId || '').trim() === activeSchoolId);
     if (!item) return { success: false, message: 'التقرير غير موجود' };
-    item.status = 'Approved';
+    item.status = 'APPROVED';
     item.approvedBy = caller?.fullName || caller?.name || 'مدير المدرسة';
     item.approvedAt = getCairoNowISO();
     item.updatedAt = getCairoNowISO();
-    localStorage.setItem(STORAGE_KEYS.TEACHER_VISIT_REPORTS, JSON.stringify(list));
+    localStorage.setItem(STORAGE_KEYS.TEACHER_VISIT_REPORTS, JSON.stringify(all));
     this.logAudit('APPROVE_QUALITY_REPORT', 'QUALITY', `اعتماد تقرير زيارة المعلم: ${item.teacherName}`);
     this.notifyChange();
     return { success: true, message: 'تم اعتماد تقرير الزيارة بنجاح' };
