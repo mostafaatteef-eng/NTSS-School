@@ -26,6 +26,8 @@ import { storageService } from '../../services/storageService';
 import { ExportService } from '../../services/exportService';
 import { MasterDataService } from '../../services/masterDataService';
 import { hasPermission } from '../../utils/permissions';
+import { ErrorState, LoadingState, PageHeader } from '../common/UiStates';
+import { StatCard } from '../common/UiMetrics';
 
 interface LeavesViewProps {
   employees: Employee[];
@@ -348,25 +350,15 @@ export const LeavesView: React.FC<LeavesViewProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-2xl bg-[#008e8b]/10 text-[#008e8b] flex items-center justify-center">
-              <Calendar className="w-5 h-5" />
-            </div>
-            <span>إدارة الإجازات والأذونات (Leaves & Permissions Workflow)</span>
-          </h2>
-          <p className="text-xs text-slate-500 mt-1">
-            متابعة واعتماد طلبات الإجازات الرسمية والأذونات وتصاريح العمل وربطها التلقائي بالحضور والرواتب
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
+      <PageHeader
+        title="إدارة الإجازات والأذونات"
+        description="متابعة واعتماد الإجازات والأذونات وربطها بسجل الحضور."
+        icon={<span className="rounded-xl bg-teal-50 p-2 text-[#008e8b]"><Calendar className="h-5 w-5" /></span>}
+        actions={<div className="flex flex-wrap items-center gap-2">
           {canCreate && (activeSubTab === 'leaves' ? (
             <button
               onClick={handleOpenLeaveModal}
-              className="text-xs font-bold bg-[#008e8b] hover:bg-teal-700 text-white px-4 py-2.5 rounded-2xl shadow-sm transition-colors flex items-center gap-1.5"
+              className="text-xs font-bold bg-[#008e8b] hover:bg-teal-700 text-white px-4 py-2.5 rounded-xl transition-colors flex items-center gap-1.5"
             >
               <Plus className="w-4 h-4" />
               <span>تقديم طلب إجازة</span>
@@ -374,7 +366,7 @@ export const LeavesView: React.FC<LeavesViewProps> = ({
           ) : (
             <button
               onClick={handleOpenPermModal}
-              className="text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-2xl shadow-sm transition-colors flex items-center gap-1.5"
+              className="text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl transition-colors flex items-center gap-1.5"
             >
               <Plus className="w-4 h-4" />
               <span>تقديم طلب إذن / تصريح</span>
@@ -388,45 +380,17 @@ export const LeavesView: React.FC<LeavesViewProps> = ({
             <Download className="w-4 h-4 text-slate-600" />
             <span>تصدير السجلات</span>
           </button>
-        </div>
-      </div>
-
-      {managementError && (
-        <div className="flex items-center justify-between gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-xs font-bold text-rose-800">
-          <span className="flex items-center gap-2">
-            <AlertCircle className="h-4 w-4 shrink-0" />
-            {managementError}
-          </span>
-          <button type="button" onClick={() => void loadManagementData()} className="underline">
-            إعادة المحاولة
-          </button>
-        </div>
-      )}
-
-      {managementLoading && (
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-center text-xs font-bold text-slate-500">
-          جارٍ تحميل بيانات الإجازات والأذونات من الخادم المعتمد...
-        </div>
-      )}
+        </div>}
+      />
+      {managementError && <ErrorState message={managementError} onRetry={() => void loadManagementData()} />}
+      {managementLoading && <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white"><LoadingState label="جارٍ تحميل بيانات الإجازات والأذونات من الخادم المعتمد" rows={3} /></div>}
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-xs">
-          <span className="text-xs font-bold text-slate-400 block mb-1">إجازات معتمدة</span>
-          <div className="text-xl font-bold font-mono text-emerald-600">{approvedLeaves}</div>
-        </div>
-        <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-xs">
-          <span className="text-xs font-bold text-slate-400 block mb-1">إجازات قيد المراجعة</span>
-          <div className="text-xl font-bold font-mono text-amber-600">{pendingLeaves}</div>
-        </div>
-        <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-xs">
-          <span className="text-xs font-bold text-slate-400 block mb-1">أذونات وتصاريح معتمدة</span>
-          <div className="text-xl font-bold font-mono text-indigo-600">{approvedPerms}</div>
-        </div>
-        <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-xs">
-          <span className="text-xs font-bold text-slate-400 block mb-1">أذونات قيد المراجعة</span>
-          <div className="text-xl font-bold font-mono text-amber-600">{pendingPerms}</div>
-        </div>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <StatCard label="إجازات معتمدة" value={approvedLeaves} tone="success" />
+        <StatCard label="إجازات قيد المراجعة" value={pendingLeaves} tone="warning" />
+        <StatCard label="أذونات معتمدة" value={approvedPerms} tone="info" />
+        <StatCard label="أذونات قيد المراجعة" value={pendingPerms} tone="warning" />
       </div>
 
       {/* Sub-Tabs Switcher */}
@@ -457,7 +421,7 @@ export const LeavesView: React.FC<LeavesViewProps> = ({
       </div>
 
       {/* Filter and Search Bar */}
-      <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3">
+      <div className="bg-white p-4 rounded-2xl border border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3">
         <div className="w-full sm:w-80 relative">
           <Search className="w-4 h-4 text-slate-400 absolute right-3 top-2.5" />
           <input
