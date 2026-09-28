@@ -222,6 +222,10 @@ export class CurriculumPlanService {
       };
     }
 
+    const previousItemLinks = existingDists.filter(
+      d => d.planItemId === params.planItemId && d.status !== 'Cancelled'
+    );
+
     const occupiedByAnotherItem = existingDists.find(
       d => d.scheduleItemId === params.scheduleItemId && d.status !== 'Cancelled'
     );
@@ -231,6 +235,12 @@ export class CurriculumPlanService {
         distribution: occupiedByAnotherItem,
         message: 'هذه الحصة مرتبطة بالفعل بموضوع آخر من خطة المنهج. ألغِ الربط الحالي أولاً.',
       };
+    }
+
+    // Re-linking an item is a replacement: cancel its previous active link(s)
+    // only after the destination slot has passed all validation.
+    for (const previous of previousItemLinks) {
+      storageService.saveCurriculumDistribution({ ...previous, status: 'Cancelled' }, params.user);
     }
 
     const res = storageService.saveCurriculumDistribution(
