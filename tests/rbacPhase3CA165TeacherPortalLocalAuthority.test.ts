@@ -34,12 +34,14 @@ describe('PHASE 3C-A16.5 — Final Teacher Portal local-authority freeze', () =>
     expect(curriculum).toContain('if (readOnly) return;');
     expect(curriculum).toContain('{linkingItem && !readOnly && (');
     expect(curriculum).toContain('{isUploadModalOpen && !readOnly && (');
-    expect(curriculum).toContain('isCurriculumAdmin && !readOnly');
+    expect(curriculum).toContain('canUploadPlan');
   });
 
-  it('read-only curriculum renders status text and no linking action for teacher portal', () => {
-    expect(curriculum).toContain("readOnly ? (");
-    expect(curriculum).toContain('عرض فقط');
-    expect(curriculum).toContain("وضع المعلم: استعراض فقط");
+  it('teacher curriculum workflow supports upload while preserving explicit read-only mode', () => {
+    expect(curriculum).toContain("const isTeacher = currentUser?.role === 'Teacher'");
+    expect(curriculum).toContain('const canUploadPlan = !readOnly && (isTeacher ||');
+    expect(curriculum).toContain("isTeacher ? 'رفع خطة منهج جديدة' : 'رفع وتوثيق خطة منهج جديدة'");
+    expect(curriculum).toContain("readOnly ? 'استعراض فقط' : 'لا توجد صلاحية لرفع خطط المناهج'");
+    expect(curriculum).toContain("selectedPlan.status === 'Approved'");
   });
 });
