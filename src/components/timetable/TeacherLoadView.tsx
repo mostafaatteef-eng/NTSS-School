@@ -16,6 +16,8 @@ import {
 import { TeacherLoadCalculation, TeacherTeachingAssignment, Employee } from '../../types';
 import { timetableService } from '../../services/timetableService';
 import * as XLSX from 'xlsx';
+import { PageHeader } from '../common/UiStates';
+import { StatCard } from '../common/UiMetrics';
 
 export const TeacherLoadView: React.FC = () => {
   const [loadList, setLoadList] = useState<TeacherLoadCalculation[]>([]);
@@ -133,19 +135,11 @@ export const TeacherLoadView: React.FC = () => {
 
   return (
     <div className="space-y-6" dir="rtl">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-        <div>
-          <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-            <UserCheck className="w-6 h-6 text-indigo-600" />
-            أنصبة المعلمين وسقف الساعات القانونية (30 حصة أسبوعياً)
-          </h2>
-          <p className="text-sm text-slate-500 mt-1">
-            متابعة النصاب الأساسي، حصص الاحتياطي، نوبات الإشراف، والطاقة المتبقية لكل معلم بدقة 25 ساعة = 1500 دقيقة
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2">
+      <PageHeader
+        title="أنصبة المعلمين وسقف الساعات"
+        description="متابعة النصاب الأساسي والاحتياطي والإشراف والطاقة المتبقية لكل معلم."
+        icon={<span className="rounded-xl bg-teal-50 p-2 text-[#008e8b]"><UserCheck className="h-5 w-5" /></span>}
+        actions={<div className="flex items-center gap-2">
           <button
             onClick={handleExportExcel}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-xl border border-emerald-200 transition"
@@ -160,34 +154,19 @@ export const TeacherLoadView: React.FC = () => {
             <Printer className="w-4 h-4" />
             طباعة
           </button>
-        </div>
-      </div>
+        </div>}
+      />
 
       {/* KPI Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm text-center">
-          <div className="text-3xl font-black text-slate-800">{totalTeachers}</div>
-          <div className="text-xs font-semibold text-slate-500 mt-1">إجمالي المعلمين المتاحين</div>
-        </div>
-
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm text-center">
-          <div className="text-3xl font-black text-indigo-600">{avgLoad}</div>
-          <div className="text-xs font-semibold text-slate-500 mt-1">متوسط النصاب المحتسب (حصة/أسبوع)</div>
-        </div>
-
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm text-center">
-          <div className="text-3xl font-black text-amber-600">{fullCount}</div>
-          <div className="text-xs font-semibold text-slate-500 mt-1">معلمون قاربوا أو وصلوا للحد (30)</div>
-        </div>
-
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm text-center">
-          <div className="text-3xl font-black text-rose-600">{overloadCount}</div>
-          <div className="text-xs font-semibold text-slate-500 mt-1">معلمون في حالة نصاب زائد (Overload)</div>
-        </div>
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <StatCard label="إجمالي المعلمين" value={totalTeachers} />
+        <StatCard label="متوسط النصاب" value={avgLoad} helper="حصة / أسبوع" tone="info" />
+        <StatCard label="قاربوا الحد" value={fullCount} helper="الحد المرجعي 30 حصة" tone="warning" />
+        <StatCard label="نصاب زائد" value={overloadCount} tone="danger" />
       </div>
 
       {/* Filter & Search Bar */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3">
+      <div className="bg-white p-4 rounded-xl border border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3">
         <div className="relative w-full sm:w-80">
           <Search className="w-4 h-4 absolute right-3 top-3 text-slate-400" />
           <input
@@ -195,14 +174,14 @@ export const TeacherLoadView: React.FC = () => {
             placeholder="بحث بالاسم أو كود المعلم..."
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            className="w-full pl-3 pr-9 py-2 border border-slate-300 rounded-xl text-xs font-medium focus:ring-2 focus:ring-indigo-500"
+            className="w-full pl-3 pr-9 py-2 border border-slate-300 rounded-xl text-xs font-medium focus:ring-2 focus:ring-[#008e8b]/30"
           />
         </div>
 
         <div className="inline-flex bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-semibold self-end">
           <button
             onClick={() => setFilterStatus('ALL')}
-            className={`px-3 py-1.5 rounded-lg ${filterStatus === 'ALL' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600'}`}
+            className={`px-3 py-1.5 rounded-lg ${filterStatus === 'ALL' ? 'bg-white text-teal-800 ring-1 ring-inset ring-teal-200' : 'text-slate-600'}`}
           >
             الكل ({loadList.length})
           </button>
@@ -228,10 +207,10 @@ export const TeacherLoadView: React.FC = () => {
       </div>
 
       {/* Table */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-right text-xs border-collapse">
-            <thead className="bg-slate-100 text-slate-700 font-bold border-b">
+            <thead className="sticky top-0 z-10 bg-slate-100 text-slate-700 font-bold border-b">
               <tr>
                 <th className="p-3">كود المعلم</th>
                 <th className="p-3">اسم المعلم</th>
