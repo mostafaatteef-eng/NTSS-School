@@ -7680,15 +7680,36 @@ class StorageService {
     };
   }
 
-  public deleteCurriculumDistribution(id: string): { success: boolean } {
-    const activeSchoolId = this.getActiveSchoolId().trim();
+  public deleteCurriculumDistribution(
+    id: string,
+    user?: User | null
+  ): { success: boolean; message?: string } {
+    const caller = user || this.getCurrentUser();
+    const activeSchoolId = (caller?.schoolId || this.getActiveSchoolId()).trim();
     const raw = localStorage.getItem(STORAGE_KEYS.CURRICULUM_DISTRIBUTIONS);
     let all: CurriculumLessonDistribution[] = [];
     try { all = raw ? JSON.parse(raw) : []; } catch { all = []; }
-    const list = all.filter(d => !(d.id === id && (!activeSchoolId || d.schoolId === activeSchoolId)));
+
+    const target = all.find(d => d.id === id && (!activeSchoolId || d.schoolId === activeSchoolId));
+    if (!target) return { success: false, message: 'توزيع المنهج غير موجود في المدرسة الحالية.' };
+
+    const isCurriculumAdmin =
+      caller?.role === 'Admin' ||
+      caller?.role === 'SchoolDirector' ||
+      caller?.role === 'TeacherAffairs' ||
+      Boolean(caller?.permissions && caller.permissions.includes('settings.manage' as any));
+    const actorTeacherId = caller?.employeeId || caller?.id;
+    if (caller?.role === 'Teacher' && target.teacherId !== actorTeacherId) {
+      return { success: false, message: 'لا يمكن للمعلم حذف توزيع حصة تخص معلمًا آخر.' };
+    }
+    if (caller && caller.role !== 'Teacher' && !isCurriculumAdmin) {
+      return { success: false, message: 'غير مصرح لك بحذف توزيع المنهج.' };
+    }
+
+    const list = all.filter(d => !(d.id === id && d.schoolId === target.schoolId));
     localStorage.setItem(STORAGE_KEYS.CURRICULUM_DISTRIBUTIONS, JSON.stringify(list));
     this.notifyChange();
-    return { success: true };
+    return { success: true, message: 'تم حذف توزيع الدرس.' };
   }
 
   // ============================================================================
