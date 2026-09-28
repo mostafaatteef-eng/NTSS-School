@@ -262,6 +262,16 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
     loadData();
   };
 
+  const handlePlanWorkflowStatus = (status: 'Submitted' | 'Approved' | 'Rejected') => {
+    if (!selectedPlan || readOnly) return;
+    const res = storageService.saveCurriculumPlan({ ...selectedPlan, status }, currentUser);
+    if (!res.success) {
+      alert(res.message);
+      return;
+    }
+    loadData();
+  };
+
   const handleDeletePlan = (planId: string) => {
     if (readOnly) return;
     if (!window.confirm('هل أنت متأكد من حذف هذه الخطة وتوزيعاتها؟')) return;
@@ -361,7 +371,30 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
           )}
         </div>
 
-        {selectedPlan && isCurriculumAdmin && !readOnly && (
+        {selectedPlan && !readOnly && (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="px-2.5 py-1 rounded-lg border bg-slate-50 text-slate-700 font-bold">
+              الحالة: {selectedPlan.status === 'Draft' ? 'مسودة' : selectedPlan.status === 'Submitted' ? 'قيد المراجعة' : selectedPlan.status === 'Approved' ? 'معتمدة' : selectedPlan.status === 'Rejected' ? 'مرفوضة' : 'مؤرشفة'}
+            </span>
+            {currentUser?.role === 'Teacher' && (selectedPlan.status === 'Draft' || selectedPlan.status === 'Rejected') && (
+              <button onClick={() => handlePlanWorkflowStatus('Submitted')} className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white font-bold">
+                إرسال للمراجعة
+              </button>
+            )}
+            {isCurriculumAdmin && selectedPlan.status === 'Submitted' && (
+              <>
+                <button onClick={() => handlePlanWorkflowStatus('Approved')} className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white font-bold">
+                  اعتماد الخطة
+                </button>
+                <button onClick={() => handlePlanWorkflowStatus('Rejected')} className="px-3 py-1.5 rounded-lg bg-rose-600 text-white font-bold">
+                  رفض الخطة
+                </button>
+              </>
+            )}
+          </div>
+        )}
+
+                {selectedPlan && isCurriculumAdmin && !readOnly && (
           <button
             onClick={() => handleDeletePlan(selectedPlan.id)}
             className="text-rose-600 hover:text-rose-800 font-bold flex items-center gap-1 px-3 py-1 text-xs hover:bg-rose-50 rounded-lg transition"
