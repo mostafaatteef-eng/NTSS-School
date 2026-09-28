@@ -144,7 +144,7 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
     }));
   };
 
-  const handleSaveVisit = (asDraft: boolean) => {
+  const handleSaveVisit = async (asDraft: boolean) => {
     if (!asDraft && visitStandards.some((standard) => Number(scores[standard.id]?.score || 0) <= 0)) {
       alert('لا يمكن تقديم زيارة المعلم للاعتماد قبل استكمال جميع مؤشرات الملاحظة الصفية. يمكنك حفظها كمسودة واستكمالها لاحقاً.');
       return;
@@ -194,38 +194,26 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
       teacherFeedback: teacherFeedback.trim(),
     };
 
-    const res = storageService.saveTeacherVisitReport(newReport, currentUser);
-
-    if (res.success) {
-      setIsModalOpen(false);
+    try {
+      await storageService.saveAuthoritativeQualityRecord('TEACHER_VISIT',newReport,schoolId);
       onRefresh();
-    } else {
-      alert(res.message);
-    }
+      setShowForm(false);
+    } catch (error:any) { alert(error?.message || 'تعذر حفظ زيارة المعلم'); }
   };
 
-  const handleApprove = (report: TeacherVisitReport) => {
+  const handleApprove = async (report: TeacherVisitReport) => {
     if (!window.confirm('هل ترغب في اعتماد تقرير الزيارة الصفية هذا؟')) return;
-    const res = storageService.approveTeacherVisitReport(report.id, currentUser);
-    if (res.success) {
+    try {
+      await storageService.approveAuthoritativeQualityRecord(report.id,schoolId);
       onRefresh();
-      if (viewingReport && viewingReport.id === report.id) {
-        setViewingReport({ ...viewingReport, status: 'APPROVED' });
-      }
-    } else {
-      alert(res.message);
-    }
+      if(viewingReport?.id===report.id)setViewingReport({...viewingReport,status:'APPROVED'});
+    } catch(error:any){ alert(error?.message || 'تعذر اعتماد الزيارة'); }
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (!window.confirm('هل أنت متأكد من رغبتك في حذف هذا التقرير؟')) return;
-    const res = storageService.deleteTeacherVisitReport(id, currentUser);
-    if (res.success) {
-      onRefresh();
-      if (viewingReport?.id === id) setViewingReport(null);
-    } else {
-      alert(res.message);
-    }
+    try { await storageService.deleteAuthoritativeQualityRecord(id,schoolId); onRefresh(); }
+    catch(error:any){ alert(error?.message || 'تعذر حذف الزيارة'); }
   };
 
   const filteredReports = reports.filter((rep) => {
