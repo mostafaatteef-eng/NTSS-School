@@ -155,6 +155,7 @@ export const UsersView: React.FC<UsersViewProps> = ({ currentUser }) => {
   }, [managedUsers, roleFilter, schoolFilter, search, statusFilter]);
 
   const activeCount = managedUsers.filter(u => (u.status || 'Active') === 'Active').length;
+  const studentAccountCount = managedUsers.filter(u => u.role === 'Student').length;
   const disabledCount = managedUsers.length - activeCount;
 
   const allowedRoleOptions = useMemo(
@@ -419,9 +420,10 @@ export const UsersView: React.FC<UsersViewProps> = ({ currentUser }) => {
 
       {canView && (
         <>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <SummaryCard label="إجمالي المستخدمين" value={managedUsers.length} />
             <SummaryCard label="النشطون" value={activeCount} />
+            <SummaryCard label="حسابات الطلاب" value={studentAccountCount} />
             <SummaryCard label="المعطلون" value={disabledCount} />
           </div>
 
@@ -487,7 +489,7 @@ export const UsersView: React.FC<UsersViewProps> = ({ currentUser }) => {
                   <tbody className="divide-y divide-slate-100">
                     {filteredUsers.map(user => (
                       <tr key={user.id} className="hover:bg-slate-50/60">
-                        <td className="px-4 py-3 font-bold text-slate-800">{user.fullName}</td>
+                        <td className="px-4 py-3 font-bold text-slate-800">{user.fullName}{user.role === 'Student' && <span className="mr-2 rounded-full bg-cyan-50 px-2 py-0.5 text-[10px] font-bold text-cyan-700">حساب طالب</span>}</td>
                         <td className="px-4 py-3 text-slate-600">{user.email || '—'}</td>
                         <td className="px-4 py-3 font-mono text-xs text-slate-600">{user.username || '—'}</td>
                         <td className="px-4 py-3 text-slate-700">{ROLE_DISPLAY_NAMES[user.role as keyof typeof ROLE_DISPLAY_NAMES] || String(user.role)}</td>
