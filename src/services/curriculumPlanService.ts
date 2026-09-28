@@ -188,8 +188,8 @@ export class CurriculumPlanService {
     if (!lesson) return { success: false, message: 'حصة الجدول المحددة غير موجودة' };
 
     const normalize = (value?: string) => String(value || '').trim().toLowerCase();
-    if (normalize(lesson.subject) !== normalize(plan.subject) || normalize(lesson.grade) !== normalize(plan.grade)) {
-      return { success: false, message: 'لا يمكن ربط الخطة بهذه الحصة: المادة أو الصف لا يطابقان خطة المنهج.' };
+    if (normalize(lesson.subject) !== normalize(plan.subject) || normalize(lesson.grade) !== normalize(plan.grade) || (plan.classroom && normalize(lesson.classroom) !== normalize(plan.classroom))) {
+      return { success: false, message: 'لا يمكن ربط الخطة بهذه الحصة: المادة أو الصف أو الفصل لا يطابق خطة المنهج.' };
     }
     if (params.user?.schoolId && plan.schoolId && params.user.schoolId !== plan.schoolId) {
       return { success: false, message: 'لا يمكن ربط خطة تابعة لمدرسة أخرى.' };
@@ -330,6 +330,7 @@ export class CurriculumPlanService {
         (!plan.schoolId || !s.schoolId || s.schoolId === plan.schoolId) &&
         normalize(s.subject) === normalize(plan.subject) &&
         normalize(s.grade) === normalize(plan.grade) &&
+        (!plan.classroom || normalize(s.classroom) === normalize(plan.classroom)) &&
         (!actorTeacherId || s.teacherId === actorTeacherId)
       )
       .sort((a, b) =>
