@@ -43,4 +43,16 @@ describe('Curriculum week-aware timetable regression guards', () => {
     expect(serviceSource).toContain('const requestedPeriods = Math.max(1, Number(item.estimatedPeriods || 1))');
   });
 
+
+  it('relinks one multi-period distribution without cancelling sibling periods', () => {
+    expect(serviceSource).toContain('replaceDistributionId?: string');
+    expect(serviceSource).toContain('previousItemLinks.find(d => d.id === params.replaceDistributionId)');
+    expect(serviceSource).toContain('replaceExisting: false');
+  });
+
+  it('keeps classroom-specific curriculum plan guards in the timetable flow', () => {
+    expect(serviceSource).toContain('plan.classroom');
+    expect(timetableSource).toContain('curriculumWeek');
+  });
+
 });
