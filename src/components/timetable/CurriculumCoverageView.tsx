@@ -15,6 +15,8 @@ import { ClassroomCoverageReport } from '../../types';
 import { timetableService } from '../../services/timetableService';
 import { storageService } from '../../services/storageService';
 import * as XLSX from 'xlsx';
+import { PageHeader } from '../common/UiStates';
+import { StatCard } from '../common/UiMetrics';
 
 export const CurriculumCoverageView: React.FC = () => {
   const [reports, setReports] = useState<ClassroomCoverageReport[]>([]);
@@ -61,19 +63,11 @@ export const CurriculumCoverageView: React.FC = () => {
 
   return (
     <div className="space-y-6" dir="rtl">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-        <div>
-          <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-            <BookOpen className="w-6 h-6 text-indigo-600" />
-            مطابقة الخطة الدراسية والأنصبة الوزارية (39 حصة أسبوعياً)
-          </h2>
-          <p className="text-sm text-slate-500 mt-1">
-            مقارنة جدول الفصول بالخطة الدراسية المعتمدة لمدارس التكنولوجيا التطبيقية الصناعية ونظام الأسبوعين (A/B)
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2">
+      <PageHeader
+        title="مطابقة الخطة الدراسية والأنصبة"
+        description="مقارنة جدول الفصول بالخطة المعتمدة ومتابعة العجز أو الزيادة في الحصص الأسبوعية."
+        icon={<span className="rounded-xl bg-teal-50 p-2 text-[#008e8b]"><BookOpen className="h-5 w-5" /></span>}
+        actions={<div className="flex items-center gap-2">
           <button
             onClick={handleExportExcel}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-xl border border-emerald-200 transition"
@@ -88,8 +82,8 @@ export const CurriculumCoverageView: React.FC = () => {
             <Printer className="w-4 h-4" />
             طباعة الكشف
           </button>
-        </div>
-      </div>
+        </div>}
+      />
 
       {/* Classroom Selector Pills */}
       <div className="flex items-center gap-2 overflow-x-auto pb-1">
@@ -105,7 +99,7 @@ export const CurriculumCoverageView: React.FC = () => {
               onClick={() => setSelectedClassId(c)}
               className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 border ${
                 isSelected
-                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-100'
+                  ? 'bg-teal-50 text-teal-900 border-teal-200 ring-1 ring-inset ring-teal-200'
                   : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
               }`}
             >
@@ -133,68 +127,11 @@ export const CurriculumCoverageView: React.FC = () => {
       {activeReport && (
         <div className="space-y-6">
           {/* Summary KPIs */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm text-center">
-              <div className="text-3xl font-black text-slate-800">{activeReport.totalRequiredPeriods}</div>
-              <div className="text-xs font-semibold text-slate-500 mt-1">المستهدف الوزاري الأسبوعي</div>
-              <span className="inline-block mt-2 text-[11px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md">
-                39 حصة أسبوعياً
-              </span>
-            </div>
-
-            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm text-center">
-              <div className="text-3xl font-black text-indigo-600">{activeReport.totalScheduledPeriods}</div>
-              <div className="text-xs font-semibold text-slate-500 mt-1">الحصص المجدولة بالجدول</div>
-              <span className="inline-block mt-2 text-[11px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md">
-                شاملة الحصص التبادلية A/B
-              </span>
-            </div>
-
-            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm text-center">
-              <div
-                className={`text-3xl font-black ${
-                  activeReport.difference === 0
-                    ? 'text-emerald-600'
-                    : activeReport.difference < 0
-                    ? 'text-rose-600'
-                    : 'text-amber-600'
-                }`}
-              >
-                {activeReport.difference > 0 ? `+${activeReport.difference}` : activeReport.difference}
-              </div>
-              <div className="text-xs font-semibold text-slate-500 mt-1">فارق المطابقة الإجمالي</div>
-              <span
-                className={`inline-block mt-2 text-[11px] font-bold px-2 py-0.5 rounded-md ${
-                  activeReport.difference === 0
-                    ? 'bg-emerald-50 text-emerald-700'
-                    : activeReport.difference < 0
-                    ? 'bg-rose-50 text-rose-700'
-                    : 'bg-amber-50 text-amber-700'
-                }`}
-              >
-                {activeReport.difference === 0 ? 'مطابق تماماً' : activeReport.difference < 0 ? 'عجز بالحصص' : 'زيادة بالحصص'}
-              </span>
-            </div>
-
-            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm text-center">
-              <div className="flex items-center justify-center gap-1.5 mt-1">
-                {activeReport.status === 'COMPLETE' ? (
-                  <CheckCircle2 className="w-8 h-8 text-emerald-600" />
-                ) : (
-                  <AlertCircle className="w-8 h-8 text-rose-600" />
-                )}
-              </div>
-              <div className="text-xs font-semibold text-slate-500 mt-2">حالة اعتماد الخطة للفصل</div>
-              <span
-                className={`inline-block mt-1 text-xs font-black px-2.5 py-1 rounded-lg ${
-                  activeReport.status === 'COMPLETE'
-                    ? 'bg-emerald-100 text-emerald-800'
-                    : 'bg-rose-100 text-rose-800'
-                }`}
-              >
-                {activeReport.status === 'COMPLETE' ? 'معتمدة ومكتملة' : 'غير مكتملة (تتطلب استكمال الجدول)'}
-              </span>
-            </div>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+            <StatCard label="المستهدف الوزاري الأسبوعي" value={activeReport.totalRequiredPeriods} helper="39 حصة أسبوعياً" />
+            <StatCard label="الحصص المجدولة" value={activeReport.totalScheduledPeriods} helper="شاملة الحصص التبادلية A/B" tone="info" />
+            <StatCard label="فارق المطابقة" value={activeReport.difference > 0 ? `+${activeReport.difference}` : activeReport.difference} helper={activeReport.difference === 0 ? 'مطابق تماماً' : activeReport.difference < 0 ? 'عجز بالحصص' : 'زيادة بالحصص'} tone={activeReport.difference === 0 ? 'success' : activeReport.difference < 0 ? 'danger' : 'warning'} />
+            <StatCard label="حالة الخطة" value={activeReport.status === 'COMPLETE' ? 'مكتملة' : 'تحتاج استكمال'} helper={activeReport.status === 'COMPLETE' ? 'مطابقة الخطة مكتملة' : 'راجع العجز أو الزيادة'} tone={activeReport.status === 'COMPLETE' ? 'success' : 'danger'} />
           </div>
 
           {/* Breakdown Table */}
