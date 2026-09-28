@@ -321,7 +321,7 @@ export default {
       }
 
       if (request.method === 'POST' && path === '/users/manage') {
-        if (user.role !== 'SystemAdmin') return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);
+        if (!['SystemAdmin','SchoolAdmin','Admin'].includes(user.role)) return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);
         const body: any = await request.json();
         const action=String(body.action||''); const data: any=body.data||{};
         const project = async (row: any) => {
@@ -334,10 +334,13 @@ export default {
             : await pool.query(
                 `SELECT u.* FROM users u
                  WHERE u.id=$1
-                    OR u.school_id IS NULL
-                    OR EXISTS (
-                      SELECT 1 FROM user_school_access usa
-                      WHERE usa.user_id=$1 AND usa.school_id=u.school_id
+                    OR (
+                      u.role <> 'SystemAdmin'
+                      AND u.school_id IS NOT NULL
+                      AND EXISTS (
+                        SELECT 1 FROM user_school_access usa
+                        WHERE usa.user_id=$1 AND usa.school_id=u.school_id
+                      )
                     )
                  ORDER BY u.full_name`,
                 [user.user_id]
@@ -375,9 +378,11 @@ export default {
         }
         const targetId=String(data.id||data.userId||'').trim();
         if(targetId){
-          const targetScope=await pool.query('SELECT id,school_id FROM users WHERE id=$1 LIMIT 1',[targetId]);
+          const targetScope=await pool.query('SELECT id,school_id,role FROM users WHERE id=$1 LIMIT 1',[targetId]);
           if(!targetScope.rowCount)return json({status:'error',code:'NOT_FOUND'},404,corsOrigin);
+          if(targetScope.rows[0].role==='SystemAdmin' && user.role!=='SystemAdmin')return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);
           const targetSchoolId=String(targetScope.rows[0].school_id||'').trim();
+          if(!targetSchoolId && targetId!==user.user_id && user.role!=='SystemAdmin')return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);
           if(targetSchoolId && !(await canAccessSchool(user,targetSchoolId)))return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);
         }
         if(action==='deleteUser'){
