@@ -317,7 +317,17 @@ export default {
           return {id:row.id,email:row.email,username:row.username,fullName:row.full_name,role:row.role,accessScope:row.access_scope,schoolId:row.school_id||'',employeeId:row.employee_id||undefined,studentId:row.student_id||undefined,status:row.status,allowedSchoolIds:access.rows.map((x:any)=>x.school_id),createdAt:row.created_at,updatedAt:row.updated_at,lastLogin:row.last_login_at};
         };
         if(action==='adminGetUsers'){
-          const rows=await pool.query('SELECT * FROM users ORDER BY full_name');
+          const rows=await pool.query(
+            `SELECT u.* FROM users u
+             WHERE u.id=$1
+                OR u.school_id IS NULL
+                OR EXISTS (
+                  SELECT 1 FROM user_school_access usa
+                  WHERE usa.user_id=$1 AND usa.school_id=u.school_id
+                )
+             ORDER BY u.full_name`,
+            [user.user_id]
+          );
           const out=[]; for(const row of rows.rows) out.push(await project(row));
           return json({status:'success',data:out},200,corsOrigin);
         }
