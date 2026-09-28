@@ -28,6 +28,7 @@ import { TimetableReportsView } from './TimetableReportsView';
 import { TeacherPortalView } from './TeacherPortalView';
 import { StudentScheduleAccessView } from './StudentScheduleAccessView';
 import { CurriculumPlansView } from './CurriculumPlansView';
+import { PageHeader } from '../common/UiStates';
 
 export type TimetableSubTab =
   | 'weekly'
@@ -79,8 +80,14 @@ export const TimetableModuleView: React.FC<TimetableModuleViewProps> = ({
 
   return (
     <div className="space-y-6" dir="rtl">
+      <PageHeader
+        title="الجدول المدرسي والمناهج"
+        description="إدارة الجدول الأسبوعي، خطط المناهج، الأنصبة، الاحتياطي والإشراف من مساحة عمل واحدة."
+        icon={<span className="rounded-xl bg-teal-50 p-2 text-[#008e8b]"><Calendar className="h-5 w-5" /></span>}
+      />
+
       {/* Top Module Subnav */}
-      <div className="bg-white p-2 rounded-2xl border border-slate-200 shadow-sm overflow-x-auto">
+      <nav aria-label="أقسام الجدول المدرسي" className="bg-white p-2 rounded-2xl border border-slate-200 overflow-x-auto">
         <div className="flex items-center gap-1.5 min-w-max">
           {navTabs.map(tab => {
             if (tab.adminOnly && !isAdmin) return null;
@@ -92,9 +99,10 @@ export const TimetableModuleView: React.FC<TimetableModuleViewProps> = ({
                 type="button"
                 key={tab.id}
                 onClick={() => setActiveSubTab(tab.id as TimetableSubTab)}
+                aria-current={isActive ? 'page' : undefined}
                 className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap ${
                   isActive
-                    ? 'bg-indigo-600 text-white shadow-sm'
+                    ? 'bg-teal-50 text-teal-900 ring-1 ring-inset ring-teal-200'
                     : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                 }`}
               >
@@ -104,7 +112,7 @@ export const TimetableModuleView: React.FC<TimetableModuleViewProps> = ({
             );
           })}
         </div>
-      </div>
+      </nav>
 
       {/* Tab Panels */}
       <div>
