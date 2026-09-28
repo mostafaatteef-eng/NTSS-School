@@ -22,8 +22,9 @@ describe('PHASE 3C-A16.5 — Final Teacher Portal local-authority freeze', () =>
     expect(portal).toContain('validateTeacherPortalSession');
   });
 
-  it('teacher portal explicitly mounts curriculum in read-only mode', () => {
-    expect(portal).toContain('<CurriculumPlansView currentUser={teacherPortalUser} readOnly />');
+  it('teacher portal mounts curriculum workflow for the authenticated teacher', () => {
+    expect(portal).toContain('<CurriculumPlansView currentUser={teacherPortalUser} />');
+    expect(portal).not.toContain('<CurriculumPlansView currentUser={teacherPortalUser} readOnly />');
   });
 
   it('curriculum view has structural read-only mutation guards', () => {
