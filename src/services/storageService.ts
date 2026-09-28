@@ -7615,6 +7615,9 @@ class StorageService {
     try { allPlans = rawPlans ? JSON.parse(rawPlans) : []; } catch { allPlans = []; }
     const targetPlan = allPlans.find(p => p.id === id && (!activeSchoolId || p.schoolId === activeSchoolId));
     if (!targetPlan) return { success: false, message: 'خطة المنهج غير موجودة في المدرسة الحالية' };
+    if (targetPlan.status === 'Approved' || targetPlan.status === 'Submitted') {
+      return { success: false, message: 'لا يمكن حذف خطة مرسلة للمراجعة أو معتمدة؛ احتفظ بها كسجل رسمي أو أنشئ نسخة جديدة.' };
+    }
     const plans = allPlans.filter(p => !(p.id === id && p.schoolId === targetPlan.schoolId));
     localStorage.setItem(STORAGE_KEYS.CURRICULUM_PLANS, JSON.stringify(plans));
 
