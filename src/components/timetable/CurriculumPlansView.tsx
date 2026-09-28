@@ -550,9 +550,9 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
                         )}
                       </td>
                       <td className="p-3 text-center">
-                        {readOnly ? (
+                        {readOnly || selectedPlan.status !== 'Approved' ? (
                           <span className="text-[11px] font-semibold text-slate-400">
-                            عرض فقط
+                            {selectedPlan.status === 'Approved' ? 'عرض فقط' : 'يتاح الربط بعد اعتماد الخطة'}
                           </span>
                         ) : (
                           <button
