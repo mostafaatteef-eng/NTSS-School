@@ -8434,7 +8434,7 @@ class StorageService {
     return { success: true, message: 'تم حذف التقييم الشامل بنجاح' };
   }
 
-  public async getAuthoritativeQualityRecords(recordType: 'TEACHER_VISIT'|'DAILY_REPORT'|'COMPREHENSIVE_EVALUATION'|'CORRECTIVE_ACTION', schoolId?: string): Promise<any[]> {
+  public async getAuthoritativeQualityRecords(recordType: 'TEACHER_VISIT'|'DAILY_REPORT'|'COMPREHENSIVE_EVALUATION'|'CORRECTIVE_ACTION'|'QUALITY_STANDARD', schoolId?: string): Promise<any[]> {
     const target=(schoolId||this.getActiveSchoolId()).trim();
     if(!this.getPostgresApiUrl()) return [];
     const response=await this.postgresRequest('/api/quality/manage',{method:'POST',body:JSON.stringify({action:'list',schoolId:target,recordType})});
@@ -8443,7 +8443,7 @@ class StorageService {
     return Array.isArray(result.data)?result.data:[];
   }
 
-  public async saveAuthoritativeQualityRecord(recordType: 'TEACHER_VISIT'|'DAILY_REPORT'|'COMPREHENSIVE_EVALUATION'|'CORRECTIVE_ACTION', data:any, schoolId?:string): Promise<any> {
+  public async saveAuthoritativeQualityRecord(recordType: 'TEACHER_VISIT'|'DAILY_REPORT'|'COMPREHENSIVE_EVALUATION'|'CORRECTIVE_ACTION'|'QUALITY_STANDARD', data:any, schoolId?:string): Promise<any> {
     const target=(schoolId||this.getActiveSchoolId()).trim();
     const response=await this.postgresRequest('/api/quality/manage',{method:'POST',body:JSON.stringify({action:'save',schoolId:target,data:{...data,recordType}})});
     const result=await response.json().catch(()=>({}));
@@ -8464,6 +8464,29 @@ class StorageService {
     const response=await this.postgresRequest('/api/quality/manage',{method:'POST',body:JSON.stringify({action:'delete',schoolId:target,data:{id}})});
     const result=await response.json().catch(()=>({}));
     if(!response.ok||result.status!=='success') throw new Error(result.code||'QUALITY_DELETE_FAILED');
+  }
+
+  public async migrateLocalQualityToBackend(schoolId?:string):Promise<{migrated:number}>{
+    const target=(schoolId||this.getActiveSchoolId()).trim();
+    if(!target||!this.getPostgresApiUrl()) return {migrated:0};
+    const markerKey='ntss_quality_backend_migrated_v1_'+target;
+    if(localStorage.getItem(markerKey)==='1') return {migrated:0};
+    const batches:Array<[any,string]>=[
+      [this.getQualityStandards(target),'QUALITY_STANDARD'],
+      [this.getDailyQualityReports(target),'DAILY_REPORT'],
+      [this.getTeacherVisitReports(target),'TEACHER_VISIT'],
+      [this.getComprehensiveEvaluations(target),'COMPREHENSIVE_EVALUATION'],
+      [this.getCorrectiveActions(target),'CORRECTIVE_ACTION'],
+    ];
+    let migrated=0;
+    for(const [items,type] of batches){
+      for(const item of items){
+        try { await this.saveAuthoritativeQualityRecord(type as any,item,target); migrated++; }
+        catch(error){ console.error('Quality migration item failed',type,item?.id,error); throw error; }
+      }
+    }
+    localStorage.setItem(markerKey,'1');
+    return {migrated};
   }
 
   // --- Corrective Actions ---
