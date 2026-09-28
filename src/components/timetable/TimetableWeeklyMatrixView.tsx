@@ -46,6 +46,7 @@ export const TimetableWeeklyMatrixView: React.FC<TimetableWeeklyMatrixViewProps>
   const [selectedDay, setSelectedDay] = useState<string>('الأحد');
   const [selectedRoom, setSelectedRoom] = useState<string>('معمل حاسب 1');
   const [cycleFilter, setCycleFilter] = useState<'ALL' | 'A' | 'B'>('ALL');
+  const [curriculumWeek, setCurriculumWeek] = useState<number>(1);
 
   // Edit / Add Modal
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -112,13 +113,19 @@ export const TimetableWeeklyMatrixView: React.FC<TimetableWeeklyMatrixViewProps>
   });
 
   const getLessonPlanForSchedule = (scheduleItemId: string) => {
-    const dist = curriculumDistributions.find(
+    const candidates = curriculumDistributions.filter(
       d => d.scheduleItemId === scheduleItemId && d.status !== 'Cancelled'
     );
-    if (!dist) return null;
-    const plan = curriculumPlans.find(p => p.id === dist.planId);
-    const planItem = plan?.items.find(i => i.id === dist.planItemId);
-    return planItem ? { distribution: dist, item: planItem } : null;
+    for (const dist of candidates) {
+      const plan = curriculumPlans.find(p => p.id === dist.planId);
+      const planItem = plan?.items.find(i => i.id === dist.planItemId);
+      if (!planItem) continue;
+      const distributionWeek = Number(dist.week || planItem.week || 0);
+      if (distributionWeek === curriculumWeek) {
+        return { distribution: dist, item: planItem };
+      }
+    }
+    return null;
   };
 
   const getItemAt = (day: string, periodNumber: number): ScheduleItem | undefined => {
@@ -303,6 +310,20 @@ export const TimetableWeeklyMatrixView: React.FC<TimetableWeeklyMatrixViewProps>
               حسب القاعة
             </button>
           </div>
+
+          <label className="inline-flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-semibold">
+            <span className="text-slate-700">أسبوع المنهج</span>
+            <select
+              value={curriculumWeek}
+              onChange={e => setCurriculumWeek(Math.max(1, Number(e.target.value) || 1))}
+              className="bg-white border border-slate-300 rounded-lg px-2 py-1 font-bold text-indigo-700"
+              aria-label="أسبوع المنهج"
+            >
+              {Array.from({ length: Math.max(1, ...curriculumPlans.flatMap(p => p.items.map(i => Number(i.week) || 1))) }, (_, index) => index + 1).map(week => (
+                <option key={week} value={week}>الأسبوع {week}</option>
+              ))}
+            </select>
+          </label>
 
           {/* Week Cycle A/B filter */}
           <div className="inline-flex bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-semibold">
