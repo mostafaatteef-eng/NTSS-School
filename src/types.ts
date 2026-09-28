@@ -2498,6 +2498,7 @@ export interface CurriculumMasterPlan {
   term: string; // 'الفصل الدراسي الأول' | 'الفصل الدراسي الثاني'
   grade: string;
   gradeId?: string;
+  classroom?: string; // Specific class/section this plan belongs to
   subject: string;
   subjectId?: string;
   version: number;
