@@ -21,6 +21,7 @@ import { Employee, ScheduleBreak, ScheduleItem, User } from '../../types';
 import { storageService } from '../../services/storageService';
 import { timetableService } from '../../services/timetableService';
 import * as XLSX from 'xlsx';
+import { PageHeader } from '../common/UiStates';
 
 interface TimetableWeeklyMatrixViewProps {
   currentUser?: User | null;
@@ -271,25 +272,17 @@ export const TimetableWeeklyMatrixView: React.FC<TimetableWeeklyMatrixViewProps>
 
   return (
     <div className="space-y-6" dir="rtl">
-      {/* Header & Controls */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-        <div>
-          <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-            <Calendar className="w-6 h-6 text-indigo-600" />
-            الجدول المدرسي الأسبوعي
-          </h2>
-          <p className="text-sm text-slate-500 mt-1">
-            استعراض وتعديل الحصص الأسبوعية، كشف التعارضات، وإدارة القاعات والأنصبة
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
+      <PageHeader
+        title="الجدول المدرسي الأسبوعي"
+        description="استعراض وتعديل الحصص، كشف التعارضات وربط الجدول بخطط المناهج."
+        icon={<span className="rounded-xl bg-teal-50 p-2 text-[#008e8b]"><Calendar className="h-5 w-5" /></span>}
+        actions={<div className="flex flex-wrap items-center gap-2">
           {/* View Mode Selector */}
           <div className="inline-flex bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-semibold">
             <button
               onClick={() => setViewMode('classroom')}
               className={`px-3 py-1.5 rounded-lg transition-all ${
-                viewMode === 'classroom' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                viewMode === 'classroom' ? 'bg-white text-teal-800 ring-1 ring-inset ring-teal-200' : 'text-slate-600 hover:text-slate-900'
               }`}
             >
               حسب الفصل
@@ -297,7 +290,7 @@ export const TimetableWeeklyMatrixView: React.FC<TimetableWeeklyMatrixViewProps>
             <button
               onClick={() => setViewMode('teacher')}
               className={`px-3 py-1.5 rounded-lg transition-all ${
-                viewMode === 'teacher' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                viewMode === 'teacher' ? 'bg-white text-teal-800 ring-1 ring-inset ring-teal-200' : 'text-slate-600 hover:text-slate-900'
               }`}
             >
               حسب المعلم
@@ -305,7 +298,7 @@ export const TimetableWeeklyMatrixView: React.FC<TimetableWeeklyMatrixViewProps>
             <button
               onClick={() => setViewMode('day')}
               className={`px-3 py-1.5 rounded-lg transition-all ${
-                viewMode === 'day' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                viewMode === 'day' ? 'bg-white text-teal-800 ring-1 ring-inset ring-teal-200' : 'text-slate-600 hover:text-slate-900'
               }`}
             >
               حسب اليوم
@@ -313,7 +306,7 @@ export const TimetableWeeklyMatrixView: React.FC<TimetableWeeklyMatrixViewProps>
             <button
               onClick={() => setViewMode('room')}
               className={`px-3 py-1.5 rounded-lg transition-all ${
-                viewMode === 'room' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                viewMode === 'room' ? 'bg-white text-teal-800 ring-1 ring-inset ring-teal-200' : 'text-slate-600 hover:text-slate-900'
               }`}
             >
               حسب القاعة
@@ -338,19 +331,19 @@ export const TimetableWeeklyMatrixView: React.FC<TimetableWeeklyMatrixViewProps>
           <div className="inline-flex bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-semibold">
             <button
               onClick={() => setCycleFilter('ALL')}
-              className={`px-2.5 py-1.5 rounded-lg ${cycleFilter === 'ALL' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600'}`}
+              className={`px-2.5 py-1.5 rounded-lg ${cycleFilter === 'ALL' ? 'bg-white text-teal-800 ring-1 ring-inset ring-teal-200' : 'text-slate-600'}`}
             >
               كل الأسابيع
             </button>
             <button
               onClick={() => setCycleFilter('A')}
-              className={`px-2.5 py-1.5 rounded-lg ${cycleFilter === 'A' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600'}`}
+              className={`px-2.5 py-1.5 rounded-lg ${cycleFilter === 'A' ? 'bg-white text-teal-800 ring-1 ring-inset ring-teal-200' : 'text-slate-600'}`}
             >
               أسبوع أ
             </button>
             <button
               onClick={() => setCycleFilter('B')}
-              className={`px-2.5 py-1.5 rounded-lg ${cycleFilter === 'B' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600'}`}
+              className={`px-2.5 py-1.5 rounded-lg ${cycleFilter === 'B' ? 'bg-white text-teal-800 ring-1 ring-inset ring-teal-200' : 'text-slate-600'}`}
             >
               أسبوع ب
             </button>
@@ -370,8 +363,8 @@ export const TimetableWeeklyMatrixView: React.FC<TimetableWeeklyMatrixViewProps>
             <Printer className="w-4 h-4" />
             طباعة
           </button>
-        </div>
-      </div>
+        </div>}
+      />
 
       {/* Target Selector Bar */}
       <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-wrap items-center gap-4 text-sm">
@@ -382,7 +375,7 @@ export const TimetableWeeklyMatrixView: React.FC<TimetableWeeklyMatrixViewProps>
               <select
                 value={selectedGrade}
                 onChange={e => setSelectedGrade(e.target.value)}
-                className="bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-sm font-medium focus:ring-2 focus:ring-indigo-500"
+                className="bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-sm font-medium focus:ring-2 focus:ring-[#008e8b]/30"
               >
                 <option value="الصف الأول الثانوي">الصف الأول الثانوي</option>
                 <option value="الصف الثاني الثانوي">الصف الثاني الثانوي</option>
@@ -394,7 +387,7 @@ export const TimetableWeeklyMatrixView: React.FC<TimetableWeeklyMatrixViewProps>
               <select
                 value={selectedClassroom}
                 onChange={e => setSelectedClassroom(e.target.value)}
-                className="bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-sm font-medium focus:ring-2 focus:ring-indigo-500"
+                className="bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-sm font-medium focus:ring-2 focus:ring-[#008e8b]/30"
               >
                 {availableClassrooms.map(c => (
                   <option key={c} value={c}>
@@ -412,7 +405,7 @@ export const TimetableWeeklyMatrixView: React.FC<TimetableWeeklyMatrixViewProps>
             <select
               value={selectedTeacherId}
               onChange={e => setSelectedTeacherId(e.target.value)}
-              className="bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-sm font-medium focus:ring-2 focus:ring-indigo-500 min-w-[220px]"
+              className="bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-sm font-medium focus:ring-2 focus:ring-[#008e8b]/30 min-w-[220px]"
             >
               {teachers.map(t => (
                 <option key={t.id} value={t.id}>
@@ -429,7 +422,7 @@ export const TimetableWeeklyMatrixView: React.FC<TimetableWeeklyMatrixViewProps>
             <select
               value={selectedDay}
               onChange={e => setSelectedDay(e.target.value)}
-              className="bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-sm font-medium focus:ring-2 focus:ring-indigo-500"
+              className="bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-sm font-medium focus:ring-2 focus:ring-[#008e8b]/30"
             >
               {DAYS_OF_WEEK.map(d => (
                 <option key={d} value={d}>
@@ -446,7 +439,7 @@ export const TimetableWeeklyMatrixView: React.FC<TimetableWeeklyMatrixViewProps>
             <select
               value={selectedRoom}
               onChange={e => setSelectedRoom(e.target.value)}
-              className="bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-sm font-medium focus:ring-2 focus:ring-indigo-500 min-w-[180px]"
+              className="bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-sm font-medium focus:ring-2 focus:ring-[#008e8b]/30 min-w-[180px]"
             >
               {availableRooms.map(r => (
                 <option key={r} value={r}>
@@ -469,10 +462,10 @@ export const TimetableWeeklyMatrixView: React.FC<TimetableWeeklyMatrixViewProps>
       </div>
 
       {/* Main Timetable Grid */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-center border-collapse">
-            <thead>
+            <thead className="sticky top-0 z-10">
               <tr className="bg-slate-100 border-b border-slate-200 text-xs font-bold text-slate-700">
                 <th className="p-3 w-28 text-right pr-4 border-l border-slate-200">اليوم / الحصة</th>
                 {PERIOD_NUMBERS.map(p => (
@@ -755,7 +748,7 @@ export const TimetableWeeklyMatrixView: React.FC<TimetableWeeklyMatrixViewProps>
                   id="lockCheckbox"
                   checked={Boolean(editingItem.isLocked)}
                   onChange={e => setEditingItem({ ...editingItem, isLocked: e.target.checked })}
-                  className="rounded text-indigo-600 focus:ring-indigo-500 h-4 w-4"
+                  className="rounded text-indigo-600 focus:ring-[#008e8b]/30 h-4 w-4"
                 />
                 <label htmlFor="lockCheckbox" className="text-xs font-medium text-slate-700">
                   قفل الحصة لمنع التعديل التلقائي أو استبدالها أثناء إعادة التوزيع
