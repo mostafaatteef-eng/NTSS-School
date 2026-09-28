@@ -36,7 +36,6 @@ import {
 import { storageService } from '../../services/storageService';
 import { ExportService } from '../../services/exportService';
 import { PageHeader } from '../common/UiStates';
-import { StatCard } from '../common/UiMetrics';
 
 interface DailyAttendanceViewProps {
   employees: Employee[];
