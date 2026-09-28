@@ -32,6 +32,8 @@ import { storageService } from '../../services/storageService';
 import { timetableService } from '../../services/timetableService';
 import { curriculumPlanService } from '../../services/curriculumPlanService';
 import * as XLSX from 'xlsx';
+import { PageHeader } from '../common/UiStates';
+import { StatCard } from '../common/UiMetrics';
 
 interface CurriculumPlansViewProps {
   currentUser: User | null;
@@ -317,23 +319,15 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
 
   return (
     <div className="space-y-6" dir="rtl">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-        <div>
-          <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-            <BookOpen className="w-6 h-6 text-indigo-600" />
-            خطط المناهج الدراسية والتوزيع الأسبوعي (Curriculum Plans)
-          </h2>
-          <p className="text-sm text-slate-500 mt-1">
-            إدارة وتوزيع مفردات المنهج على أسابيع الدراسة وحصص الجدول المعتمدة وتتبع الإنجاز الوزاري
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2">
+      <PageHeader
+        title="خطط المناهج والتوزيع الأسبوعي"
+        description="إدارة مفردات المنهج وربطها بأسابيع الدراسة وحصص الجدول وتتبع الإنجاز."
+        icon={<span className="rounded-xl bg-teal-50 p-2 text-[#008e8b]"><BookOpen className="h-5 w-5" /></span>}
+        actions={<div className="flex items-center gap-2">
           {canUploadPlan ? (
             <button
               onClick={() => setIsUploadModalOpen(true)}
-              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-sm transition"
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-[#008e8b] hover:bg-teal-700 rounded-xl shadow-sm transition"
             >
               <Plus className="w-4 h-4" /> {isTeacher ? 'رفع خطة منهج جديدة' : 'رفع وتوثيق خطة منهج جديدة'}
             </button>
@@ -342,44 +336,24 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
               {readOnly ? 'استعراض فقط' : 'لا توجد صلاحية لرفع خطط المناهج'}
             </div>
           )}
-        </div>
-      </div>
+        </div>}
+      />
 
       {/* Progress & KPIs Summary */}
-      <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
-        <div className="bg-white p-4 rounded-xl border border-slate-200 text-center shadow-sm">
-          <div className="text-2xl font-black text-slate-800">{progress.totalItems}</div>
-          <div className="text-xs text-slate-500 mt-0.5">مفردات الخطة</div>
-        </div>
-        <div className="bg-white p-4 rounded-xl border border-slate-200 text-center shadow-sm">
-          <div className="text-2xl font-black text-indigo-600">{progress.plannedCount}</div>
-          <div className="text-xs text-slate-500 mt-0.5">مجدول وموزع</div>
-        </div>
-        <div className="bg-white p-4 rounded-xl border border-slate-200 text-center shadow-sm">
-          <div className="text-2xl font-black text-emerald-600">{progress.deliveredCount}</div>
-          <div className="text-xs text-slate-500 mt-0.5">تم تدريسه فعلياً</div>
-        </div>
-        <div className="bg-white p-4 rounded-xl border border-slate-200 text-center shadow-sm">
-          <div className="text-2xl font-black text-amber-600">{progress.deferredCount}</div>
-          <div className="text-xs text-slate-500 mt-0.5">مؤجل / مرحل</div>
-        </div>
-        <div className="bg-white p-4 rounded-xl border border-slate-200 text-center shadow-sm">
-          <div className="text-2xl font-black text-rose-600">{progress.cancelledCount}</div>
-          <div className="text-xs text-slate-500 mt-0.5">ملغي</div>
-        </div>
-        <div className="bg-white p-4 rounded-xl border border-slate-200 text-center shadow-sm">
-          <div className="text-2xl font-black text-indigo-700 font-mono">
-            {progress.completionRate}%
-          </div>
-          <div className="text-xs text-slate-500 mt-0.5">نسبة الإنجاز الكلية</div>
-        </div>
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+        <StatCard label="مفردات الخطة" value={progress.totalItems} />
+        <StatCard label="مجدول وموزع" value={progress.plannedCount} tone="info" />
+        <StatCard label="تم تدريسه" value={progress.deliveredCount} tone="success" />
+        <StatCard label="مؤجل / مرحل" value={progress.deferredCount} tone="warning" />
+        <StatCard label="ملغي" value={progress.cancelledCount} tone="danger" />
+        <StatCard label="نسبة الإنجاز" value={`${progress.completionRate}%`} tone="info" />
       </div>
 
       {/* Filter / Plan Selector */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-3 text-xs">
+      <div className="bg-white p-4 rounded-2xl border border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs">
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-1.5 font-bold text-slate-700">
-            <Filter className="w-4 h-4 text-indigo-600" />
+            <Filter className="w-4 h-4 text-[#008e8b]" />
             <span>الخطة النشطة:</span>
           </div>
 
@@ -438,11 +412,11 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
 
       {/* Plan Items and Distribution List */}
       {selectedPlan ? (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
           <div className="p-4 border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-3">
             <div>
               <h3 className="font-bold text-sm text-slate-800 flex items-center gap-2">
-                <Layers className="w-4 h-4 text-indigo-600" />
+                <Layers className="w-4 h-4 text-[#008e8b]" />
                 مفردات الخطة وتوزيع الحصص ({selectedPlan.items.length} درس/موضوع)
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
@@ -635,7 +609,7 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
           <div className="bg-white w-full max-w-xl rounded-3xl p-6 shadow-2xl space-y-5 border border-slate-200 text-xs">
             <div className="flex items-center justify-between border-b pb-3">
               <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <FileSpreadsheet className="w-5 h-5 text-indigo-600" />
+                <FileSpreadsheet className="w-5 h-5 text-[#008e8b]" />
                 رفع وتوثيق خطة منهج دراسي (Master Plan)
               </h3>
               <button
@@ -721,7 +695,7 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
                     onChange={e => e.target.files?.[0] && setUploadFile(e.target.files[0])}
                     className="hidden"
                   />
-                  <UploadCloud className="w-8 h-8 text-indigo-600 mx-auto mb-1" />
+                  <UploadCloud className="w-8 h-8 text-[#008e8b] mx-auto mb-1" />
                   <div className="font-bold text-slate-800">
                     {uploadFile ? uploadFile.name : 'اضغط لاختيار ملف الخطة'}
                   </div>
@@ -756,7 +730,7 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
                 <button
                   type="submit"
                   disabled={isUploading}
-                  className="px-5 py-2 font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-sm transition"
+                  className="px-5 py-2 font-bold bg-[#008e8b] hover:bg-teal-700 text-white rounded-xl shadow-sm transition"
                 >
                   {isUploading ? 'جارِ الحفظ والتحليل...' : 'اعتماد وتوثيق الخطة'}
                 </button>
@@ -772,7 +746,7 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
           <div className="bg-white w-full max-w-lg rounded-3xl p-6 shadow-2xl space-y-4 border border-slate-200 text-xs">
             <div className="flex items-center justify-between border-b pb-3">
               <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <Clock className="w-5 h-5 text-indigo-600" />
+                <Clock className="w-5 h-5 text-[#008e8b]" />
                 ربط درس الخطة بحصة في الجدول المدرسي
               </h3>
               <button
@@ -844,7 +818,7 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
                 <button
                   type="submit"
                   disabled={!selectedScheduleId}
-                  className="px-5 py-2 font-bold bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white rounded-xl shadow-sm transition"
+                  className="px-5 py-2 font-bold bg-[#008e8b] hover:bg-teal-700 disabled:bg-slate-300 text-white rounded-xl shadow-sm transition"
                 >
                   تأكيد الربط بالحصة
                 </button>
