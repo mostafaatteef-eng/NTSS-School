@@ -7588,6 +7588,7 @@ class StorageService {
     }
 
     localStorage.setItem(STORAGE_KEYS.CURRICULUM_PLANS, JSON.stringify(plans));
+    this.logAudit(existingIndex >= 0 ? 'UPDATE' : 'CREATE', 'CURRICULUM', `حفظ خطة منهج: ${finalPlan.subject} - ${finalPlan.grade} - ${finalPlan.classroom} (${finalPlan.status})`, undefined, finalPlan.status, finalPlan.id);
     this.notifyChange();
 
     return {
@@ -7624,6 +7625,7 @@ class StorageService {
     const dists = allDists.filter(d => !(d.planId === id && d.schoolId === targetPlan.schoolId));
     localStorage.setItem(STORAGE_KEYS.CURRICULUM_DISTRIBUTIONS, JSON.stringify(dists));
 
+    this.logAudit('DELETE', 'CURRICULUM', `حذف خطة المنهج وتوزيعاتها: ${targetPlan.subject} - ${targetPlan.grade} - ${targetPlan.classroom}`, targetPlan.status, undefined, targetPlan.id);
     this.notifyChange();
     return { success: true, message: 'تم حذف الخطة وتوزيعاتها' };
   }
@@ -7724,6 +7726,7 @@ class StorageService {
     }
 
     localStorage.setItem(STORAGE_KEYS.CURRICULUM_DISTRIBUTIONS, JSON.stringify(list));
+    this.logAudit('UPSERT', 'CURRICULUM', `تحديث توزيع المنهج: ${record.subject} - ${record.grade} - ${record.classroom} (${record.status})`, undefined, record.status, record.id);
     this.notifyChange();
 
     return {
