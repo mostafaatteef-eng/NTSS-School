@@ -161,7 +161,7 @@ export class CurriculumPlanService {
   /**
    * Link Plan Item to a Schedule Lesson
    */
-  public linkPlanItemToSchedule(params: {
+  public async linkPlanItemToSchedule(params: {
     planId: string;
     planItemId: string;
     scheduleItemId: string;
@@ -170,7 +170,7 @@ export class CurriculumPlanService {
     user?: User | null;
     replaceExisting?: boolean;
     replaceDistributionId?: string;
-  }): { success: boolean; distribution?: CurriculumLessonDistribution; message: string } {
+  }): Promise<{ success: boolean; distribution?: CurriculumLessonDistribution; message: string }> {
     const plan = storageService.getCurriculumPlanById(params.planId);
     if (!plan) return { success: false, message: 'خطة المنهج غير موجودة' };
 
@@ -248,16 +248,16 @@ export class CurriculumPlanService {
     if (params.replaceDistributionId) {
       const previous = previousItemLinks.find(d => d.id === params.replaceDistributionId);
       if (!previous) return { success: false, message: 'رابط الحصة المطلوب تعديله غير موجود أو لم يعد نشطًا.' };
-      const cancelResult = storageService.saveCurriculumDistribution({ ...previous, status: 'Cancelled' }, params.user);
+      const cancelResult = await storageService.saveCurriculumDistributionAuthoritative({ ...previous, status: 'Cancelled' }, params.user);
       if (!cancelResult.success) return { success: false, message: cancelResult.message };
     } else if (params.replaceExisting !== false) {
       for (const previous of previousItemLinks) {
-        const cancelResult = storageService.saveCurriculumDistribution({ ...previous, status: 'Cancelled' }, params.user);
+        const cancelResult = await storageService.saveCurriculumDistributionAuthoritative({ ...previous, status: 'Cancelled' }, params.user);
         if (!cancelResult.success) return { success: false, message: cancelResult.message };
       }
     }
 
-    const res = storageService.saveCurriculumDistribution(
+    const res = await storageService.saveCurriculumDistributionAuthoritative(
       {
         schoolId: plan.schoolId,
         planId: plan.id,
@@ -289,11 +289,11 @@ export class CurriculumPlanService {
    * Automatically link the requested curriculum week to matching timetable slots.
    * Existing links are preserved and only exact school/subject/grade matches are used.
    */
-  public autoLinkPlanWeekToSchedule(params: {
+  public async autoLinkPlanWeekToSchedule(params: {
     planId: string;
     week: number;
     user?: User | null;
-  }): { success: boolean; linked: number; skipped: number; message: string } {
+  }): Promise<{ success: boolean; linked: number; skipped: number; message: string }> {
     const plan = storageService.getCurriculumPlanById(params.planId);
     if (!plan) return { success: false, linked: 0, skipped: 0, message: 'خطة المنهج غير موجودة' };
     if (plan.status !== 'Approved') {
@@ -366,7 +366,7 @@ export class CurriculumPlanService {
           skipped += requestedPeriods - n;
           break;
         }
-        const result = this.linkPlanItemToSchedule({
+        const result = await this.linkPlanItemToSchedule({
           planId: plan.id,
           planItemId: item.id,
           scheduleItemId: slot.id,
