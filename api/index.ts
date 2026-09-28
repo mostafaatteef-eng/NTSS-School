@@ -395,6 +395,9 @@ const ntssHandler = {
         if(action!=='saveUser')return json({status:'error',code:'ACTION_NOT_MIGRATED'},400,corsOrigin);
         const email=String(data.email||'').trim().toLowerCase(); const username=String(data.username||'').trim().toLowerCase();
         const role=String(data.role||'').trim(); const fullName=String(data.fullName||'').trim();
+        const assignableRoles=new Set(['SystemAdmin','SchoolAdmin','HR','StudentAffairs','TeacherAffairs','Training','Quality','Finance','Security','Teacher']);
+        if(role && !assignableRoles.has(role))return json({status:'error',code:'INVALID_ROLE'},400,corsOrigin);
+        if(role==='Student')return json({status:'error',code:'STUDENT_ACCOUNT_REQUIRES_ACTIVATION'},400,corsOrigin);
         if(role==='SystemAdmin' && user.role!=='SystemAdmin')return json({status:'error',code:'ROLE_ESCALATION_DENIED'},403,corsOrigin);
         const allowed: string[]=Array.isArray(data.allowedSchoolIds)?[...new Set<string>(data.allowedSchoolIds.map((x:any)=>String(x||'').trim().toUpperCase()).filter(Boolean))]:[];
         const requestedSchoolId=String(data.schoolId||'').trim().toUpperCase();
