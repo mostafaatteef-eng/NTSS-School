@@ -679,6 +679,13 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
                 />
               </div>
 
+              {viewingReport.teacherFeedback?.trim() && (
+                <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-4">
+                  <h4 className="text-xs font-bold text-indigo-900 mb-1">انعكاس المعلم واتفاق المتابعة</h4>
+                  <p className="text-xs leading-6 text-indigo-900/80 whitespace-pre-wrap">{viewingReport.teacherFeedback}</p>
+                </div>
+              )}
+
               {/* Footer */}
               <div className="flex items-center justify-between pt-4 border-t border-slate-200">
                 <button
@@ -789,14 +796,14 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
               {/* Standard breakdown */}
               <div>
                 <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
-                  تفاصيل تقييم المعايير
+                  ملخص محاور الأداء وشواهد الملاحظة
                 </h4>
                 <div className="border border-slate-200 rounded-lg overflow-hidden">
                   <table className="w-full text-right text-xs">
                     <thead className="bg-slate-100 font-semibold text-slate-700">
                       <tr>
                         <th className="p-2.5">الكود</th>
-                        <th className="p-2.5">المعيار والمؤشر</th>
+                        <th className="p-2.5">المحور / المعيار</th>
                         <th className="p-2.5 text-center">الدرجة</th>
                         <th className="p-2.5 text-center">الوزن</th>
                         <th className="p-2.5">الملاحظات</th>
@@ -807,7 +814,7 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
                         <tr key={i}>
                           <td className="p-2.5 font-mono font-bold text-indigo-600">{sc.standardCode}</td>
                           <td className="p-2.5 text-slate-800">
-                            {standards.find((s) => s.id === sc.standardId)?.standard || 'معيار'}
+                            {(() => { const std = standards.find((s) => s.id === sc.standardId); return std ? `${std.domain} — ${std.standard}` : 'معيار'; })()}
                           </td>
                           <td className="p-2.5 text-center font-bold">
                             {sc.score} / {sc.maxScore}
@@ -825,7 +832,7 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {viewingReport.strengths?.length > 0 && (
                   <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
-                    <h5 className="text-xs font-bold text-emerald-900 mb-2">نقاط التميز والقوة</h5>
+                    <h5 className="text-xs font-bold text-emerald-900 mb-2">ممارسات فعّالة وشواهد قوة</h5>
                     <ul className="list-disc list-inside text-xs text-emerald-800 space-y-1">
                       {viewingReport.strengths.map((item, idx) => (
                         <li key={idx}>{item}</li>
@@ -836,7 +843,7 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
 
                 {viewingReport.weaknesses?.length > 0 && (
                   <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-                    <h5 className="text-xs font-bold text-amber-900 mb-2">فرص التحسين المهني</h5>
+                    <h5 className="text-xs font-bold text-amber-900 mb-2">أولويات التطوير المهني</h5>
                     <ul className="list-disc list-inside text-xs text-amber-800 space-y-1">
                       {viewingReport.weaknesses.map((item, idx) => (
                         <li key={idx}>{item}</li>
@@ -849,7 +856,7 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
               {/* Recommendations */}
               {viewingReport.recommendations?.length > 0 && (
                 <div>
-                  <h4 className="text-xs font-bold text-slate-700 mb-1">التوصيات الإشرافية</h4>
+                  <h4 className="text-xs font-bold text-slate-700 mb-1">خطة التحسين والمتابعة</h4>
                   <ul className="list-disc list-inside text-xs text-slate-700 bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-1">
                     {viewingReport.recommendations.map((rec, idx) => (
                       <li key={idx}>{rec}</li>
