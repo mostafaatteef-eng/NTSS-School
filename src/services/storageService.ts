@@ -8434,6 +8434,31 @@ class StorageService {
     return { success: true, message: 'تم حذف التقييم الشامل بنجاح' };
   }
 
+  public async getAuthoritativeQualityRecords(recordType: 'TEACHER_VISIT'|'DAILY_REPORT'|'COMPREHENSIVE_EVALUATION'|'CORRECTIVE_ACTION', schoolId?: string): Promise<any[]> {
+    const target=(schoolId||this.getActiveSchoolId()).trim();
+    if(!this.getPostgresApiUrl()) return [];
+    const response=await this.postgresRequest('/api/quality/manage',{method:'POST',body:JSON.stringify({action:'list',schoolId:target,recordType})});
+    const result=await response.json().catch(()=>({}));
+    if(!response.ok||result.status!=='success') throw new Error(result.code||'QUALITY_LOAD_FAILED');
+    return Array.isArray(result.data)?result.data:[];
+  }
+
+  public async saveAuthoritativeQualityRecord(recordType: 'TEACHER_VISIT'|'DAILY_REPORT'|'COMPREHENSIVE_EVALUATION'|'CORRECTIVE_ACTION', data:any, schoolId?:string): Promise<any> {
+    const target=(schoolId||this.getActiveSchoolId()).trim();
+    const response=await this.postgresRequest('/api/quality/manage',{method:'POST',body:JSON.stringify({action:'save',schoolId:target,data:{...data,recordType}})});
+    const result=await response.json().catch(()=>({}));
+    if(!response.ok||result.status!=='success') throw new Error(result.code||'QUALITY_SAVE_FAILED');
+    return result.data;
+  }
+
+  public async approveAuthoritativeQualityRecord(id:string,schoolId?:string):Promise<any>{
+    const target=(schoolId||this.getActiveSchoolId()).trim();
+    const response=await this.postgresRequest('/api/quality/manage',{method:'POST',body:JSON.stringify({action:'approve',schoolId:target,data:{id}})});
+    const result=await response.json().catch(()=>({}));
+    if(!response.ok||result.status!=='success') throw new Error(result.code||'QUALITY_APPROVE_FAILED');
+    return result.data;
+  }
+
   // --- Corrective Actions ---
   public getCorrectiveActions(schoolId?: string): CorrectiveAction[] {
     const activeSchoolId = (schoolId || this.getActiveSchoolId()).trim();
