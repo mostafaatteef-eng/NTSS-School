@@ -211,6 +211,7 @@ export class CurriculumPlanService {
       d =>
         d.planItemId === params.planItemId &&
         d.scheduleItemId === params.scheduleItemId &&
+        Number(d.week || planItem.week || 0) === Number(planItem.week) &&
         d.status !== 'Cancelled'
     );
 
@@ -223,12 +224,19 @@ export class CurriculumPlanService {
     }
 
     const previousItemLinks = existingDists.filter(
-      d => d.planItemId === params.planItemId && d.status !== 'Cancelled'
+      d =>
+        d.planItemId === params.planItemId &&
+        Number(d.week || planItem.week || 0) === Number(planItem.week) &&
+        d.status !== 'Cancelled'
     );
 
-    const occupiedByAnotherItem = existingDists.find(
-      d => d.scheduleItemId === params.scheduleItemId && d.status !== 'Cancelled'
-    );
+    const occupiedByAnotherItem = existingDists.find(d => {
+      if (d.scheduleItemId !== params.scheduleItemId || d.status === 'Cancelled') return false;
+      const existingPlan = storageService.getCurriculumPlanById(d.planId);
+      const existingItem = existingPlan?.items.find(item => item.id === d.planItemId);
+      const existingWeek = Number(d.week || existingItem?.week || 0);
+      return existingWeek === Number(planItem.week);
+    });
     if (occupiedByAnotherItem) {
       return {
         success: false,
