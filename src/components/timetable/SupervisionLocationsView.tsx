@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { SupervisionLocation } from '../../types';
 import { timetableService } from '../../services/timetableService';
+import { EmptyState, PageHeader } from '../common/UiStates';
 
 export const SupervisionLocationsView: React.FC = () => {
   const [locations, setLocations] = useState<SupervisionLocation[]>([]);
@@ -67,34 +68,21 @@ export const SupervisionLocationsView: React.FC = () => {
 
   return (
     <div className="space-y-6" dir="rtl">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-        <div>
-          <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-            <Building className="w-6 h-6 text-indigo-600" />
-            أماكن ومواقع الإشراف المدرسي
-          </h2>
-          <p className="text-sm text-slate-500 mt-1">
-            تعريف وضبط نقاط ومواقع الإشراف (البوابات، الأدوار، المعامل، الكافتيريا، والباصات)
-          </p>
-        </div>
-
-        <button
-          onClick={handleOpenAdd}
-          className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-sm transition"
-        >
-          <Plus className="w-4 h-4" />
-          إضافة موقع إشراف جديد
-        </button>
-      </div>
+      <PageHeader
+        title="أماكن ومواقع الإشراف"
+        description="تعريف نقاط الإشراف المدرسي وضبط حالتها وترتيب ظهورها."
+        icon={<span className="rounded-xl bg-teal-50 p-2 text-[#008e8b]"><Building className="h-5 w-5" /></span>}
+        actions={<button onClick={handleOpenAdd} className="inline-flex items-center gap-2 rounded-xl bg-[#008e8b] px-4 py-2 text-xs font-bold text-white transition hover:bg-teal-700"><Plus className="h-4 w-4" />إضافة موقع إشراف</button>}
+      />
 
       {/* Locations Grid */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {locations.length === 0 && <div className="md:col-span-3"><EmptyState title="لا توجد مواقع إشراف" description="أضف أول موقع إشراف لبدء توزيع نوبات المتابعة." action={<button onClick={handleOpenAdd} className="rounded-xl bg-[#008e8b] px-4 py-2 text-xs font-bold text-white">إضافة موقع</button>} /></div>}
         {locations.map(loc => (
-          <div key={loc.id} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
+          <div key={loc.id} className="bg-white p-5 rounded-2xl border border-slate-200 flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between">
-                <span className="font-mono text-xs font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded">
+                <span className="font-mono text-xs font-bold text-teal-800 bg-teal-50 px-2 py-0.5 rounded">
                   {loc.code}
                 </span>
                 <span
@@ -114,7 +102,7 @@ export const SupervisionLocationsView: React.FC = () => {
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => handleOpenEdit(loc)}
-                  className="text-slate-400 hover:text-indigo-600 p-1"
+                  className="text-slate-400 hover:text-[#008e8b] p-1"
                 >
                   <Edit2 className="w-3.5 h-3.5" />
                 </button>
