@@ -32,6 +32,12 @@ const PERIOD_NUMBERS = [1, 2, 3, 4, 5, 6, 7, 8];
 export const TimetableWeeklyMatrixView: React.FC<TimetableWeeklyMatrixViewProps> = ({ currentUser }) => {
   const [viewMode, setViewMode] = useState<'classroom' | 'teacher' | 'day' | 'room'>('classroom');
   const [scheduleItems, setScheduleItems] = useState<ScheduleItem[]>([]);
+  const [curriculumDistributions, setCurriculumDistributions] = useState(() =>
+    storageService.getCurriculumDistributions(currentUser?.schoolId)
+  );
+  const [curriculumPlans, setCurriculumPlans] = useState(() =>
+    storageService.getCurriculumPlans(currentUser?.schoolId)
+  );
   const [teachers, setTeachers] = useState<Employee[]>([]);
   const [breaks, setBreaks] = useState<ScheduleBreak[]>([]);
   const [selectedGrade, setSelectedGrade] = useState<string>('الصف الأول الثانوي');
@@ -53,6 +59,8 @@ export const TimetableWeeklyMatrixView: React.FC<TimetableWeeklyMatrixViewProps>
   const loadData = () => {
     const items = storageService.getSchedule();
     setScheduleItems(items);
+    setCurriculumDistributions(storageService.getCurriculumDistributions(currentUser?.schoolId));
+    setCurriculumPlans(storageService.getCurriculumPlans(currentUser?.schoolId));
     const staff = timetableService.getTeachingStaff();
     setTeachers(staff);
     if (!selectedTeacherId && staff.length > 0) {
@@ -102,6 +110,16 @@ export const TimetableWeeklyMatrixView: React.FC<TimetableWeeklyMatrixViewProps>
     }
     return true;
   });
+
+  const getLessonPlanForSchedule = (scheduleItemId: string) => {
+    const dist = curriculumDistributions.find(
+      d => d.scheduleItemId === scheduleItemId && d.status !== 'Cancelled'
+    );
+    if (!dist) return null;
+    const plan = curriculumPlans.find(p => p.id === dist.planId);
+    const planItem = plan?.items.find(i => i.id === dist.planItemId);
+    return planItem ? { distribution: dist, item: planItem } : null;
+  };
 
   const getItemAt = (day: string, periodNumber: number): ScheduleItem | undefined => {
     return filteredItems.find(
@@ -455,6 +473,23 @@ export const TimetableWeeklyMatrixView: React.FC<TimetableWeeklyMatrixViewProps>
                             }`}
                           >
                             <div className="font-bold text-slate-800 line-clamp-1 mb-1">{item.subject}</div>
+                            {(() => {
+                              const lessonPlan = getLessonPlanForSchedule(item.id);
+                              if (!lessonPlan) return null;
+                              const statusLabel =
+                                lessonPlan.distribution.status === 'Delivered' ? 'تم التنفيذ' :
+                                lessonPlan.distribution.status === 'Deferred' ? 'مؤجل' : 'مخطط';
+                              return (
+                                <div className="mt-1 mb-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1">
+                                  <div className="text-[11px] font-bold text-emerald-900 line-clamp-2">
+                                    {lessonPlan.item.lessonTitle}
+                                  </div>
+                                  <div className="text-[10px] text-emerald-700 mt-0.5">
+                                    الأسبوع {lessonPlan.item.week} • {statusLabel}
+                                  </div>
+                                </div>
+                              );
+                            })()}
 
                             {viewMode !== 'teacher' && (
                               <div className="text-slate-600 flex items-center gap-1">
