@@ -7657,6 +7657,27 @@ class StorageService {
     if (caller && caller.role !== 'Teacher' && !isCurriculumAdmin) {
       return { success: false, message: 'غير مصرح لك بتعديل توزيع المنهج.' };
     }
+    const plan = this.getCurriculumPlanById(dist.planId);
+    if (!plan || plan.schoolId !== activeSchoolId) {
+      return { success: false, message: 'خطة المنهج غير موجودة في المدرسة الحالية.' };
+    }
+    if (plan.status !== 'Approved') {
+      return { success: false, message: 'لا يمكن حفظ توزيع حصة إلا لخطة منهج معتمدة.' };
+    }
+    const planItem = plan.items.find(item => item.id === dist.planItemId);
+    if (!planItem) {
+      return { success: false, message: 'عنصر خطة المنهج غير موجود.' };
+    }
+    if (dist.scheduleItemId) {
+      const scheduleItem = this.getSchedule().find(item => item.id === dist.scheduleItemId);
+      const norm = (value?: string) => String(value || '').trim().toLowerCase();
+      if (!scheduleItem || (scheduleItem.schoolId && scheduleItem.schoolId !== activeSchoolId)) {
+        return { success: false, message: 'حصة الجدول غير موجودة في المدرسة الحالية.' };
+      }
+      if (norm(scheduleItem.subject) !== norm(plan.subject) || norm(scheduleItem.grade) !== norm(plan.grade) || (plan.classroom && norm(scheduleItem.classroom) !== norm(plan.classroom))) {
+        return { success: false, message: 'الحصة لا تطابق المادة أو الصف أو الفصل المحدد في خطة المنهج.' };
+      }
+    }
     const now = getCairoNowISO();
     const raw = localStorage.getItem(STORAGE_KEYS.CURRICULUM_DISTRIBUTIONS);
     let list: CurriculumLessonDistribution[] = [];
