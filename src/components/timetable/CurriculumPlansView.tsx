@@ -303,10 +303,10 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
     void loadData();
   };
 
-  const handleDeletePlan = (planId: string) => {
+  const handleDeletePlan = async (planId: string) => {
     if (readOnly) return;
     if (!window.confirm('هل أنت متأكد من حذف هذه الخطة وتوزيعاتها؟')) return;
-    const res = storageService.deleteCurriculumPlan(planId, currentUser);
+    const res = await storageService.deleteCurriculumPlanAuthoritative(planId, currentUser);
     if (res.success) {
       void loadData();
     } else {
