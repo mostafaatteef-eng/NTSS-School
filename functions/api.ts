@@ -639,10 +639,11 @@ export default {
           if(isTeacher&&teacherId!==actorTeacherId)return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);
           const pq=await pool.query('SELECT status,grade,subject,file_meta FROM curriculum_plans WHERE id=$1 AND school_id=$2',[planId,schoolId]);
           if(!pq.rowCount)return json({status:'error',code:'PLAN_NOT_FOUND'},404,corsOrigin);
-          if(pq.rows[0].status!=='Approved')return json({status:'error',code:'PLAN_NOT_APPROVED'},409,corsOrigin);
+          const isCancellation=String(data.status||'Planned')==='Cancelled';
+          if(!isCancellation&&pq.rows[0].status!=='Approved')return json({status:'error',code:'PLAN_NOT_APPROVED'},409,corsOrigin);
           const iq=await pool.query('SELECT week FROM curriculum_plan_items WHERE id=$1 AND plan_id=$2',[planItemId,planId]);if(!iq.rowCount)return json({status:'error',code:'PLAN_ITEM_NOT_FOUND'},404,corsOrigin);
           const curriculumWeek=Number(iq.rows[0].week||0);
-          if(scheduleItemId){const sq=await pool.query('SELECT teacher_id,grade,classroom,weekday,period_no,payload FROM schedule WHERE id=$1 AND school_id=$2',[scheduleItemId,schoolId]);if(!sq.rowCount)return json({status:'error',code:'SCHEDULE_NOT_FOUND'},404,corsOrigin);const s=sq.rows[0];if(isTeacher&&s.teacher_id!==actorTeacherId)return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);const planClassroom=String((pq.rows[0].file_meta||{}).classroom||'').trim();const norm=(v:any)=>String(v||'').trim().toLowerCase();if(norm(s.grade)!==norm(pq.rows[0].grade)||norm((s.payload||{}).subject)!==norm(pq.rows[0].subject)||(planClassroom&&norm(s.classroom)!==norm(planClassroom)))return json({status:'error',code:'SCHEDULE_PLAN_MISMATCH',message:'الحصة لا تطابق مادة أو صف أو فصل خطة المنهج.'},409,corsOrigin);data.grade=s.grade;data.classroom=s.classroom;data.dayOfWeek=s.weekday;data.periodNumber=s.period_no;data.subject=(s.payload||{}).subject||data.subject;
+          if(scheduleItemId&&!isCancellation){const sq=await pool.query('SELECT teacher_id,grade,classroom,weekday,period_no,payload FROM schedule WHERE id=$1 AND school_id=$2',[scheduleItemId,schoolId]);if(!sq.rowCount)return json({status:'error',code:'SCHEDULE_NOT_FOUND'},404,corsOrigin);const s=sq.rows[0];if(isTeacher&&s.teacher_id!==actorTeacherId)return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);const planClassroom=String((pq.rows[0].file_meta||{}).classroom||'').trim();const norm=(v:any)=>String(v||'').trim().toLowerCase();if(norm(s.grade)!==norm(pq.rows[0].grade)||norm((s.payload||{}).subject)!==norm(pq.rows[0].subject)||(planClassroom&&norm(s.classroom)!==norm(planClassroom)))return json({status:'error',code:'SCHEDULE_PLAN_MISMATCH',message:'الحصة لا تطابق مادة أو صف أو فصل خطة المنهج.'},409,corsOrigin);data.grade=s.grade;data.classroom=s.classroom;data.dayOfWeek=s.weekday;data.periodNumber=s.period_no;data.subject=(s.payload||{}).subject||data.subject;
             const occupied=await pool.query(`SELECT d.id FROM curriculum_distributions d JOIN curriculum_plan_items pi ON pi.id=d.plan_item_id AND pi.plan_id=d.plan_id WHERE d.school_id=$1 AND d.schedule_item_id=$2 AND d.status<>'Cancelled' AND pi.week=$3 AND d.id<>$4 LIMIT 1`,[schoolId,scheduleItemId,curriculumWeek,String(data.id||'')]);
             if(occupied.rowCount)return json({status:'error',code:'CURRICULUM_SLOT_OCCUPIED',message:'هذه الحصة مرتبطة بالفعل بموضوع آخر في نفس أسبوع المنهج.'},409,corsOrigin);
           }
@@ -653,6 +654,15 @@ export default {
             WHERE curriculum_distributions.school_id=EXCLUDED.school_id AND curriculum_distributions.teacher_id=EXCLUDED.teacher_id RETURNING *`,
             [id,schoolId,planId,planItemId,scheduleItemId,teacherId,String(data.teacherName||''),String(data.grade||''),String(data.classroom||''),String(data.subject||''),String(data.dayOfWeek||''),Number(data.periodNumber||0),String(data.targetDate||''),String(data.status||'Planned'),String(data.notes||'')]);
           if(!q.rowCount)return json({status:'error',code:'WRITE_REJECTED'},409,corsOrigin);return json({status:'success',data:{id:q.rows[0].id}},200,corsOrigin);
+        }
+        if(action==='deletePlan'){
+          if(!isAdmin)return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);
+          const id=String(data.id||'').trim();if(!id)return json({status:'error',code:'PLAN_ID_REQUIRED'},400,corsOrigin);
+          const existing=await pool.query('SELECT id,status FROM curriculum_plans WHERE id=$1 AND school_id=$2',[id,schoolId]);
+          if(!existing.rowCount)return json({status:'error',code:'PLAN_NOT_FOUND'},404,corsOrigin);
+          if(['Submitted','Approved'].includes(String(existing.rows[0].status)))return json({status:'error',code:'PLAN_DELETE_LOCKED',message:'لا يمكن حذف خطة مرسلة للمراجعة أو معتمدة.'},409,corsOrigin);
+          await pool.query('DELETE FROM curriculum_plans WHERE id=$1 AND school_id=$2',[id,schoolId]);
+          return json({status:'success'},200,corsOrigin);
         }
         if(action==='savePlan'){
           const status=String(data.status||'Draft'); const classroom=String(data.classroom||'').trim(); if(!classroom)return json({status:'error',code:'CLASSROOM_REQUIRED',message:'يجب تحديد الفصل؛ لكل فصل خطة منهج مستقلة.'},400,corsOrigin); if(isTeacher&&!['Draft','Submitted'].includes(status))return json({status:'error',code:'FORBIDDEN_STATUS'},403,corsOrigin);
