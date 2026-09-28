@@ -42,6 +42,7 @@ import { PublicStudentScheduleView } from './components/timetable/PublicStudentS
 import { TeacherPortalView } from './components/timetable/TeacherPortalView';
 import { QualityModule } from './components/quality/QualityModule';
 import { LoginView } from './components/auth/LoginView';
+import { StudentPortalView } from './components/student/StudentPortalView';
 import { ForceChangePasswordModal } from './components/auth/ForceChangePasswordModal';
 import { runMigrationScope008RemoveSamatPayroll } from './services/migrationScope008RemoveSamatPayroll';
 import { runMigrationScope009SecurityAndFinalRetirement } from './services/migrationScope009SecurityAndFinalRetirement';
@@ -331,6 +332,10 @@ export default function App() {
         onOpenTeacherPortal={() => setIsTeacherPortalOpen(true)}
       />
     );
+  }
+
+  if (currentUser.role === 'Student' && currentUser.accessScope === 'SELF') {
+    return <StudentPortalView currentUser={currentUser} onLogout={handleLogout} />;
   }
 
   const renderActiveView = () => {
