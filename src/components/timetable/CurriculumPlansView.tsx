@@ -149,27 +149,8 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
       }
 
       if (parsedItems.length === 0) {
-        // Fallback default sample items if file was empty
-        parsedItems = [
-          {
-            id: `ITEM-${Date.now()}-1`,
-            planId: '',
-            week: 1,
-            unit: 'الوحدة الأولى: أساسيات التخصص',
-            lessonTitle: 'المفاهيم التأسيسية وقواعد الأمن والسلامة',
-            estimatedPeriods: 2,
-            order: 1,
-          },
-          {
-            id: `ITEM-${Date.now()}-2`,
-            planId: '',
-            week: 2,
-            unit: 'الوحدة الأولى: أساسيات التخصص',
-            lessonTitle: 'التشغيل العملي وإجراءات الصيانة الوقائية',
-            estimatedPeriods: 2,
-            order: 2,
-          },
-        ];
+        setUploadError('تعذر استخراج أي أسابيع أو دروس من الملف. راجع تنسيق الخطة أو الصق محتوى الخطة نصيًا ثم أعد المحاولة.');
+        return;
       }
 
       // Generate opaque Google Drive metadata without exposing raw drive internal URLs
@@ -220,7 +201,7 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
     return allSchedule.filter(s => {
       const matchSub = s.subject.trim().toLowerCase() === selectedPlan.subject.trim().toLowerCase();
       const matchGrade = s.grade.trim().toLowerCase() === selectedPlan.grade.trim().toLowerCase();
-      return matchSub || matchGrade;
+      return matchSub && matchGrade;
     });
   }, [allSchedule, selectedPlan]);
 
