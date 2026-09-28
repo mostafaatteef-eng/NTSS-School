@@ -275,7 +275,7 @@ class StorageService {
     const mins = Math.max(1, settings.autoSyncIntervalMinutes || 5);
     const url = settings.googleAppsScriptUrl || DEFAULT_BACKEND_URL;
 
-    if (url && url.trim().length > 10) {
+    if (url && url.trim().length > 10 && !isPostgresBackendEnabled()) {
       this.autoSyncInterval = setInterval(() => {
         this.syncWithGoogleSheets(true).catch(() => {});
       }, mins * 60 * 1000);
@@ -763,6 +763,9 @@ class StorageService {
         return false;
       } catch { return false; }
     }
+
+    // PostgreSQL sessions are authoritative. Never fall back to GAS when the central API is configured.
+    if (isPostgresBackendEnabled()) return false;
 
     const scriptUrl = this.getBackendUrl();
 
