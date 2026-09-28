@@ -337,7 +337,7 @@ export const MyRequestsView: React.FC<MyRequestsViewProps> = ({ currentUser, aut
       {/* Header Banner */}
       <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2 text-indigo-700 font-bold text-xs mb-1">
+          <div className="flex items-center gap-2 text-teal-800 font-bold text-xs mb-1">
             <History className="w-4 h-4" />
             <span>الخدمة الذاتية للمعلمين والعاملين (Self-Service)</span>
           </div>
@@ -352,7 +352,7 @@ export const MyRequestsView: React.FC<MyRequestsViewProps> = ({ currentUser, aut
 
         {/* User Identity Card */}
         <div className="bg-slate-50 border border-slate-200 p-3.5 rounded-xl flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-indigo-100 text-indigo-700 font-black flex items-center justify-center text-sm border border-indigo-200">
+          <div className="w-10 h-10 rounded-full bg-teal-100 text-teal-800 font-black flex items-center justify-center text-sm border border-teal-200">
             {(teacherProfile?.employeeName || currentUser?.fullName)?.charAt(0) || 'م'}
           </div>
           <div>
@@ -391,7 +391,7 @@ export const MyRequestsView: React.FC<MyRequestsViewProps> = ({ currentUser, aut
             onClick={() => setActiveTab('leaves')}
             className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 ${
               activeTab === 'leaves'
-                ? 'bg-white text-indigo-700 shadow-xs'
+                ? 'bg-white text-teal-800 shadow-xs'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
@@ -402,7 +402,7 @@ export const MyRequestsView: React.FC<MyRequestsViewProps> = ({ currentUser, aut
             onClick={() => setActiveTab('permissions')}
             className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 ${
               activeTab === 'permissions'
-                ? 'bg-white text-indigo-700 shadow-xs'
+                ? 'bg-white text-teal-800 shadow-xs'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
@@ -419,7 +419,7 @@ export const MyRequestsView: React.FC<MyRequestsViewProps> = ({ currentUser, aut
                 setLeaveSuccess('');
                 setIsLeaveModalOpen(true);
               }}
-              className="w-full sm:w-auto px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs transition flex items-center justify-center gap-2"
+              className="w-full sm:w-auto px-4 py-2.5 bg-[#008e8b] hover:bg-teal-700 text-white rounded-xl text-xs font-bold shadow-xs transition flex items-center justify-center gap-2"
             >
               <PlusCircle className="w-4 h-4" />
               <span>طلب إجازة جديدة</span>
@@ -431,7 +431,7 @@ export const MyRequestsView: React.FC<MyRequestsViewProps> = ({ currentUser, aut
                 setPermSuccess('');
                 setIsPermModalOpen(true);
               }}
-              className="w-full sm:w-auto px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs transition flex items-center justify-center gap-2"
+              className="w-full sm:w-auto px-4 py-2.5 bg-[#008e8b] hover:bg-teal-700 text-white rounded-xl text-xs font-bold shadow-xs transition flex items-center justify-center gap-2"
             >
               <PlusCircle className="w-4 h-4" />
               <span>طلب إذن جديد</span>
@@ -470,7 +470,7 @@ export const MyRequestsView: React.FC<MyRequestsViewProps> = ({ currentUser, aut
                     {leaves.map(l => (
                       <tr key={l.id} className="hover:bg-slate-50/60 transition">
                         <td className="p-3.5 font-bold text-slate-900 flex items-center gap-1.5">
-                          <span className="w-2 h-2 rounded-full bg-indigo-500" />
+                          <span className="w-2 h-2 rounded-full bg-teal-500" />
                           <span>{l.leaveType}</span>
                         </td>
                         <td className="p-3.5 text-slate-600 font-mono text-[11px]">
@@ -484,7 +484,7 @@ export const MyRequestsView: React.FC<MyRequestsViewProps> = ({ currentUser, aut
                         </td>
                         <td className="p-3.5">
                           {l.attachment ? (
-                            <span className="inline-flex items-center gap-1 text-[11px] text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">
+                            <span className="inline-flex items-center gap-1 text-[11px] text-[#008e8b] bg-teal-50 px-2 py-0.5 rounded">
                               <Paperclip className="w-3 h-3" />
                               مرفق
                             </span>
@@ -496,7 +496,7 @@ export const MyRequestsView: React.FC<MyRequestsViewProps> = ({ currentUser, aut
                         <td className="p-3.5 text-center">
                           <button
                             onClick={() => setViewingLeave(l)}
-                            className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded-lg transition"
+                            className="p-1.5 text-slate-500 hover:text-[#008e8b] hover:bg-slate-100 rounded-lg transition"
                             title="عرض التفاصيل"
                           >
                             <Eye className="w-4 h-4" />
@@ -570,7 +570,7 @@ export const MyRequestsView: React.FC<MyRequestsViewProps> = ({ currentUser, aut
                         <td className="p-3.5 text-center">
                           <button
                             onClick={() => setViewingPerm(p)}
-                            className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded-lg transition"
+                            className="p-1.5 text-slate-500 hover:text-[#008e8b] hover:bg-slate-100 rounded-lg transition"
                             title="عرض التفاصيل"
                           >
                             <Eye className="w-4 h-4" />
@@ -592,7 +592,7 @@ export const MyRequestsView: React.FC<MyRequestsViewProps> = ({ currentUser, aut
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-100 space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b pb-3">
               <h3 className="font-bold text-base text-slate-800 flex items-center gap-2">
-                <CalendarDays className="w-5 h-5 text-indigo-600" />
+                <CalendarDays className="w-5 h-5 text-[#008e8b]" />
                 تقديم طلب إجازة رسمي
               </h3>
               <button
@@ -624,7 +624,7 @@ export const MyRequestsView: React.FC<MyRequestsViewProps> = ({ currentUser, aut
                   <select
                     value={leaveType}
                     onChange={e => setLeaveType(e.target.value as LeaveType)}
-                    className="w-full border border-slate-300 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
+                    className="w-full border border-slate-300 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-[#008e8b]/30 focus:outline-hidden"
                   >
                     {dynamicLeaveTypes.map(t => (
                       <option key={t} value={t}>
@@ -636,7 +636,7 @@ export const MyRequestsView: React.FC<MyRequestsViewProps> = ({ currentUser, aut
 
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">عدد الأيام المحسوبة</label>
-                  <div className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs font-bold text-indigo-700">
+                  <div className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs font-bold text-teal-800">
                     {daysCount} {daysCount === 1 ? 'يوم' : 'أيام'}
                   </div>
                 </div>
@@ -649,7 +649,7 @@ export const MyRequestsView: React.FC<MyRequestsViewProps> = ({ currentUser, aut
                     type="date"
                     value={leaveStartDate}
                     onChange={e => setLeaveStartDate(e.target.value)}
-                    className="w-full border border-slate-300 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
+                    className="w-full border border-slate-300 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-[#008e8b]/30 focus:outline-hidden"
                     required
                   />
                 </div>
@@ -659,7 +659,7 @@ export const MyRequestsView: React.FC<MyRequestsViewProps> = ({ currentUser, aut
                     type="date"
                     value={leaveEndDate}
                     onChange={e => setLeaveEndDate(e.target.value)}
-                    className="w-full border border-slate-300 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
+                    className="w-full border border-slate-300 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-[#008e8b]/30 focus:outline-hidden"
                     required
                   />
                 </div>
@@ -672,7 +672,7 @@ export const MyRequestsView: React.FC<MyRequestsViewProps> = ({ currentUser, aut
                   onChange={e => setLeaveReason(e.target.value)}
                   placeholder="اكتب سبب طلب الإجازة بالتفصيل..."
                   rows={2}
-                  className="w-full border border-slate-300 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
+                  className="w-full border border-slate-300 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-[#008e8b]/30 focus:outline-hidden"
                   required
                 />
               </div>
@@ -684,7 +684,7 @@ export const MyRequestsView: React.FC<MyRequestsViewProps> = ({ currentUser, aut
                   onChange={e => setLeaveNotes(e.target.value)}
                   placeholder="أي تفاصيل أو ترتيبات خاصة بالعمل أو البدلاء..."
                   rows={2}
-                  className="w-full border border-slate-300 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
+                  className="w-full border border-slate-300 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-[#008e8b]/30 focus:outline-hidden"
                 />
               </div>
 
@@ -696,7 +696,7 @@ export const MyRequestsView: React.FC<MyRequestsViewProps> = ({ currentUser, aut
                   type="file"
                   accept="image/*,.pdf"
                   onChange={e => handleFileUpload(e, setLeaveAttachment)}
-                  className="w-full border border-slate-300 rounded-xl p-2 text-xs file:mr-4 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
+                  className="w-full border border-slate-300 rounded-xl p-2 text-xs file:mr-4 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-teal-50 file:text-teal-800 hover:file:bg-teal-100"
                 />
                 {leaveAttachment && (
                   <p className="text-[11px] text-emerald-600 mt-1 flex items-center gap-1 font-bold">
@@ -717,7 +717,7 @@ export const MyRequestsView: React.FC<MyRequestsViewProps> = ({ currentUser, aut
                 <button
                   type="submit"
                   disabled={requestSubmitting !== null}
-                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs transition flex items-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="px-5 py-2.5 bg-[#008e8b] hover:bg-teal-700 text-white rounded-xl text-xs font-bold shadow-xs transition flex items-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <Send className="w-4 h-4" />
                   <span>{requestSubmitting === 'leave' ? 'جارٍ الإرسال...' : 'إرسال الطلب'}</span>
@@ -734,7 +734,7 @@ export const MyRequestsView: React.FC<MyRequestsViewProps> = ({ currentUser, aut
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-100 space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b pb-3">
               <h3 className="font-bold text-base text-slate-800 flex items-center gap-2">
-                <Clock className="w-5 h-5 text-indigo-600" />
+                <Clock className="w-5 h-5 text-[#008e8b]" />
                 تقديم طلب إذن خروج / تأخير
               </h3>
               <button
@@ -766,7 +766,7 @@ export const MyRequestsView: React.FC<MyRequestsViewProps> = ({ currentUser, aut
                   <select
                     value={permType}
                     onChange={e => setPermType(e.target.value)}
-                    className="w-full border border-slate-300 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
+                    className="w-full border border-slate-300 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-[#008e8b]/30 focus:outline-hidden"
                   >
                     {permissionTypes.map(t => (
                       <option key={t} value={t}>
@@ -782,7 +782,7 @@ export const MyRequestsView: React.FC<MyRequestsViewProps> = ({ currentUser, aut
                     type="date"
                     value={permDate}
                     onChange={e => setPermDate(e.target.value)}
-                    className="w-full border border-slate-300 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
+                    className="w-full border border-slate-300 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-[#008e8b]/30 focus:outline-hidden"
                     required
                   />
                 </div>
@@ -795,7 +795,7 @@ export const MyRequestsView: React.FC<MyRequestsViewProps> = ({ currentUser, aut
                     type="time"
                     value={permStartTime}
                     onChange={e => setPermStartTime(e.target.value)}
-                    className="w-full border border-slate-300 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
+                    className="w-full border border-slate-300 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-[#008e8b]/30 focus:outline-hidden"
                     required
                   />
                 </div>
@@ -805,13 +805,13 @@ export const MyRequestsView: React.FC<MyRequestsViewProps> = ({ currentUser, aut
                     type="time"
                     value={permEndTime}
                     onChange={e => setPermEndTime(e.target.value)}
-                    className="w-full border border-slate-300 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
+                    className="w-full border border-slate-300 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-[#008e8b]/30 focus:outline-hidden"
                     required
                   />
                 </div>
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">المدة التقديرية</label>
-                  <div className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs font-bold text-indigo-700">
+                  <div className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs font-bold text-teal-800">
                     {calculateDuration(permStartTime, permEndTime)} ساعة
                   </div>
                 </div>
@@ -824,7 +824,7 @@ export const MyRequestsView: React.FC<MyRequestsViewProps> = ({ currentUser, aut
                   onChange={e => setPermReason(e.target.value)}
                   placeholder="سبب الخروج أو التأخير..."
                   rows={2}
-                  className="w-full border border-slate-300 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
+                  className="w-full border border-slate-300 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-[#008e8b]/30 focus:outline-hidden"
                   required
                 />
               </div>
@@ -836,7 +836,7 @@ export const MyRequestsView: React.FC<MyRequestsViewProps> = ({ currentUser, aut
                   onChange={e => setPermNotes(e.target.value)}
                   placeholder="أي ملاحظات أخرى للإدارة..."
                   rows={2}
-                  className="w-full border border-slate-300 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
+                  className="w-full border border-slate-300 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-[#008e8b]/30 focus:outline-hidden"
                 />
               </div>
 
@@ -848,7 +848,7 @@ export const MyRequestsView: React.FC<MyRequestsViewProps> = ({ currentUser, aut
                   type="file"
                   accept="image/*,.pdf"
                   onChange={e => handleFileUpload(e, setPermAttachment)}
-                  className="w-full border border-slate-300 rounded-xl p-2 text-xs file:mr-4 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
+                  className="w-full border border-slate-300 rounded-xl p-2 text-xs file:mr-4 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-teal-50 file:text-teal-800 hover:file:bg-teal-100"
                 />
                 {permAttachment && (
                   <p className="text-[11px] text-emerald-600 mt-1 flex items-center gap-1 font-bold">
@@ -869,7 +869,7 @@ export const MyRequestsView: React.FC<MyRequestsViewProps> = ({ currentUser, aut
                 <button
                   type="submit"
                   disabled={requestSubmitting !== null}
-                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs transition flex items-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="px-5 py-2.5 bg-[#008e8b] hover:bg-teal-700 text-white rounded-xl text-xs font-bold shadow-xs transition flex items-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <Send className="w-4 h-4" />
                   <span>{requestSubmitting === 'permission' ? 'جارٍ الإرسال...' : 'إرسال طلب الإذن'}</span>
@@ -886,7 +886,7 @@ export const MyRequestsView: React.FC<MyRequestsViewProps> = ({ currentUser, aut
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-100 space-y-4">
             <div className="flex items-center justify-between border-b pb-3">
               <h3 className="font-bold text-base text-slate-800 flex items-center gap-2">
-                <FileText className="w-5 h-5 text-indigo-600" />
+                <FileText className="w-5 h-5 text-[#008e8b]" />
                 تفاصيل طلب الإجازة
               </h3>
               <button
@@ -946,7 +946,7 @@ export const MyRequestsView: React.FC<MyRequestsViewProps> = ({ currentUser, aut
                   <a
                     href={viewingLeave.attachment}
                     download="leave_attachment"
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded-lg font-bold"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-teal-50 text-teal-800 hover:bg-teal-100 rounded-lg font-bold"
                   >
                     <Paperclip className="w-4 h-4" />
                     تحميل / معاينة المرفق
@@ -973,7 +973,7 @@ export const MyRequestsView: React.FC<MyRequestsViewProps> = ({ currentUser, aut
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-100 space-y-4">
             <div className="flex items-center justify-between border-b pb-3">
               <h3 className="font-bold text-base text-slate-800 flex items-center gap-2">
-                <FileText className="w-5 h-5 text-indigo-600" />
+                <FileText className="w-5 h-5 text-[#008e8b]" />
                 تفاصيل طلب الإذن
               </h3>
               <button
@@ -1037,7 +1037,7 @@ export const MyRequestsView: React.FC<MyRequestsViewProps> = ({ currentUser, aut
                   <a
                     href={viewingPerm.attachment}
                     download="permission_attachment"
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded-lg font-bold"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-teal-50 text-teal-800 hover:bg-teal-100 rounded-lg font-bold"
                   >
                     <Paperclip className="w-4 h-4" />
                     تحميل / معاينة المرفق
