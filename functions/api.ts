@@ -593,6 +593,41 @@ export default {
         return json({status:'success',message:'تم حفظ الحصة في الجدول بنجاح',data:{...(r.payload||{}),id:r.id,schoolId:r.school_id}},200,corsOrigin);
       }
 
+
+      if (request.method === 'POST' && path === '/curriculum/manage') {
+        const body:any=await request.json(); const action=String(body.action||''); const data:any=body.data||{};
+        const schoolId=String(body.schoolId||user.active_school_id||user.school_id||'').trim();
+        if(!(await canAccessSchool(user,schoolId)))return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);
+        const adminRoles=new Set(['SystemAdmin','Admin','SchoolAdmin','SchoolDirector','TeacherAffairs']);
+        const isAdmin=adminRoles.has(String(user.role||'')); const isTeacher=String(user.role||'')==='Teacher';
+        if(!isAdmin&&!isTeacher)return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);
+        const actorTeacherId=String(user.employee_id||user.user_id||'').trim();
+        const mapPlan=(r:any,items:any[]=[])=>({id:r.id,schoolId:r.school_id,academicYear:r.academic_year,term:r.term,grade:r.grade,gradeId:r.grade_id,subject:r.subject,subjectId:r.subject_id,version:r.version,status:r.status,uploadedBy:r.uploaded_by,uploadedByName:r.uploaded_by_name,uploadedAt:r.uploaded_at,updatedAt:r.updated_at,fileMeta:r.file_meta,items});
+        if(action==='getPlans'){
+          const ps=await pool.query(isTeacher?'SELECT * FROM curriculum_plans WHERE school_id=$1 AND uploaded_by=$2 ORDER BY updated_at DESC':'SELECT * FROM curriculum_plans WHERE school_id=$1 ORDER BY updated_at DESC',isTeacher?[schoolId,actorTeacherId]:[schoolId]);
+          const ids=ps.rows.map((r:any)=>r.id); let items:any[]=[];
+          if(ids.length){const iq=await pool.query('SELECT * FROM curriculum_plan_items WHERE plan_id=ANY($1::text[]) ORDER BY week,sort_order,id',[ids]);items=iq.rows;}
+          return json({status:'success',data:ps.rows.map((p:any)=>mapPlan(p,items.filter((i:any)=>i.plan_id===p.id).map((i:any)=>({id:i.id,week:i.week,unit:i.unit,lessonTitle:i.lesson_title,objectives:i.objectives||'',resources:i.resources||'',assessment:i.assessment||'',estimatedPeriods:i.estimated_periods,notes:i.notes||'',order:i.sort_order}))))},200,corsOrigin);
+        }
+        if(action==='savePlan'){
+          const status=String(data.status||'Draft'); if(isTeacher&&!['Draft','Submitted'].includes(status))return json({status:'error',code:'FORBIDDEN_STATUS'},403,corsOrigin);
+          const id=String(data.id||('PLAN-'+crypto.randomBytes(8).toString('hex').toUpperCase()));
+          const existing=await pool.query('SELECT * FROM curriculum_plans WHERE id=$1',[id]);
+          if(existing.rowCount){const e=existing.rows[0];if(e.school_id!==schoolId||(isTeacher&&(e.uploaded_by!==actorTeacherId||e.status==='Approved')))return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);}
+          const client=await pool.connect();try{await client.query('BEGIN');
+            const q=await client.query(`INSERT INTO curriculum_plans(id,school_id,academic_year,term,grade,grade_id,subject,subject_id,version,status,uploaded_by,uploaded_by_name,file_meta)
+              VALUES($1,$2,$3,$4,$5,NULLIF($6,''),$7,NULLIF($8,''),1,$9,$10,$11,$12::jsonb)
+              ON CONFLICT(id) DO UPDATE SET term=EXCLUDED.term,grade=EXCLUDED.grade,grade_id=EXCLUDED.grade_id,subject=EXCLUDED.subject,subject_id=EXCLUDED.subject_id,status=EXCLUDED.status,file_meta=EXCLUDED.file_meta,version=curriculum_plans.version+1,updated_at=now()
+              WHERE curriculum_plans.school_id=EXCLUDED.school_id RETURNING *`,
+              [id,schoolId,String(data.academicYear||'2026-2027'),String(data.term||''),String(data.grade||''),String(data.gradeId||''),String(data.subject||''),String(data.subjectId||''),status,existing.rows[0]?.uploaded_by||actorTeacherId,String(user.full_name||user.email||''),JSON.stringify(data.fileMeta||null)]);
+            if(!q.rowCount)throw new Error('WRITE_REJECTED'); await client.query('DELETE FROM curriculum_plan_items WHERE plan_id=$1',[id]);
+            for(const [idx,it] of (Array.isArray(data.items)?data.items:[]).entries()){await client.query('INSERT INTO curriculum_plan_items(id,plan_id,week,unit,lesson_title,objectives,resources,assessment,estimated_periods,notes,sort_order) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)',[String(it.id||('ITEM-'+crypto.randomBytes(8).toString('hex').toUpperCase())),id,Number(it.week),String(it.unit||''),String(it.lessonTitle||''),String(it.objectives||''),String(it.resources||''),String(it.assessment||''),Math.max(1,Number(it.estimatedPeriods||1)),String(it.notes||''),Number(it.order||idx)]);
+            } await client.query('COMMIT'); return json({status:'success',data:mapPlan(q.rows[0],data.items||[])},200,corsOrigin);
+          }catch(e){await client.query('ROLLBACK');throw e;}finally{client.release();}
+        }
+        return json({status:'error',code:'ACTION_NOT_MIGRATED'},400,corsOrigin);
+      }
+
       if (request.method === 'POST' && path === '/my-requests') {
         const body: any=await request.json(); const action=String(body.action||''); const data:any=body.data||{};
         const employeeId=String(user.employee_id||'').trim();
