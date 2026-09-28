@@ -605,7 +605,21 @@ const ntssHandler = {
         const actorTeacherId=String(user.employee_id||user.user_id||'').trim();
         const mapPlan=(r:any,items:any[]=[])=>({id:r.id,schoolId:r.school_id,academicYear:r.academic_year,term:r.term,grade:r.grade,gradeId:r.grade_id,classroom:(r.file_meta&&r.file_meta.classroom)||'',subject:r.subject,subjectId:r.subject_id,version:r.version,status:r.status,uploadedBy:r.uploaded_by,uploadedByName:r.uploaded_by_name,uploadedAt:r.uploaded_at,updatedAt:r.updated_at,fileMeta:r.file_meta,items});
         if(action==='getPlans'){
-          const ps=await pool.query(isTeacher?'SELECT * FROM curriculum_plans WHERE school_id=$1 AND uploaded_by=$2 ORDER BY updated_at DESC':'SELECT * FROM curriculum_plans WHERE school_id=$1 ORDER BY updated_at DESC',isTeacher?[schoolId,actorTeacherId]:[schoolId]);
+          const ps=await pool.query(
+            isTeacher
+              ? `SELECT p.* FROM curriculum_plans p
+                   WHERE p.school_id=$1 AND (
+                     p.uploaded_by=$2 OR EXISTS (
+                       SELECT 1 FROM schedule s
+                       WHERE s.school_id=p.school_id AND s.teacher_id=$2
+                         AND lower(trim(s.grade))=lower(trim(p.grade))
+                         AND lower(trim(s.classroom))=lower(trim(COALESCE(p.file_meta->>'classroom','')))
+                         AND lower(trim(COALESCE(s.payload->>'subject','')))=lower(trim(p.subject))
+                     )
+                   ) ORDER BY p.updated_at DESC`
+              : 'SELECT * FROM curriculum_plans WHERE school_id=$1 ORDER BY updated_at DESC',
+            isTeacher?[schoolId,actorTeacherId]:[schoolId]
+          );
           const ids=ps.rows.map((r:any)=>r.id); let items:any[]=[];
           if(ids.length){const iq=await pool.query('SELECT * FROM curriculum_plan_items WHERE plan_id=ANY($1::text[]) ORDER BY week,sort_order,id',[ids]);items=iq.rows;}
           return json({status:'success',data:ps.rows.map((p:any)=>mapPlan(p,items.filter((i:any)=>i.plan_id===p.id).map((i:any)=>({id:i.id,week:i.week,unit:i.unit,lessonTitle:i.lesson_title,objectives:i.objectives||'',resources:i.resources||'',assessment:i.assessment||'',estimatedPeriods:i.estimated_periods,notes:i.notes||'',order:i.sort_order}))))},200,corsOrigin);
