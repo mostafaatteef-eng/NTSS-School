@@ -6,7 +6,7 @@ import { defineConfig } from 'vite';
 export default defineConfig(({ mode }) => ({
   // Vercel serves from the domain root; GitHub Pages serves from /NTSS-School/.
   // Keep both deployment targets valid instead of sharing an incompatible base.
-  base: process.env.VERCEL === '1' ? '/' : (mode === 'production' ? '/NTSS-School/' : '/'),
+  base: process.env.VITE_BASE_PATH || (process.env.VERCEL === '1' ? '/' : (mode === 'production' ? '/NTSS-School/' : '/')),
 
   plugins: [
     react(),
