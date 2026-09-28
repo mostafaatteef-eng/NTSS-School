@@ -932,7 +932,7 @@ class StorageService {
     if (user?.sessionToken) headers.set('Authorization', 'Bearer ' + user.sessionToken);
     const target = base + path;
     try {
-      return await fetch(target, { ...init, headers });
+      return await fetch(target, { ...init, headers, credentials: 'include' });
     } catch (error: any) {
       const details = [
         error?.name,
