@@ -7650,6 +7650,7 @@ class StorageService {
       subject: dist.subject || '',
       dayOfWeek: dist.dayOfWeek || '',
       periodNumber: dist.periodNumber || 1,
+      week: dist.week,
       targetDate: dist.targetDate,
       status: dist.status || 'Planned',
       notes: dist.notes,
