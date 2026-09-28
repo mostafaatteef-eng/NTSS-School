@@ -256,6 +256,7 @@ export class CurriculumPlanService {
         subject: lesson.subject,
         dayOfWeek: lesson.dayOfWeek,
         periodNumber: lesson.periodNumber,
+        week: planItem.week,
         targetDate: params.targetDate,
         status: 'Planned',
         notes: params.notes,
