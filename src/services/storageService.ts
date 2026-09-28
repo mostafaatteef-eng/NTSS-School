@@ -2699,6 +2699,25 @@ class StorageService {
     return this.saveScheduleItem(item);
   }
 
+  private removeLocalCurriculumDistributionsForSchedule(scheduleItemId: string, schoolId?: string): void {
+    const raw = localStorage.getItem(STORAGE_KEYS.CURRICULUM_DISTRIBUTIONS);
+    if (!raw) return;
+    try {
+      const all: CurriculumLessonDistribution[] = JSON.parse(raw);
+      const targetSchoolId = (schoolId || this.getActiveSchoolId()).trim();
+      const remaining = all.filter(d =>
+        d.scheduleItemId !== scheduleItemId ||
+        (targetSchoolId && d.schoolId !== targetSchoolId)
+      );
+      if (remaining.length !== all.length) {
+        localStorage.setItem(STORAGE_KEYS.CURRICULUM_DISTRIBUTIONS, JSON.stringify(remaining));
+      }
+    } catch {
+      // Keep deletion of the authoritative schedule successful even if a corrupt
+      // legacy curriculum cache cannot be cleaned.
+    }
+  }
+
   public async deleteScheduleItem(id: string): Promise<{ success: boolean; message?: string }> {
     const caller = this.getCurrentUser();
     if (!caller || !caller.sessionToken) {
@@ -2722,6 +2741,7 @@ class StorageService {
           return { success: false, message: res.message || 'فشل حذف الحصة من PostgreSQL.' };
         }
         localStorage.setItem(STORAGE_KEYS.SCHEDULE, JSON.stringify(this.getSchedule().filter(s => s.id !== id)));
+        this.removeLocalCurriculumDistributionsForSchedule(id, schoolId);
         this.notifyChange();
         return { success: true, message: res.message || 'تم حذف الحصة من الجدول' };
       } catch {
@@ -2791,6 +2811,7 @@ class StorageService {
     // Backend success ONLY: remove from local cache and notify
     const list = this.getSchedule().filter(s => s.id !== id);
     localStorage.setItem(STORAGE_KEYS.SCHEDULE, JSON.stringify(list));
+    this.removeLocalCurriculumDistributionsForSchedule(id, this.getActiveSchoolId());
     this.logAudit('DELETE', 'SCHEDULE', `حذف حصة دراسية: ${id}`);
     this.notifyChange();
     return { success: true, message: resData?.message || 'تم حذف الحصة من الجدول' };
