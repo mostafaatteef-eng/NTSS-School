@@ -24,6 +24,7 @@ import {
 import { timetableService } from '../../services/timetableService';
 import { storageService } from '../../services/storageService';
 import * as XLSX from 'xlsx';
+import { PageHeader } from '../common/UiStates';
 
 export const ReserveManagementView: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'assign' | 'active' | 'fairness'>('assign');
@@ -138,24 +139,15 @@ export const ReserveManagementView: React.FC = () => {
 
   return (
     <div className="space-y-6" dir="rtl">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-        <div>
-          <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-            <Clock className="w-6 h-6 text-indigo-600" />
-            حصص الاحتياطي ومحرك ترشيح البدلاء الذكي
-          </h2>
-          <p className="text-sm text-slate-500 mt-1">
-            نظام عادل خماسي القواعد لترشيح المعلم البديل، منع تجاوز النصاب القانوني (30 حصة)، وتوزيع عادل
-          </p>
-        </div>
-
-        {/* Tab Toggle */}
-        <div className="inline-flex bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-bold">
+      <PageHeader
+        title="حصص الاحتياطي وترشيح البدلاء"
+        description="إسناد الحصص الشاغرة بعدالة مع مراعاة النصاب القانوني وتوزيع أحمال المعلمين."
+        icon={<span className="rounded-xl bg-teal-50 p-2 text-[#008e8b]"><Clock className="h-5 w-5" /></span>}
+        actions={<div className="inline-flex bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-bold">
           <button
             onClick={() => setActiveTab('assign')}
             className={`px-3.5 py-2 rounded-lg transition ${
-              activeTab === 'assign' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600'
+              activeTab === 'assign' ? 'bg-white text-teal-800 ring-1 ring-inset ring-teal-200' : 'text-slate-600'
             }`}
           >
             إسناد بديل جديد
@@ -163,7 +155,7 @@ export const ReserveManagementView: React.FC = () => {
           <button
             onClick={() => setActiveTab('active')}
             className={`px-3.5 py-2 rounded-lg transition ${
-              activeTab === 'active' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600'
+              activeTab === 'active' ? 'bg-white text-teal-800 ring-1 ring-inset ring-teal-200' : 'text-slate-600'
             }`}
           >
             الحصص المسندة ({substitutions.filter(s => s.status !== 'CANCELLED').length})
@@ -171,13 +163,13 @@ export const ReserveManagementView: React.FC = () => {
           <button
             onClick={() => setActiveTab('fairness')}
             className={`px-3.5 py-2 rounded-lg transition ${
-              activeTab === 'fairness' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600'
+              activeTab === 'fairness' ? 'bg-white text-teal-800 ring-1 ring-inset ring-teal-200' : 'text-slate-600'
             }`}
           >
             تقرير عدالة التوزيع
           </button>
-        </div>
-      </div>
+        </div>}
+      />
 
       {successMessage && (
         <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-xl flex items-center gap-3 text-emerald-800 text-sm font-bold">
@@ -190,9 +182,9 @@ export const ReserveManagementView: React.FC = () => {
       {activeTab === 'assign' && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           {/* Form Left / 4 cols */}
-          <div className="lg:col-span-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+          <div className="lg:col-span-4 bg-white p-5 rounded-2xl border border-slate-200 space-y-4">
             <h3 className="font-bold text-sm text-slate-800 border-b pb-2 flex items-center gap-2">
-              <Calendar className="w-4 h-4 text-indigo-600" />
+              <Calendar className="w-4 h-4 text-[#008e8b]" />
               بيانات الحصة الشاغرة (المعلم الغائب)
             </h3>
 
@@ -274,7 +266,7 @@ export const ReserveManagementView: React.FC = () => {
           </div>
 
           {/* Candidates Right / 8 cols */}
-          <div className="lg:col-span-8 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+          <div className="lg:col-span-8 bg-white p-5 rounded-2xl border border-slate-200 space-y-4">
             <div className="flex items-center justify-between border-b pb-2">
               <div>
                 <h3 className="font-bold text-sm text-slate-800 flex items-center gap-2">
@@ -403,7 +395,7 @@ export const ReserveManagementView: React.FC = () => {
 
       {/* TAB 2: ACTIVE SUBSTITUTIONS */}
       {activeTab === 'active' && (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
           <div className="p-4 border-b border-slate-200 flex items-center justify-between">
             <h3 className="font-bold text-sm text-slate-800">سجل حصص الاحتياطي والبدلاء المعتمدة</h3>
             <span className="text-xs text-slate-500 font-mono">
@@ -485,11 +477,11 @@ export const ReserveManagementView: React.FC = () => {
 
       {/* TAB 3: FAIRNESS REPORT */}
       {activeTab === 'fairness' && (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden p-5 space-y-4">
+        <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden p-5 space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b pb-3">
             <div>
               <h3 className="font-bold text-sm text-slate-800 flex items-center gap-2">
-                <Award className="w-4 h-4 text-indigo-600" />
+                <Award className="w-4 h-4 text-[#008e8b]" />
                 تقرير عدالة وتوزيع حصص الاحتياطي التراكمي
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
