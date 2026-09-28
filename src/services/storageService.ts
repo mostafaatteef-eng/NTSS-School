@@ -7512,8 +7512,8 @@ class StorageService {
       if (isTeacher && existing.status === 'Approved') {
         return { success: false, message: 'لا يمكن للمعلم تعديل خطة تم اعتمادها.' };
       }
-      if (isTeacher && existing.status === 'Submitted' && requestedStatus !== 'Submitted') {
-        return { success: false, message: 'الخطة مرسلة للمراجعة ولا يمكن تعديلها حتى تعتمدها الإدارة أو ترفضها.' };
+      if (isTeacher && existing.status === 'Submitted') {
+        return { success: false, message: 'الخطة مرسلة للمراجعة ولا يمكن تعديل محتواها أو حالتها حتى تعتمدها الإدارة أو ترفضها.' };
       }
       if (isCurriculumAdmin && requestedStatus === 'Submitted' && existing.status !== 'Draft' && existing.status !== 'Rejected') {
         return { success: false, message: 'يمكن إرسال المسودة أو الخطة المرفوضة للمراجعة فقط.' };
