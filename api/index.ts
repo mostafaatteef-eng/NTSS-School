@@ -181,7 +181,7 @@ const ntssHandler = {
         ]);
         await clearLoginAttempts(studentLoginKey);
         console.log(JSON.stringify({ marker: 'NTSS_STUDENT_LOGIN_SUCCESS', requestId, userId:user.id, totalMs:Math.round(performance.now()-startedAt) }));
-        return json({ status:'success', sessionToken:token, expiresAt:expiresAt.toISOString(), user:{
+        return json({ status:'success', expiresAt:expiresAt.toISOString(), user:{
           id:user.id, fullName:user.full_name, role:'Student', accessScope:'SELF', schoolId:user.school_id,
           activeSchoolId:user.school_id, allowedSchoolIds:[user.school_id], studentId:user.student_id, studentCode:user.student_code
         }},200,corsOrigin, {'set-cookie': `ntss_session=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=86400`});
@@ -233,7 +233,7 @@ const ntssHandler = {
         const totalMs = Math.round(performance.now() - loginStartedAt);
         await clearLoginAttempts(staffLoginKey);
         console.log(JSON.stringify({ marker: 'NTSS_LOGIN_SUCCESS', requestId, userId: user.id, dbMs, authMs, sessionMs, totalMs }));
-        return json({ status: 'success', sessionToken: token, expiresAt: expiresAt.toISOString(), user: {
+        return json({ status: 'success', expiresAt: expiresAt.toISOString(), user: {
           id: user.id, email: user.email, fullName: user.full_name, role: user.role, accessScope: user.access_scope,
           schoolId: user.school_id || '', activeSchoolId: user.school_id || '', allowedSchoolIds: access.rows.map((x: any) => x.school_id), employeeId: user.employee_id || '', studentId: user.student_id || ''
         }}, 200, corsOrigin, {'set-cookie': `ntss_session=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=86400`});
