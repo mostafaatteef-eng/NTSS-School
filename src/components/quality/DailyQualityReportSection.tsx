@@ -78,7 +78,7 @@ export const DailyQualityReportSection: React.FC<Props> = ({
     // Initialize scores
     const initScores: Record<string, { score: number; notes: string }> = {};
     dailyStandards.forEach((s) => {
-      initScores[s.id] = { score: s.evaluationScale || 4, notes: '' };
+      initScores[s.id] = { score: 0, notes: '' };
     });
     setDailyScores(initScores);
     setIncludeAction(false);
