@@ -128,6 +128,10 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
   };
 
   const handleSaveVisit = (asDraft: boolean) => {
+    if (!asDraft && visitStandards.some((standard) => Number(scores[standard.id]?.score || 0) <= 0)) {
+      alert('لا يمكن تقديم زيارة المعلم للاعتماد قبل استكمال جميع مؤشرات الملاحظة الصفية. يمكنك حفظها كمسودة واستكمالها لاحقاً.');
+      return;
+    }
     if (!teacherName || !subject || !lessonTopic) {
       alert('يرجى تحديد المعلم، المادة، وموضوع الدرس.');
       return;
