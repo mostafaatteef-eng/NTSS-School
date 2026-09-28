@@ -172,6 +172,7 @@ export class CurriculumPlanService {
     targetDate?: string;
     notes?: string;
     user?: User | null;
+    replaceExisting?: boolean;
   }): { success: boolean; distribution?: CurriculumLessonDistribution; message: string } {
     const plan = storageService.getCurriculumPlanById(params.planId);
     if (!plan) return { success: false, message: 'خطة المنهج غير موجودة' };
@@ -245,10 +246,12 @@ export class CurriculumPlanService {
       };
     }
 
-    // Re-linking an item is a replacement: cancel its previous active link(s)
-    // only after the destination slot has passed all validation.
-    for (const previous of previousItemLinks) {
-      storageService.saveCurriculumDistribution({ ...previous, status: 'Cancelled' }, params.user);
+    // Manual re-linking replaces prior active links. Auto-linking can deliberately
+    // keep multiple active slots when estimatedPeriods requires more than one period.
+    if (params.replaceExisting !== false) {
+      for (const previous of previousItemLinks) {
+        storageService.saveCurriculumDistribution({ ...previous, status: 'Cancelled' }, params.user);
+      }
     }
 
     const res = storageService.saveCurriculumDistribution(
@@ -365,6 +368,7 @@ export class CurriculumPlanService {
           planItemId: item.id,
           scheduleItemId: slot.id,
           user: params.user,
+          replaceExisting: false,
         });
         if (result.success) linked++; else skipped++;
       }
