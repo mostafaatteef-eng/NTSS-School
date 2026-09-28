@@ -70,18 +70,23 @@ const upgradeLegacyPassword = async (userId: string, password: string) => {
 };
 
 
-function json(data: unknown, status = 200, origin = '') {
+function json(data: unknown, status = 200, origin = '', extraHeaders: Record<string,string> = {}) {
   return new Response(JSON.stringify(data), { status, headers: {
     'content-type': 'application/json',
     'access-control-allow-origin': origin || '*',
     'access-control-allow-headers': 'content-type, authorization',
     'access-control-allow-methods': 'GET,POST,OPTIONS',
+    'access-control-allow-credentials': 'true',
     vary: 'Origin',
+    ...extraHeaders,
   }});
 }
 
 async function authenticate(request: Request) {
-  const token = String(request.headers.get('authorization') || '').replace(/^Bearer\s+/i, '').trim();
+  const bearer = String(request.headers.get('authorization') || '').replace(/^Bearer\s+/i, '').trim();
+  const cookieHeader = String(request.headers.get('cookie') || '');
+  const cookieToken = cookieHeader.split(';').map(x => x.trim()).find(x => x.startsWith('ntss_session='))?.slice('ntss_session='.length) || '';
+  const token = bearer || decodeURIComponent(cookieToken);
   if (!token) return null;
   const { rows } = await pool.query(
     `SELECT s.id session_id,s.expires_at,s.active_school_id,u.id user_id,u.email,u.full_name,u.role,u.access_scope,u.school_id,u.employee_id,u.student_id
@@ -122,7 +127,7 @@ export default {
     }
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: {
       ...(corsOrigin ? { 'access-control-allow-origin': corsOrigin } : {}),
-      'access-control-allow-headers': 'content-type, authorization', 'access-control-allow-methods': 'GET,POST,OPTIONS', vary: 'Origin'
+      'access-control-allow-headers': 'content-type, authorization', 'access-control-allow-methods': 'GET,POST,OPTIONS', 'access-control-allow-credentials': 'true', vary: 'Origin'
     }});
 
     console.log(JSON.stringify({ marker: 'NTSS_REQ', method: request.method, origin, corsOrigin, url: request.url }));
@@ -178,7 +183,7 @@ export default {
         return json({ status:'success', sessionToken:token, expiresAt:expiresAt.toISOString(), user:{
           id:user.id, fullName:user.full_name, role:'Student', accessScope:'SELF', schoolId:user.school_id,
           activeSchoolId:user.school_id, allowedSchoolIds:[user.school_id], studentId:user.student_id, studentCode:user.student_code
-        }},200,corsOrigin);
+        }},200,corsOrigin, {'set-cookie': `ntss_session=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=86400`});
       }
 
       if (request.method === 'POST' && path === '/login') {
@@ -230,7 +235,7 @@ export default {
         return json({ status: 'success', sessionToken: token, expiresAt: expiresAt.toISOString(), user: {
           id: user.id, email: user.email, fullName: user.full_name, role: user.role, accessScope: user.access_scope,
           schoolId: user.school_id || '', activeSchoolId: user.school_id || '', allowedSchoolIds: access.rows.map((x: any) => x.school_id), employeeId: user.employee_id || '', studentId: user.student_id || ''
-        }}, 200, corsOrigin);
+        }}, 200, corsOrigin, {'set-cookie': `ntss_session=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=86400`});
       }
 
       const user = await authenticate(request);
@@ -283,7 +288,7 @@ export default {
 
       if (request.method === 'POST' && path === '/logout') {
         await pool.query("UPDATE sessions SET status='REVOKED',revoked_at=now() WHERE id=$1 AND user_id=$2 AND status='ACTIVE'", [user.session_id, user.user_id]);
-        return json({ status: 'success', message: 'تم إنهاء الجلسة.' }, 200, corsOrigin);
+        return json({ status: 'success', message: 'تم إنهاء الجلسة.' }, 200, corsOrigin, {'set-cookie':'ntss_session=; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=0'});
       }
 
       if (request.method === 'GET' && path === '/schools') {
@@ -625,26 +630,39 @@ export default {
         if(!weekday||!Number.isInteger(periodNo)||periodNo<=0||!teacherId||!classroom||!subject){
           return json({status:'error',code:'INVALID_SCHEDULE_SLOT',message:'بيانات الحصة غير مكتملة: اليوم والحصة والمعلم والفصل والمادة مطلوبة.'},400,corsOrigin);
         }
-        const teacherOk=await pool.query('SELECT 1 FROM employees WHERE school_id=$1 AND id=$2 AND COALESCE(status,\'Active\')=\'Active\' LIMIT 1',[schoolId,teacherId]);
-        if(!teacherOk.rowCount)return json({status:'error',code:'INVALID_TEACHER_ASSIGNMENT',message:'المعلم المحدد غير موجود أو غير نشط في هذه المدرسة.'},409,corsOrigin);
-        const slotConflicts=await pool.query(
-          `SELECT id,teacher_id,classroom,payload FROM schedule
-           WHERE school_id=$1 AND id<>$2 AND weekday=$3 AND period_no=$4
-             AND (teacher_id=$5 OR classroom=$6 OR NULLIF(payload->>'room','')=NULLIF($7,''))
-           LIMIT 1`,
-          [schoolId,id,weekday,periodNo,teacherId,String(data.classroom||classroom),String(data.roomId||data.room||data.roomNumber||'')]
-        );
-        if(slotConflicts.rowCount)return json({status:'error',code:'SCHEDULE_CONFLICT',message:'يوجد تعارض في نفس اليوم والحصة للمعلم أو الفصل أو القاعة.'},409,corsOrigin);
-        const payload=JSON.stringify({...data,id,schoolId,weekday,periodNo});
-        const saved=await pool.query(
-          `INSERT INTO schedule(id,school_id,academic_year_id,teacher_id,grade,classroom,weekday,period_no,payload)
-           VALUES($1,$2,NULLIF($3,''),NULLIF($4,''),$5,$6,$7,$8,$9::jsonb)
-           ON CONFLICT(id) DO UPDATE SET academic_year_id=EXCLUDED.academic_year_id,teacher_id=EXCLUDED.teacher_id,grade=EXCLUDED.grade,classroom=EXCLUDED.classroom,weekday=EXCLUDED.weekday,period_no=EXCLUDED.period_no,payload=EXCLUDED.payload,updated_at=now()
-           WHERE schedule.school_id=EXCLUDED.school_id RETURNING *`,
-          [id,schoolId,data.academicYearId ? schoolId+'::'+String(data.academicYearId) : '',teacherId,String(data.grade||''),String(data.classroom||classroom),weekday,periodNo,payload]
-        );
-        if(!saved.rowCount)return json({status:'error',code:'SCHEDULE_WRITE_REJECTED'},409,corsOrigin);
-        await pool.query('INSERT INTO audit_logs(school_id,user_id,username,role,action,entity,target_id,details) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[schoolId,user.user_id,user.email,user.role,'UPSERT','SCHEDULE',id,'Saved through Neon API']);
+        const client=await pool.connect();
+        let saved:any;
+        try {
+          await client.query('BEGIN');
+          await client.query('SELECT pg_advisory_xact_lock(hashtext($1))',[schoolId+'|'+weekday+'|'+periodNo]);
+          const collision=await client.query('SELECT school_id FROM schedule WHERE id=$1 AND school_id<>$2',[id,schoolId]);
+          if(collision.rowCount){await client.query('ROLLBACK');return json({status:'error',code:'CROSS_SCHOOL_ID_COLLISION'},409,corsOrigin);}
+          const teacherOk=await client.query('SELECT 1 FROM employees WHERE school_id=$1 AND id=$2 AND COALESCE(status,\'Active\')=\'Active\' LIMIT 1',[schoolId,teacherId]);
+          if(!teacherOk.rowCount){await client.query('ROLLBACK');return json({status:'error',code:'INVALID_TEACHER_ASSIGNMENT',message:'المعلم المحدد غير موجود أو غير نشط في هذه المدرسة.'},409,corsOrigin);}
+          const slotConflicts=await client.query(
+            `SELECT id,teacher_id,classroom,payload FROM schedule
+             WHERE school_id=$1 AND id<>$2 AND weekday=$3 AND period_no=$4
+               AND (teacher_id=$5 OR classroom=$6 OR NULLIF(payload->>'room','')=NULLIF($7,''))
+             LIMIT 1 FOR UPDATE`,
+            [schoolId,id,weekday,periodNo,teacherId,String(data.classroom||classroom),String(data.roomId||data.room||data.roomNumber||'')]
+          );
+          if(slotConflicts.rowCount){await client.query('ROLLBACK');return json({status:'error',code:'SCHEDULE_CONFLICT',message:'يوجد تعارض في نفس اليوم والحصة للمعلم أو الفصل أو القاعة.'},409,corsOrigin);}
+          const payload=JSON.stringify({...data,id,schoolId,weekday,periodNo});
+          saved=await client.query(
+            `INSERT INTO schedule(id,school_id,academic_year_id,teacher_id,grade,classroom,weekday,period_no,payload)
+             VALUES($1,$2,NULLIF($3,''),NULLIF($4,''),$5,$6,$7,$8,$9::jsonb)
+             ON CONFLICT(id) DO UPDATE SET academic_year_id=EXCLUDED.academic_year_id,teacher_id=EXCLUDED.teacher_id,grade=EXCLUDED.grade,classroom=EXCLUDED.classroom,weekday=EXCLUDED.weekday,period_no=EXCLUDED.period_no,payload=EXCLUDED.payload,updated_at=now()
+             WHERE schedule.school_id=EXCLUDED.school_id RETURNING *`,
+            [id,schoolId,data.academicYearId ? schoolId+'::'+String(data.academicYearId) : '',teacherId,String(data.grade||''),String(data.classroom||classroom),weekday,periodNo,payload]
+          );
+          if(!saved.rowCount){await client.query('ROLLBACK');return json({status:'error',code:'SCHEDULE_WRITE_REJECTED'},409,corsOrigin);}
+          await client.query('INSERT INTO audit_logs(school_id,user_id,username,role,action,entity,target_id,details) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[schoolId,user.user_id,user.email,user.role,'UPSERT','SCHEDULE',id,'Saved through Neon API']);
+          await client.query('COMMIT');
+        } catch(error:any) {
+          await client.query('ROLLBACK');
+          if(String(error?.code||'')==='23505') return json({status:'error',code:'SCHEDULE_CONFLICT',message:'يوجد تعارض في نفس اليوم والحصة.'},409,corsOrigin);
+          throw error;
+        } finally { client.release(); }
         const r:any=saved.rows[0];
         return json({status:'success',message:'تم حفظ الحصة في الجدول بنجاح',data:{...(r.payload||{}),id:r.id,schoolId:r.school_id}},200,corsOrigin);
       }
