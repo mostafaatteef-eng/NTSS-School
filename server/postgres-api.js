@@ -90,7 +90,7 @@ app.post('/api/login', async (req,res) => {
   await pool.query('UPDATE users SET last_login_at=now() WHERE id=$1',[user.id]);
   const access=await pool.query('SELECT school_id FROM user_school_access WHERE user_id=$1',[user.id]);
   res.cookie('ntss_session',token,{httpOnly:true,secure:process.env.NODE_ENV==='production',sameSite:'none',maxAge:SESSION_HOURS*3600000,path:'/'});
-  res.json({status:'success',sessionToken:token,expiresAt:expiresAt.toISOString(),user:{id:user.id,email:user.email,fullName:user.full_name,role:user.role,accessScope:user.access_scope,schoolId:user.school_id||'',activeSchoolId:user.school_id||'',allowedSchoolIds:access.rows.map(x=>x.school_id),employeeId:user.employee_id||''}});
+  res.json({status:'success',expiresAt:expiresAt.toISOString(),user:{id:user.id,email:user.email,fullName:user.full_name,role:user.role,accessScope:user.access_scope,schoolId:user.school_id||'',activeSchoolId:user.school_id||'',allowedSchoolIds:access.rows.map(x=>x.school_id),employeeId:user.employee_id||''}});
 });
 
 app.post('/api/validate-session', auth, (req,res) => {
