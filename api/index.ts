@@ -326,6 +326,7 @@ const ntssHandler = {
           const schoolId=String(data.schoolId||'').trim().toUpperCase();
           const password=String(data.password||'');
           if(!studentId||!schoolId||password.length<8)return json({status:'error',code:'INVALID_STUDENT_ACCOUNT'},400,corsOrigin);
+          if(!(await canAccessSchool(user,schoolId)))return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);
           const studentResult=await pool.query('SELECT id,student_code,full_name FROM students WHERE school_id=$1 AND id=$2 LIMIT 1',[schoolId,studentId]);
           if(!studentResult.rowCount)return json({status:'error',code:'STUDENT_NOT_FOUND'},404,corsOrigin);
           const student=studentResult.rows[0];
@@ -343,6 +344,12 @@ const ntssHandler = {
           return json({status:'success',message:'تم تفعيل حساب الطالب.',user:await project(created.rows[0])},201,corsOrigin);
         }
         const targetId=String(data.id||data.userId||'').trim();
+        if(targetId){
+          const targetScope=await pool.query('SELECT id,school_id FROM users WHERE id=$1 LIMIT 1',[targetId]);
+          if(!targetScope.rowCount)return json({status:'error',code:'NOT_FOUND'},404,corsOrigin);
+          const targetSchoolId=String(targetScope.rows[0].school_id||'').trim();
+          if(targetSchoolId && !(await canAccessSchool(user,targetSchoolId)))return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);
+        }
         if(action==='deleteUser'){
           if(!targetId)return json({status:'error',code:'TARGET_REQUIRED'},400,corsOrigin);
           if(targetId===user.user_id)return json({status:'error',code:'SELF_DELETE_DENIED'},409,corsOrigin);
