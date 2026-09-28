@@ -118,7 +118,7 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
       return;
     }
     if (!uploadFile && !rawTextPlan.trim()) {
-      setUploadError('يرجى رفع ملف الخطة (Excel/CSV/PDF/Word) أو لصق نص الخطة');
+      setUploadError('يرجى رفع ملف الخطة (Excel/CSV/TXT) أو لصق نص الخطة');
       return;
     }
 
@@ -137,12 +137,12 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
           const sheet = wb.Sheets[wb.SheetNames[0]];
           const rows = XLSX.utils.sheet_to_json<Record<string, any>>(sheet);
           parsedItems = curriculumPlanService.parseDocumentToPlanItems({ tableRows: rows });
-        } else {
-          // PDF / DOCX or text: simulate Google Drive parsing
+        } else if (ext === 'txt') {
           const text = await uploadFile.text().catch(() => '');
-          parsedItems = curriculumPlanService.parseDocumentToPlanItems({
-            rawText: text || rawTextPlan,
-          });
+          parsedItems = curriculumPlanService.parseDocumentToPlanItems({ rawText: text });
+        } else {
+          setUploadError('صيغة الملف غير مدعومة للاستخراج المباشر. استخدم Excel أو CSV أو TXT، أو الصق محتوى الخطة نصيًا. لا يتم ادعاء قراءة PDF/Word بدون محلل فعلي.');
+          return;
         }
       } else if (rawTextPlan.trim()) {
         parsedItems = curriculumPlanService.parseDocumentToPlanItems({ rawText: rawTextPlan });
@@ -153,10 +153,10 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
         return;
       }
 
-      // Generate opaque Google Drive metadata without exposing raw drive internal URLs
+      // Keep local source-file metadata only; do not claim a Google Drive upload that did not occur.
       const fileMeta = uploadFile
         ? {
-            fileId: `GDRV-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+            fileId: `LOCAL-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
             fileName: uploadFile.name,
             mimeType: uploadFile.type || 'application/octet-stream',
             fileSize: uploadFile.size,
@@ -172,7 +172,7 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
           term: uploadTerm,
           fileMeta,
           items: parsedItems,
-          status: 'Approved',
+          status: 'Draft',
         },
         currentUser
       );
@@ -356,7 +356,7 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
           {selectedPlan?.fileMeta && (
             <div className="flex items-center gap-1 text-[11px] font-semibold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
               <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
-              <span>مرفق بالدرايف: {selectedPlan.fileMeta.fileName}</span>
+              <span>ملف المصدر: {selectedPlan.fileMeta.fileName}</span>
             </div>
           )}
         </div>
