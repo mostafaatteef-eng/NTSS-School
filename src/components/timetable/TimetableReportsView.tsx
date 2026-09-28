@@ -15,6 +15,7 @@ import {
 import { timetableService } from '../../services/timetableService';
 import { storageService } from '../../services/storageService';
 import * as XLSX from 'xlsx';
+import { PageHeader } from '../common/UiStates';
 
 export const TimetableReportsView: React.FC = () => {
   const [activeReportTab, setActiveReportTab] = useState<
@@ -135,19 +136,11 @@ export const TimetableReportsView: React.FC = () => {
 
   return (
     <div className="space-y-6" dir="rtl">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-        <div>
-          <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-            <FileText className="w-6 h-6 text-indigo-600" />
-            مركز تقارير وإحصائيات الجدول المدرسي
-          </h2>
-          <p className="text-sm text-slate-500 mt-1">
-            كشوف مطابقة الخطة الوزارية (39 حصة)، أنصبة المعلمين، عدالة الاحتياطي، والإشراف والتعارضات
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2">
+      <PageHeader
+        title="تقارير وإحصائيات الجدول"
+        description="مطابقة الخطة والأنصبة وعدالة الاحتياطي والإشراف والتعارضات في مركز تقارير واحد."
+        icon={<span className="rounded-xl bg-teal-50 p-2 text-[#008e8b]"><FileText className="h-5 w-5" /></span>}
+        actions={<div className="flex items-center gap-2">
           <button
             onClick={handleExportExcel}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-xl border border-emerald-200 transition"
@@ -162,8 +155,8 @@ export const TimetableReportsView: React.FC = () => {
             <Printer className="w-4 h-4" />
             طباعة الكشف
           </button>
-        </div>
-      </div>
+        </div>}
+      />
 
       {/* Tabs */}
       <div className="flex items-center gap-2 overflow-x-auto pb-1">
@@ -171,7 +164,7 @@ export const TimetableReportsView: React.FC = () => {
           onClick={() => setActiveReportTab('coverage')}
           className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 border ${
             activeReportTab === 'coverage'
-              ? 'bg-indigo-600 text-white border-indigo-600 shadow-md'
+              ? 'bg-teal-50 text-teal-900 border-teal-200 ring-1 ring-inset ring-teal-200'
               : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
           }`}
         >
@@ -183,7 +176,7 @@ export const TimetableReportsView: React.FC = () => {
           onClick={() => setActiveReportTab('loads')}
           className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 border ${
             activeReportTab === 'loads'
-              ? 'bg-indigo-600 text-white border-indigo-600 shadow-md'
+              ? 'bg-teal-50 text-teal-900 border-teal-200 ring-1 ring-inset ring-teal-200'
               : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
           }`}
         >
@@ -195,7 +188,7 @@ export const TimetableReportsView: React.FC = () => {
           onClick={() => setActiveReportTab('reserve_fairness')}
           className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 border ${
             activeReportTab === 'reserve_fairness'
-              ? 'bg-indigo-600 text-white border-indigo-600 shadow-md'
+              ? 'bg-teal-50 text-teal-900 border-teal-200 ring-1 ring-inset ring-teal-200'
               : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
           }`}
         >
@@ -207,7 +200,7 @@ export const TimetableReportsView: React.FC = () => {
           onClick={() => setActiveReportTab('supervision')}
           className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 border ${
             activeReportTab === 'supervision'
-              ? 'bg-indigo-600 text-white border-indigo-600 shadow-md'
+              ? 'bg-teal-50 text-teal-900 border-teal-200 ring-1 ring-inset ring-teal-200'
               : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
           }`}
         >
@@ -219,7 +212,7 @@ export const TimetableReportsView: React.FC = () => {
           onClick={() => setActiveReportTab('conflicts')}
           className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 border ${
             activeReportTab === 'conflicts'
-              ? 'bg-indigo-600 text-white border-indigo-600 shadow-md'
+              ? 'bg-teal-50 text-teal-900 border-teal-200 ring-1 ring-inset ring-teal-200'
               : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
           }`}
         >
@@ -229,14 +222,14 @@ export const TimetableReportsView: React.FC = () => {
       </div>
 
       {/* REPORT CONTENT */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden p-5">
+      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden p-5">
         {/* Coverage Report */}
         {activeReportTab === 'coverage' && (
           <div className="space-y-4">
             <h3 className="font-bold text-sm text-slate-800">تقرير مطابقة الخطة الدراسية لجميع فصول المدرسة</h3>
             <div className="overflow-x-auto">
               <table className="w-full text-right text-xs border-collapse">
-                <thead className="bg-slate-100 text-slate-700 font-bold border-b">
+                <thead className="sticky top-0 z-10 bg-slate-100 text-slate-700 font-bold border-b">
                   <tr>
                     <th className="p-3">الفصل</th>
                     <th className="p-3">المستهدف الوزاري</th>
@@ -281,7 +274,7 @@ export const TimetableReportsView: React.FC = () => {
             <h3 className="font-bold text-sm text-slate-800">تقرير أنصبة المعلمين الأسبوعية وسقف الـ 30 حصة</h3>
             <div className="overflow-x-auto">
               <table className="w-full text-right text-xs border-collapse">
-                <thead className="bg-slate-100 text-slate-700 font-bold border-b">
+                <thead className="sticky top-0 z-10 bg-slate-100 text-slate-700 font-bold border-b">
                   <tr>
                     <th className="p-3">كود المعلم</th>
                     <th className="p-3">اسم المعلم</th>
@@ -330,7 +323,7 @@ export const TimetableReportsView: React.FC = () => {
             <h3 className="font-bold text-sm text-slate-800">تقرير مؤشر عدالة توزيع حصص الاحتياطي التراكمي</h3>
             <div className="overflow-x-auto">
               <table className="w-full text-right text-xs border-collapse">
-                <thead className="bg-slate-100 text-slate-700 font-bold border-b">
+                <thead className="sticky top-0 z-10 bg-slate-100 text-slate-700 font-bold border-b">
                   <tr>
                     <th className="p-3">كود المعلم</th>
                     <th className="p-3">اسم المعلم</th>
@@ -373,7 +366,7 @@ export const TimetableReportsView: React.FC = () => {
             <h3 className="font-bold text-sm text-slate-800">سجل تكليفات الإشراف المدرسي المسجلة</h3>
             <div className="overflow-x-auto">
               <table className="w-full text-right text-xs border-collapse">
-                <thead className="bg-slate-100 text-slate-700 font-bold border-b">
+                <thead className="sticky top-0 z-10 bg-slate-100 text-slate-700 font-bold border-b">
                   <tr>
                     <th className="p-3">التاريخ</th>
                     <th className="p-3">اليوم</th>
@@ -413,7 +406,7 @@ export const TimetableReportsView: React.FC = () => {
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-right text-xs border-collapse">
-                  <thead className="bg-slate-100 text-slate-700 font-bold border-b">
+                  <thead className="sticky top-0 z-10 bg-slate-100 text-slate-700 font-bold border-b">
                     <tr>
                       <th className="p-3">اليوم</th>
                       <th className="p-3">الحصة</th>
