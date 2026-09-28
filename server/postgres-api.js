@@ -51,8 +51,9 @@ const hashToken = (token) => crypto.createHash('sha256').update(token).digest('h
 const randomToken = () => crypto.randomBytes(32).toString('base64url');
 
 async function auth(req, res, next) {
-  const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '') ||
-    String(req.body?.sessionToken || '');
+  const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+  const cookieToken = String(req.headers.cookie || '').split(';').map(x=>x.trim()).find(x=>x.startsWith('ntss_session='))?.slice('ntss_session='.length) || '';
+  const token = bearer || decodeURIComponent(cookieToken) || String(req.body?.sessionToken || '');
   if (!token) return res.status(401).json({ status:'error', code:'AUTH_REQUIRED', message:'Session token required' });
   const { rows } = await pool.query(
     `SELECT s.id AS session_id,s.user_id,s.active_school_id,s.expires_at,u.email,u.full_name,u.role,u.access_scope,u.school_id,u.employee_id,u.is_active,u.status
@@ -88,6 +89,7 @@ app.post('/api/login', async (req,res) => {
   await pool.query('INSERT INTO sessions(id,user_id,token_hash,active_school_id,expires_at) VALUES($1,$2,$3,$4,$5)',[sessionId,user.id,hashToken(token),user.school_id||null,expiresAt]);
   await pool.query('UPDATE users SET last_login_at=now() WHERE id=$1',[user.id]);
   const access=await pool.query('SELECT school_id FROM user_school_access WHERE user_id=$1',[user.id]);
+  res.cookie('ntss_session',token,{httpOnly:true,secure:process.env.NODE_ENV==='production',sameSite:'none',maxAge:SESSION_HOURS*3600000,path:'/'});
   res.json({status:'success',sessionToken:token,expiresAt:expiresAt.toISOString(),user:{id:user.id,email:user.email,fullName:user.full_name,role:user.role,accessScope:user.access_scope,schoolId:user.school_id||'',activeSchoolId:user.school_id||'',allowedSchoolIds:access.rows.map(x=>x.school_id),employeeId:user.employee_id||''}});
 });
 
