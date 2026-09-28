@@ -133,10 +133,10 @@ export const CorrectiveActionsSection: React.FC<Props> = ({
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+      <div className="bg-white p-5 rounded-xl border border-slate-200  flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
           <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-            <CheckSquare className="w-6 h-6 text-indigo-600" />
+            <CheckSquare className="w-6 h-6 text-[#008e8b]" />
             سجل الإجراءات التصحيحية والتحسين (Corrective Actions)
           </h2>
           <p className="text-sm text-slate-500 mt-1">
@@ -148,7 +148,7 @@ export const CorrectiveActionsSection: React.FC<Props> = ({
           <button
             id="create-corrective-action-btn"
             onClick={handleOpenNew}
-            className="px-4 py-2 text-sm bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg flex items-center gap-2 transition-colors shadow-sm"
+            className="px-4 py-2 text-sm bg-[#008e8b] hover:bg-teal-700 text-white font-medium rounded-lg flex items-center gap-2 transition-colors "
           >
             <Plus className="w-4 h-4" />
             تسجيل إجراء تصحيحي جديد
@@ -165,7 +165,7 @@ export const CorrectiveActionsSection: React.FC<Props> = ({
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="px-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 font-medium"
+              className="px-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#008e8b]/30 font-medium"
             >
               <option value="ALL">جميع الحالات</option>
               <option value="OPEN">مفتوح</option>
@@ -180,7 +180,7 @@ export const CorrectiveActionsSection: React.FC<Props> = ({
             <select
               value={priorityFilter}
               onChange={(e) => setPriorityFilter(e.target.value)}
-              className="px-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 font-medium"
+              className="px-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#008e8b]/30 font-medium"
             >
               <option value="ALL">جميع الأولويات</option>
               <option value="LOW">منخفضة</option>
@@ -197,7 +197,7 @@ export const CorrectiveActionsSection: React.FC<Props> = ({
       </div>
 
       {/* Actions Table */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-xl border border-slate-200  overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-right border-collapse text-sm">
             <thead>
@@ -279,7 +279,7 @@ export const CorrectiveActionsSection: React.FC<Props> = ({
                           <div className="flex items-center justify-center gap-2">
                             <button
                               onClick={() => handleOpenEdit(act)}
-                              className="p-1 text-slate-400 hover:text-indigo-600 rounded transition-colors"
+                              className="p-1 text-slate-400 hover:text-[#008e8b] rounded transition-colors"
                               title="تحديث الإجراء"
                             >
                               <Edit2 className="w-4 h-4" />
@@ -309,7 +309,7 @@ export const CorrectiveActionsSection: React.FC<Props> = ({
           <div className="bg-white rounded-2xl max-w-xl w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-slate-200">
             <div className="p-5 border-b border-slate-200 flex items-center justify-between">
               <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <CheckSquare className="w-5 h-5 text-indigo-600" />
+                <CheckSquare className="w-5 h-5 text-[#008e8b]" />
                 {editingAction ? 'تعديل الإجراء التصحيحي' : 'تسجيل إجراء تصحيحي جديد'}
               </h3>
               <button
@@ -331,7 +331,7 @@ export const CorrectiveActionsSection: React.FC<Props> = ({
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   placeholder="مثال: صيانة طفايات الحريق في المعمل المدرسي"
-                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#008e8b]/30"
                 />
               </div>
 
@@ -344,7 +344,7 @@ export const CorrectiveActionsSection: React.FC<Props> = ({
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   placeholder="شرح الإجراء وخطة التنفيذ المتبعة..."
-                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#008e8b]/30"
                 />
               </div>
 
@@ -359,7 +359,7 @@ export const CorrectiveActionsSection: React.FC<Props> = ({
                     value={assignedToName}
                     onChange={(e) => setAssignedToName(e.target.value)}
                     placeholder="اسم الموظف أو رئيس القسم..."
-                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#008e8b]/30"
                   />
                 </div>
 
@@ -372,7 +372,7 @@ export const CorrectiveActionsSection: React.FC<Props> = ({
                     required
                     value={dueDate}
                     onChange={(e) => setDueDate(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#008e8b]/30"
                   />
                 </div>
               </div>
@@ -385,7 +385,7 @@ export const CorrectiveActionsSection: React.FC<Props> = ({
                   <select
                     value={priority}
                     onChange={(e) => setPriority(e.target.value as CorrectiveActionPriority)}
-                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#008e8b]/30"
                   >
                     <option value="LOW">منخفضة</option>
                     <option value="MEDIUM">متوسطة</option>
@@ -401,7 +401,7 @@ export const CorrectiveActionsSection: React.FC<Props> = ({
                   <select
                     value={status}
                     onChange={(e) => setStatus(e.target.value as CorrectiveActionStatus)}
-                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#008e8b]/30"
                   >
                     <option value="OPEN">مفتوح قيد الانتظار</option>
                     <option value="IN_PROGRESS">جاري التنفيذ</option>
@@ -420,7 +420,7 @@ export const CorrectiveActionsSection: React.FC<Props> = ({
                   value={resolutionNotes}
                   onChange={(e) => setResolutionNotes(e.target.value)}
                   placeholder="توثيق نتيجة المتابعة والتأكد من إغلاق الملاحظة نهائياً..."
-                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#008e8b]/30"
                 />
               </div>
 
@@ -434,7 +434,7 @@ export const CorrectiveActionsSection: React.FC<Props> = ({
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 text-sm bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors font-semibold shadow-sm"
+                  className="px-5 py-2 text-sm bg-[#008e8b] hover:bg-teal-700 text-white rounded-lg transition-colors font-semibold "
                 >
                   حفظ الإجراء
                 </button>
