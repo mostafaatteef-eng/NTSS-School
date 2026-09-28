@@ -44,3 +44,61 @@ CREATE TABLE IF NOT EXISTS schedule (
   payload jsonb NOT NULL DEFAULT '{}'::jsonb, updated_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS schedule_school_class_idx ON schedule(school_id,grade,classroom,weekday);
+
+
+-- Curriculum subsystem (additive, canonical schema)
+CREATE TABLE IF NOT EXISTS curriculum_plans (
+  id text PRIMARY KEY,
+  school_id text NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+  academic_year text NOT NULL,
+  term text NOT NULL,
+  grade text NOT NULL,
+  grade_id text,
+  subject text NOT NULL,
+  subject_id text,
+  version integer NOT NULL DEFAULT 1,
+  status text NOT NULL DEFAULT 'Draft',
+  uploaded_by text NOT NULL,
+  uploaded_by_name text,
+  uploaded_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  file_meta jsonb NOT NULL DEFAULT '{}'::jsonb
+);
+CREATE INDEX IF NOT EXISTS curriculum_plans_school_lookup_idx ON curriculum_plans(school_id,academic_year,term,grade,subject,status);
+
+CREATE TABLE IF NOT EXISTS curriculum_plan_items (
+  id text PRIMARY KEY,
+  plan_id text NOT NULL REFERENCES curriculum_plans(id) ON DELETE CASCADE,
+  week integer NOT NULL,
+  unit text,
+  lesson_title text NOT NULL,
+  objectives text,
+  resources text,
+  assessment text,
+  estimated_periods integer NOT NULL DEFAULT 1,
+  notes text,
+  sort_order integer NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS curriculum_plan_items_plan_week_idx ON curriculum_plan_items(plan_id,week,sort_order);
+
+CREATE TABLE IF NOT EXISTS curriculum_distributions (
+  id text PRIMARY KEY,
+  school_id text NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+  plan_id text NOT NULL REFERENCES curriculum_plans(id) ON DELETE CASCADE,
+  plan_item_id text NOT NULL REFERENCES curriculum_plan_items(id) ON DELETE CASCADE,
+  schedule_item_id text,
+  teacher_id text NOT NULL,
+  teacher_name text,
+  grade text NOT NULL,
+  classroom text NOT NULL,
+  subject text NOT NULL,
+  day_of_week text,
+  period_number integer,
+  target_date date,
+  status text NOT NULL DEFAULT 'Planned',
+  notes text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS curriculum_distributions_school_plan_idx ON curriculum_distributions(school_id,plan_id,plan_item_id);
+CREATE INDEX IF NOT EXISTS curriculum_distributions_slot_idx ON curriculum_distributions(school_id,schedule_item_id,status) WHERE schedule_item_id IS NOT NULL;
