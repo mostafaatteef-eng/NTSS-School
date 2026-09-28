@@ -179,7 +179,7 @@ export const SupervisionLocationsView: React.FC = () => {
                   id="locActive"
                   checked={editingLoc.isActive ?? true}
                   onChange={e => setEditingLoc({ ...editingLoc, isActive: e.target.checked })}
-                  className="rounded text-indigo-600 focus:ring-indigo-500 h-4 w-4"
+                  className="rounded text-[#008e8b] focus:ring-[#008e8b]/30 h-4 w-4"
                 />
                 <label htmlFor="locActive" className="text-xs font-semibold text-slate-700">
                   موقع نشط ومعتمد للإشراف
@@ -196,7 +196,7 @@ export const SupervisionLocationsView: React.FC = () => {
               </button>
               <button
                 onClick={handleSave}
-                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-sm"
+                className="px-5 py-2 bg-[#008e8b] hover:bg-teal-700 text-white rounded-lg text-xs font-bold "
               >
                 حفظ الموقع
               </button>
