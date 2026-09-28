@@ -157,18 +157,18 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
     const standardScores: StandardScore[] = (
       Object.entries(scores) as [string, { score: number; notes: string }][]
     ).map(([stdId, data]) => {
-      const std = standards.find((s) => s.id === stdId);
+      const std = visitStandards.find((s) => s.id === stdId);
       return {
         standardId: stdId,
         standardCode: std?.code || '',
         score: data.score,
         maxScore: std?.evaluationScale || 4,
-        weight: std?.weight || 10,
+        weight: std?.weight || 1,
         notes: data.notes,
       };
     });
 
-    const calcResult = storageService.calculateWeightedScore(standardScores, standards);
+    const calcResult = storageService.calculateWeightedScore(standardScores, visitStandards);
 
     const newReport: Partial<TeacherVisitReport> = {
       visitDate,
