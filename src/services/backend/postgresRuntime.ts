@@ -22,10 +22,19 @@ export async function postgresApiRequest<T>(
   if (init.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
   if (sessionToken) headers.set('Authorization', `Bearer ${sessionToken}`);
 
-  const response = await fetch(`${POSTGRES_API_URL}/api${path.startsWith('/') ? path : `/${path}`}`, {
-    ...init,
-    headers,
-  });
-  const body = await response.json().catch(() => ({}));
-  return { ok: response.ok, status: response.status, body };
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    const response = await fetch(`${POSTGRES_API_URL}/api${path.startsWith('/') ? path : `/${path}`}`, {
+      ...init,
+      headers,
+      signal: init.signal || controller.signal,
+    });
+    clearTimeout(timeoutId);
+    const body = await response.json().catch(() => ({}));
+    return { ok: response.ok, status: response.status, body };
+  } catch (error) {
+    const code = error instanceof DOMException && error.name === 'AbortError' ? 'POSTGRES_API_TIMEOUT' : 'POSTGRES_API_UNREACHABLE';
+    return { ok: false, status: 0, body: { status: 'error', code } };
+  }
 }
