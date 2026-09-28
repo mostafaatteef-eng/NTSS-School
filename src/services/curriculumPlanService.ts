@@ -158,7 +158,7 @@ export class CurriculumPlanService {
     return allPlans.filter(plan => {
       const planSub = plan.subject.trim().toLowerCase();
       const planGrade = plan.grade.trim().toLowerCase();
-      return assignedSubjects.has(planSub) || assignedGrades.has(planGrade);
+      return assignedSubjects.has(planSub) && assignedGrades.has(planGrade);
     });
   }
 
@@ -183,7 +183,22 @@ export class CurriculumPlanService {
     const lesson = schedule.find(s => s.id === params.scheduleItemId);
     if (!lesson) return { success: false, message: 'حصة الجدول المحددة غير موجودة' };
 
-    const teacherId = lesson.teacherId || params.user?.employeeId || params.user?.id || 'EMP-001';
+    const normalize = (value?: string) => String(value || '').trim().toLowerCase();
+    if (normalize(lesson.subject) !== normalize(plan.subject) || normalize(lesson.grade) !== normalize(plan.grade)) {
+      return { success: false, message: 'لا يمكن ربط الخطة بهذه الحصة: المادة أو الصف لا يطابقان خطة المنهج.' };
+    }
+    if (params.user?.schoolId && plan.schoolId && params.user.schoolId !== plan.schoolId) {
+      return { success: false, message: 'لا يمكن ربط خطة تابعة لمدرسة أخرى.' };
+    }
+    if (params.user?.role === 'Teacher') {
+      const actorTeacherId = params.user.employeeId || params.user.id;
+      if (!lesson.teacherId || lesson.teacherId !== actorTeacherId) {
+        return { success: false, message: 'لا يمكن للمعلم ربط الخطة بحصة مسندة إلى معلم آخر.' };
+      }
+    }
+
+    const teacherId = lesson.teacherId || params.user?.employeeId || params.user?.id;
+    if (!teacherId) return { success: false, message: 'لا يمكن ربط الخطة بحصة بدون معلم مسند.' };
     const teacherName = lesson.teacherName || params.user?.fullName || params.user?.username;
 
     // Check if item is already linked to this schedule slot
