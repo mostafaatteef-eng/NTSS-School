@@ -7450,6 +7450,43 @@ class StorageService {
   // 17. CURRICULUM PLANS & LESSON DISTRIBUTION (PHASE 4)
   // ============================================================================
 
+  public async getCurriculumPlansAuthoritative(user?: User | null): Promise<{ success: boolean; plans?: CurriculumMasterPlan[]; message?: string }> {
+    const caller = user || this.getCurrentUser();
+    if (!caller?.sessionToken || !this.isAuthenticated(caller)) return { success: false, message: 'يجب تسجيل الدخول لتحميل خطط المنهج.' };
+    if (!isPostgresBackendEnabled()) return { success: true, plans: this.getCurriculumPlans(caller.schoolId) };
+    const schoolId = (caller.activeSchoolId || caller.schoolId || this.getActiveSchoolId()).trim();
+    if (!schoolId) return { success: false, message: 'يرجى اختيار المدرسة أولاً.' };
+    const pg = await postgresApiRequest<any>('/curriculum/manage', caller.sessionToken, { method: 'POST', body: JSON.stringify({ action: 'getPlans', schoolId }) });
+    const res = pg.body || {};
+    if (!pg.ok || res.status !== 'success') return { success: false, message: res.message || 'تعذر تحميل خطط المنهج من PostgreSQL.' };
+    const plans = Array.isArray(res.data) ? res.data as CurriculumMasterPlan[] : [];
+    const raw = localStorage.getItem(STORAGE_KEYS.CURRICULUM_PLANS);
+    let all: CurriculumMasterPlan[] = []; try { all = raw ? JSON.parse(raw) : []; } catch {}
+    localStorage.setItem(STORAGE_KEYS.CURRICULUM_PLANS, JSON.stringify([...all.filter(p => p.schoolId !== schoolId), ...plans]));
+    return { success: true, plans };
+  }
+
+  public async saveCurriculumPlanAuthoritative(
+    plan: Partial<CurriculumMasterPlan> & { grade: string; subject: string },
+    user?: User | null
+  ): Promise<{ success: boolean; plan?: CurriculumMasterPlan; message: string }> {
+    const caller = user || this.getCurrentUser();
+    if (!isPostgresBackendEnabled()) return this.saveCurriculumPlan(plan, caller);
+    if (!caller?.sessionToken || !this.isAuthenticated(caller)) return { success: false, message: 'يجب تسجيل الدخول لحفظ خطة المنهج.' };
+    const schoolId = (plan.schoolId || caller.activeSchoolId || caller.schoolId || this.getActiveSchoolId()).trim();
+    const pg = await postgresApiRequest<any>('/curriculum/manage', caller.sessionToken, { method: 'POST', body: JSON.stringify({ action: 'savePlan', schoolId, data: plan }) });
+    const res = pg.body || {};
+    if (!pg.ok || res.status !== 'success') return { success: false, message: res.message || 'رفض الخادم حفظ خطة المنهج.' };
+    const saved = res.data as CurriculumMasterPlan;
+    const local = this.saveCurriculumPlan(saved, caller);
+    if (!local.success) {
+      const raw = localStorage.getItem(STORAGE_KEYS.CURRICULUM_PLANS); let all: CurriculumMasterPlan[]=[]; try { all=raw?JSON.parse(raw):[]; } catch {}
+      const idx=all.findIndex(p=>p.id===saved.id&&p.schoolId===saved.schoolId); if(idx>=0)all[idx]=saved;else all.unshift(saved);
+      localStorage.setItem(STORAGE_KEYS.CURRICULUM_PLANS,JSON.stringify(all)); this.notifyChange();
+    }
+    return { success: true, plan: saved, message: res.message || 'تم حفظ خطة المنهج في PostgreSQL.' };
+  }
+
   public getCurriculumPlans(schoolId?: string): CurriculumMasterPlan[] {
     const raw = localStorage.getItem(STORAGE_KEYS.CURRICULUM_PLANS);
     if (!raw) return [];
