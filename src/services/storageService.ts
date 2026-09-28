@@ -7558,9 +7558,11 @@ class StorageService {
   ): { success: boolean; data?: CurriculumLessonDistribution; message: string } {
     const activeSchoolId = (dist.schoolId || user?.schoolId || this.getActiveSchoolId()).trim();
     const now = getCairoNowISO();
-    const list = this.getCurriculumDistributions();
+    const raw = localStorage.getItem(STORAGE_KEYS.CURRICULUM_DISTRIBUTIONS);
+    let list: CurriculumLessonDistribution[] = [];
+    try { list = raw ? JSON.parse(raw) : []; } catch { list = []; }
 
-    const idx = list.findIndex(d => d.id === dist.id);
+    const idx = list.findIndex(d => d.id === dist.id && d.schoolId === activeSchoolId);
 
     const record: CurriculumLessonDistribution = {
       id: dist.id || `DIST-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
@@ -7599,7 +7601,11 @@ class StorageService {
   }
 
   public deleteCurriculumDistribution(id: string): { success: boolean } {
-    const list = this.getCurriculumDistributions().filter(d => d.id !== id);
+    const activeSchoolId = this.getActiveSchoolId().trim();
+    const raw = localStorage.getItem(STORAGE_KEYS.CURRICULUM_DISTRIBUTIONS);
+    let all: CurriculumLessonDistribution[] = [];
+    try { all = raw ? JSON.parse(raw) : []; } catch { all = []; }
+    const list = all.filter(d => !(d.id === id && (!activeSchoolId || d.schoolId === activeSchoolId)));
     localStorage.setItem(STORAGE_KEYS.CURRICULUM_DISTRIBUTIONS, JSON.stringify(list));
     this.notifyChange();
     return { success: true };
