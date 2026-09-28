@@ -665,22 +665,28 @@ const ntssHandler = {
         const records = Array.isArray(body.records) ? body.records : [];
         if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || records.length > 500) return json({ status: 'error', code: 'INVALID_BATCH' }, 400, corsOrigin);
         const canonical: any[] = [];
+        const normalizedIds = records.map((rec: any) => String((isStudent ? rec.studentId : rec.employeeId) || '').trim());
+        if (normalizedIds.some((id: string) => !id)) return json({ status: 'error', code: 'INVALID_BATCH' }, 400, corsOrigin);
+        const requestedIds = [...new Set(normalizedIds)];
+        const personTable = isStudent ? 'students' : 'employees';
+        const people = requestedIds.length
+          ? await pool.query(`SELECT id,full_name FROM ${personTable} WHERE school_id=$1 AND id = ANY($2::text[])`, [schoolId, requestedIds])
+          : { rows: [] };
+        const namesById = new Map(people.rows.map((row: any) => [String(row.id), String(row.full_name || '')]));
+        const missingId = requestedIds.find(id => !namesById.has(id));
+        if (missingId) return json({ status:'error', code:isStudent?'STUDENT_NOT_FOUND':'EMPLOYEE_NOT_FOUND', [isStudent?'studentId':'employeeId']:missingId },404,corsOrigin);
         for (const rec of records) {
           if (isStudent) {
             const studentId = String(rec.studentId || '').trim();
-            const exists = await pool.query('SELECT full_name FROM students WHERE school_id=$1 AND id=$2', [schoolId,studentId]);
-            if (!exists.rowCount) return json({ status:'error', code:'STUDENT_NOT_FOUND', studentId },404,corsOrigin);
             const payload = JSON.stringify({ lateMinutes:Number(rec.lateMinutes||0), notes:String(rec.notes||'') });
             const saved = await pool.query(
               `INSERT INTO student_attendance(school_id,student_id,attendance_date,status,payload) VALUES($1,$2,$3::date,$4,$5::jsonb)
                ON CONFLICT(school_id,student_id,attendance_date) DO UPDATE SET status=EXCLUDED.status,payload=EXCLUDED.payload RETURNING id,student_id,attendance_date,status,payload`,
               [schoolId,studentId,date,String(rec.status||'لم يسجل'),payload]
             );
-            const row=saved.rows[0]; canonical.push({ id:String(row.id),schoolId,studentId:row.student_id,studentName:exists.rows[0].full_name,date:String(row.attendance_date).slice(0,10),status:row.status,...(row.payload||{}) });
+            const row=saved.rows[0]; canonical.push({ id:String(row.id),schoolId,studentId:row.student_id,studentName:namesById.get(studentId)||'',date:String(row.attendance_date).slice(0,10),status:row.status,...(row.payload||{}) });
           } else {
             const employeeId = String(rec.employeeId || '').trim();
-            const exists = await pool.query('SELECT full_name FROM employees WHERE school_id=$1 AND id=$2', [schoolId,employeeId]);
-            if (!exists.rowCount) return json({ status:'error', code:'EMPLOYEE_NOT_FOUND', employeeId },404,corsOrigin);
             const payload = JSON.stringify({ notes:String(rec.notes||'') });
             const checkIn = String(rec.checkIn||'').trim();
             const checkOut = String(rec.checkOut||'').trim();
@@ -691,7 +697,7 @@ const ntssHandler = {
                RETURNING id,employee_id,attendance_date,status,check_in,check_out,payload`,
               [schoolId,employeeId,date,String(rec.status||''),checkIn,checkOut,payload]
             );
-            const row=saved.rows[0]; canonical.push({ id:String(row.id),schoolId,employeeId:row.employee_id,employeeName:exists.rows[0].full_name,date:String(row.attendance_date).slice(0,10),status:row.status,checkIn:checkIn,checkOut:checkOut,...(row.payload||{}) });
+            const row=saved.rows[0]; canonical.push({ id:String(row.id),schoolId,employeeId:row.employee_id,employeeName:namesById.get(employeeId)||'',date:String(row.attendance_date).slice(0,10),status:row.status,checkIn:checkIn,checkOut:checkOut,...(row.payload||{}) });
           }
         }
         await pool.query('INSERT INTO audit_logs(school_id,user_id,username,role,action,entity,details) VALUES($1,$2,$3,$4,$5,$6,$7)', [schoolId,user.user_id,user.email,user.role,'BATCH_UPSERT',isStudent?'STUDENT_ATTENDANCE':'ATTENDANCE',`Saved ${canonical.length} records for ${date}`]);
