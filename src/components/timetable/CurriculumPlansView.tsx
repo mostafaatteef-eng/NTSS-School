@@ -259,13 +259,17 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
     const dist = distributions.find(d => d.id === distributionId);
     if (!dist) return;
 
-    storageService.saveCurriculumDistribution(
+    const result = storageService.saveCurriculumDistribution(
       {
         ...dist,
         status: newStatus,
       },
       currentUser
     );
+    if (!result.success) {
+      alert(result.message);
+      return;
+    }
     loadData();
   };
 
