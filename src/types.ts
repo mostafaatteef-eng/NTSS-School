@@ -105,7 +105,7 @@ export function normalizeStaffRole(role: string): StaffRole {
   if (r === 'Parent') {
     throw new Error('ACCOUNT_ROLE_NOT_ALLOWED');
   }
-  if (r === 'Student') return 'Student' as UserRole;
+  if (r === 'Student') throw new Error('ACCOUNT_ROLE_NOT_STAFF');
   if (r === 'SystemAdmin') return 'SystemAdmin';
   if (r === 'SchoolAdmin') return 'SchoolAdmin';
   if (r === 'Admin') return 'Admin';
