@@ -700,6 +700,8 @@ class StorageService {
     if (user && this.isAuthenticated(user)) {
       const sanitizedUser: User = { ...user };
       delete (sanitizedUser as any).password;
+      // PostgreSQL sessions are carried by Secure HttpOnly cookies. Never persist their bearer token.
+      if (isPostgresBackendEnabled()) delete (sanitizedUser as any).sessionToken;
       localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(sanitizedUser));
       localStorage.removeItem('ntss_current_user');
       this.logAudit('LOGIN', 'AUTH', `تسجيل دخول للمستخدم: ${sanitizedUser.fullName} (@${sanitizedUser.username})`);
@@ -741,7 +743,7 @@ class StorageService {
       return false;
     }
 
-    const token = targetUser.sessionToken || '';
+    const token = targetUser.sessionToken || (isPostgresBackendEnabled() ? 'cookie-session' : '');
     const now = Date.now();
     const cached = this.sessionValidationCache[token];
     if (cached && now - cached.timestamp < StorageService.SESSION_VALIDATION_CACHE_MS) {
@@ -754,7 +756,7 @@ class StorageService {
         const response = await this.postgresRequest('/api/validate-session', { method: 'POST', body: '{}' });
         const result = await response.json().catch(() => ({}));
         if (response.ok && result.status === 'success' && result.valid === true) {
-          if (result.user) this.setCurrentUser({ ...targetUser, ...result.user, sessionToken: targetUser.sessionToken, sessionExpiresAt: result.expiresAt || targetUser.sessionExpiresAt });
+          if (result.user) this.setCurrentUser({ ...targetUser, ...result.user, sessionExpiresAt: result.expiresAt || targetUser.sessionExpiresAt });
           this.sessionValidationCache[token] = { result: true, timestamp: now };
           return true;
         }
@@ -966,13 +968,13 @@ class StorageService {
         body:JSON.stringify({ studentCode:code, password:secret }),
       });
       const result = await response.json().catch(() => ({}));
-      if (!response.ok || result.status !== 'success' || !result.user || !result.sessionToken) {
+      if (!response.ok || result.status !== 'success' || !result.user) {
         return { success:false, code:result.code || 'INVALID_CREDENTIALS', message:result.message || 'كود الطالب أو كلمة المرور غير صحيحة.' };
       }
-      const userWithToken: User = { ...result.user, role:'Student', accessScope:'SELF', sessionToken:String(result.sessionToken).trim(), sessionExpiresAt:result.expiresAt };
+      const userWithToken: User = { ...result.user, role:'Student', accessScope:'SELF', sessionExpiresAt:result.expiresAt };
       this.setActiveSchoolId(userWithToken.schoolId || '');
       this.setCurrentUser(userWithToken);
-      this.sessionValidationCache[userWithToken.sessionToken || ''] = { result:true, timestamp:Date.now() };
+      this.sessionValidationCache['cookie-session'] = { result:true, timestamp:Date.now() };
       return { success:true, user:userWithToken };
     } catch {
       return { success:false, code:'AUTH_SERVICE_UNAVAILABLE', message:'تعذر الاتصال بخادم تسجيل دخول الطلاب.' };
@@ -1002,19 +1004,18 @@ class StorageService {
           body: JSON.stringify({ email: cleanEmail, password: cleanPassword }),
         });
         const result = await response.json().catch(() => ({}));
-        if (!response.ok || result.status !== 'success' || !result.user || !result.sessionToken) {
+        if (!response.ok || result.status !== 'success' || !result.user) {
           return { success: false, code: result.code || 'INVALID_CREDENTIALS', message: result.message || 'بيانات الدخول غير صحيحة.' };
         }
         const userWithToken: User = {
           ...result.user,
           email: cleanEmail,
           role: normalizeStaffRole(result.user.role),
-          sessionToken: String(result.sessionToken).trim(),
           sessionExpiresAt: result.expiresAt,
         };
         if (userWithToken.activeSchoolId) this.setActiveSchoolId(userWithToken.activeSchoolId);
         this.setCurrentUser(userWithToken);
-        this.sessionValidationCache[userWithToken.sessionToken || ''] = { result: true, timestamp: Date.now() };
+        this.sessionValidationCache['cookie-session'] = { result: true, timestamp: Date.now() };
         return { success: true, user: userWithToken };
       } catch (err: any) {
         return { success: false, code: 'AUTH_SERVICE_UNAVAILABLE', message: 'تعذر الاتصال بخادم PostgreSQL: ' + (err?.message || 'خطأ في الشبكة') };
