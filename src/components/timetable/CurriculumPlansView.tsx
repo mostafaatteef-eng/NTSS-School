@@ -327,7 +327,7 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
           {canUploadPlan ? (
             <button
               onClick={() => setIsUploadModalOpen(true)}
-              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-[#008e8b] hover:bg-teal-700 rounded-xl shadow-sm transition"
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-[#008e8b] hover:bg-teal-700 rounded-xl  transition"
             >
               <Plus className="w-4 h-4" /> {isTeacher ? 'رفع خطة منهج جديدة' : 'رفع وتوثيق خطة منهج جديدة'}
             </button>
@@ -383,7 +383,7 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
               الحالة: {selectedPlan.status === 'Draft' ? 'مسودة' : selectedPlan.status === 'Submitted' ? 'قيد المراجعة' : selectedPlan.status === 'Approved' ? 'معتمدة' : selectedPlan.status === 'Rejected' ? 'مرفوضة' : 'مؤرشفة'}
             </span>
             {currentUser?.role === 'Teacher' && (selectedPlan.status === 'Draft' || selectedPlan.status === 'Rejected') && (
-              <button onClick={() => handlePlanWorkflowStatus('Submitted')} className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white font-bold">
+              <button onClick={() => handlePlanWorkflowStatus('Submitted')} className="px-3 py-1.5 rounded-lg bg-[#008e8b] text-white font-bold">
                 إرسال للمراجعة
               </button>
             )}
@@ -430,7 +430,7 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
                     key={week}
                     type="button"
                     onClick={() => handleAutoLinkWeek(week)}
-                    className="px-3 py-1.5 rounded-lg border border-indigo-200 bg-indigo-50 text-indigo-700 text-xs font-bold hover:bg-indigo-100"
+                    className="px-3 py-1.5 rounded-lg border border-teal-200 bg-teal-50 text-teal-800 text-xs font-bold hover:bg-teal-100"
                   >
                     ربط الأسبوع {week} تلقائيًا
                   </button>
@@ -461,7 +461,7 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
 
                   return (
                     <tr key={item.id} className="hover:bg-slate-50/60 transition">
-                      <td className="p-3 font-bold font-mono text-indigo-700">
+                      <td className="p-3 font-bold font-mono text-teal-800">
                         الأسبوع {item.week}
                       </td>
                       <td className="p-3 font-semibold text-slate-700">{item.unit}</td>
@@ -524,7 +524,7 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
                                 ? 'bg-amber-50 text-amber-800 border-amber-300'
                                 : linkedDist!.status === 'Cancelled'
                                 ? 'bg-rose-50 text-rose-800 border-rose-300'
-                                : 'bg-indigo-50 text-indigo-800 border-indigo-300'
+                                : 'bg-teal-50 text-teal-900 border-teal-300'
                             }`}>
                               {linkedDist!.status === 'Delivered'
                                 ? 'تم التدريس'
@@ -550,7 +550,7 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
                                     ? 'bg-amber-50 text-amber-800 border-amber-300'
                                     : linkedDist!.status === 'Cancelled'
                                       ? 'bg-rose-50 text-rose-800 border-rose-300'
-                                      : 'bg-indigo-50 text-indigo-800 border-indigo-300'
+                                      : 'bg-teal-50 text-teal-900 border-teal-300'
                               }`}
                             >
                               <option value="Planned">مجدول (Planned)</option>
@@ -571,12 +571,12 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
                         ) : (
                           <div className="flex flex-col items-center gap-1">
                             {linkedDists.length === 0 ? (
-                              <button type="button" onClick={() => setLinkingItem({ plan: selectedPlan, item })} className="px-3 py-1.5 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-xl border border-indigo-200 transition">
+                              <button type="button" onClick={() => setLinkingItem({ plan: selectedPlan, item })} className="px-3 py-1.5 text-xs font-bold text-teal-800 bg-teal-50 hover:bg-teal-100 rounded-xl border border-teal-200 transition">
                                 ربط بحصة
                               </button>
                             ) : (
                               linkedDists.map(dist => (
-                                <button key={dist.id} type="button" onClick={() => { setSelectedScheduleId(dist.scheduleItemId || ''); setTargetDate(dist.targetDate || ''); setLinkNotes(dist.notes || ''); setLinkingItem({ plan: selectedPlan, item, distributionId: dist.id }); }} className="px-2 py-1 text-[10px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg border border-indigo-200 transition">
+                                <button key={dist.id} type="button" onClick={() => { setSelectedScheduleId(dist.scheduleItemId || ''); setTargetDate(dist.targetDate || ''); setLinkNotes(dist.notes || ''); setLinkingItem({ plan: selectedPlan, item, distributionId: dist.id }); }} className="px-2 py-1 text-[10px] font-bold text-teal-800 bg-teal-50 hover:bg-teal-100 rounded-lg border border-teal-200 transition">
                                   تعديل {dist.dayOfWeek} ح{dist.periodNumber}
                                 </button>
                               ))
@@ -686,7 +686,7 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
                 </label>
                 <div
                   onClick={() => fileInputRef.current?.click()}
-                  className="border-2 border-dashed border-slate-300 hover:border-indigo-500 rounded-2xl p-5 text-center cursor-pointer bg-slate-50 hover:bg-white transition"
+                  className="border-2 border-dashed border-slate-300 hover:border-[#008e8b] rounded-2xl p-5 text-center cursor-pointer bg-slate-50 hover:bg-white transition"
                 >
                   <input
                     ref={fileInputRef}
@@ -730,7 +730,7 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
                 <button
                   type="submit"
                   disabled={isUploading}
-                  className="px-5 py-2 font-bold bg-[#008e8b] hover:bg-teal-700 text-white rounded-xl shadow-sm transition"
+                  className="px-5 py-2 font-bold bg-[#008e8b] hover:bg-teal-700 text-white rounded-xl  transition"
                 >
                   {isUploading ? 'جارِ الحفظ والتحليل...' : 'اعتماد وتوثيق الخطة'}
                 </button>
@@ -758,11 +758,11 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
               </button>
             </div>
 
-            <div className="bg-indigo-50 p-3 rounded-xl border border-indigo-200 space-y-1">
-              <div className="font-bold text-indigo-950">
+            <div className="bg-teal-50 p-3 rounded-xl border border-teal-200 space-y-1">
+              <div className="font-bold text-teal-950">
                 موضوع الدرس: {linkingItem.item.lessonTitle}
               </div>
-              <div className="text-[11px] text-indigo-800">
+              <div className="text-[11px] text-teal-900">
                 الأسبوع {linkingItem.item.week} • {linkingItem.item.unit}
               </div>
             </div>
@@ -818,7 +818,7 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
                 <button
                   type="submit"
                   disabled={!selectedScheduleId}
-                  className="px-5 py-2 font-bold bg-[#008e8b] hover:bg-teal-700 disabled:bg-slate-300 text-white rounded-xl shadow-sm transition"
+                  className="px-5 py-2 font-bold bg-[#008e8b] hover:bg-teal-700 disabled:bg-slate-300 text-white rounded-xl  transition"
                 >
                   تأكيد الربط بالحصة
                 </button>
