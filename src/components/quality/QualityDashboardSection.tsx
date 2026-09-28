@@ -51,7 +51,7 @@ export const QualityDashboardSection: React.FC<Props> = ({
       <div className="bg-gradient-to-r from-indigo-900 via-indigo-800 to-purple-900 text-white p-6 rounded-2xl shadow-lg relative overflow-hidden">
         <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
           <div>
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/30 text-indigo-200 text-xs font-semibold backdrop-blur-sm border border-indigo-400/20 mb-2">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#008e8b]/30 text-indigo-200 text-xs font-semibold backdrop-blur-sm border border-indigo-400/20 mb-2">
               <Sparkles className="w-3.5 h-3.5 text-amber-300" />
               نظام إدارة وضمان الجودة المدرسية الشاملة
             </div>
@@ -78,21 +78,21 @@ export const QualityDashboardSection: React.FC<Props> = ({
       {/* KPI Stats Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Daily Reports KPI */}
-        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+        <div className="bg-white p-5 rounded-xl border border-slate-200  flex items-center justify-between">
           <div>
             <span className="text-xs font-bold text-slate-500 block mb-1">التقارير اليومية</span>
             <div className="text-2xl font-black text-slate-900">{metrics.totalDailyReports}</div>
-            <div className="text-xs text-indigo-600 font-semibold mt-1 flex items-center gap-1">
+            <div className="text-xs text-[#008e8b] font-semibold mt-1 flex items-center gap-1">
               <span>المتوسط: {metrics.averageDailyScore.toFixed(1)}%</span>
             </div>
           </div>
-          <div className="w-12 h-12 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+          <div className="w-12 h-12 rounded-xl bg-teal-50 text-[#008e8b] flex items-center justify-center">
             <FileText className="w-6 h-6" />
           </div>
         </div>
 
         {/* Teacher Visits KPI */}
-        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+        <div className="bg-white p-5 rounded-xl border border-slate-200  flex items-center justify-between">
           <div>
             <span className="text-xs font-bold text-slate-500 block mb-1">الزيارات الصفية</span>
             <div className="text-2xl font-black text-slate-900">{metrics.totalTeacherVisits}</div>
@@ -106,7 +106,7 @@ export const QualityDashboardSection: React.FC<Props> = ({
         </div>
 
         {/* Comprehensive Evals KPI */}
-        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+        <div className="bg-white p-5 rounded-xl border border-slate-200  flex items-center justify-between">
           <div>
             <span className="text-xs font-bold text-slate-500 block mb-1">التقييم الشامل</span>
             <div className="text-2xl font-black text-slate-900">{metrics.totalComprehensiveEvaluations}</div>
@@ -120,7 +120,7 @@ export const QualityDashboardSection: React.FC<Props> = ({
         </div>
 
         {/* Corrective Actions KPI */}
-        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+        <div className="bg-white p-5 rounded-xl border border-slate-200  flex items-center justify-between">
           <div>
             <span className="text-xs font-bold text-slate-500 block mb-1">الإجراءات التصحيحية</span>
             <div className="text-2xl font-black text-slate-900">
@@ -145,10 +145,10 @@ export const QualityDashboardSection: React.FC<Props> = ({
 
       {/* Domain Performance Breakdown */}
       {metrics.domainAverages && metrics.domainAverages.length > 0 && (
-        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4">
+        <div className="bg-white p-5 rounded-xl border border-slate-200  space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-              <BarChart2 className="w-5 h-5 text-indigo-600" />
+              <BarChart2 className="w-5 h-5 text-[#008e8b]" />
               مؤشرات الأداء حسب مجالات معايير إتقان
             </h3>
             <span className="text-xs text-slate-400">
@@ -209,15 +209,15 @@ export const QualityDashboardSection: React.FC<Props> = ({
       {/* Two Columns: Recent Visits & Active Corrective Actions */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Recent Teacher Visits */}
-        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4">
+        <div className="bg-white p-5 rounded-xl border border-slate-200  space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-              <UserCheck className="w-5 h-5 text-indigo-600" />
+              <UserCheck className="w-5 h-5 text-[#008e8b]" />
               أحدث الزيارات الصفية المنفذة
             </h3>
             <button
               onClick={() => onNavigateTab('visits')}
-              className="text-xs text-indigo-600 hover:text-indigo-800 font-bold"
+              className="text-xs text-[#008e8b] hover:text-teal-900 font-bold"
             >
               عرض الكل ({teacherVisits.length})
             </button>
@@ -260,7 +260,7 @@ export const QualityDashboardSection: React.FC<Props> = ({
         </div>
 
         {/* Priority Corrective Actions */}
-        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4">
+        <div className="bg-white p-5 rounded-xl border border-slate-200  space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
               <CheckSquare className="w-5 h-5 text-amber-600" />
@@ -268,7 +268,7 @@ export const QualityDashboardSection: React.FC<Props> = ({
             </h3>
             <button
               onClick={() => onNavigateTab('actions')}
-              className="text-xs text-indigo-600 hover:text-indigo-800 font-bold"
+              className="text-xs text-[#008e8b] hover:text-teal-900 font-bold"
             >
               سجل الإجراءات ({actions.length})
             </button>
