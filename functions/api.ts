@@ -383,12 +383,25 @@ export default {
         if(action==='deleteUser'){
           if(!targetId)return json({status:'error',code:'TARGET_REQUIRED'},400,corsOrigin);
           if(targetId===user.user_id)return json({status:'error',code:'SELF_DELETE_DENIED'},409,corsOrigin);
-          const admins=await pool.query("SELECT count(*)::int n FROM users WHERE role='SystemAdmin' AND is_active=true AND status='Active'");
-          const target=await pool.query('SELECT role FROM users WHERE id=$1',[targetId]);
-          if(!target.rowCount)return json({status:'error',code:'NOT_FOUND'},404,corsOrigin);
-          if(target.rows[0].role==='SystemAdmin' && Number(admins.rows[0].n)<=1)return json({status:'error',code:'LAST_SYSTEM_ADMIN_PROTECTED'},409,corsOrigin);
-          await pool.query('DELETE FROM users WHERE id=$1',[targetId]);
-          return json({status:'success',message:'تم حذف الحساب.'},200,corsOrigin);
+          const client=await pool.connect();
+          try {
+            await client.query('BEGIN');
+            const target=await client.query('SELECT role FROM users WHERE id=$1 FOR UPDATE',[targetId]);
+            if(!target.rowCount){ await client.query('ROLLBACK'); return json({status:'error',code:'NOT_FOUND'},404,corsOrigin); }
+            if(target.rows[0].role==='SystemAdmin'){
+              await client.query("LOCK TABLE users IN SHARE ROW EXCLUSIVE MODE");
+              const admins=await client.query("SELECT count(*)::int n FROM users WHERE role='SystemAdmin' AND is_active=true AND status='Active'");
+              if(Number(admins.rows[0].n)<=1){ await client.query('ROLLBACK'); return json({status:'error',code:'LAST_SYSTEM_ADMIN_PROTECTED'},409,corsOrigin); }
+            }
+            await client.query('DELETE FROM users WHERE id=$1',[targetId]);
+            await client.query('COMMIT');
+            return json({status:'success',message:'تم حذف الحساب.'},200,corsOrigin);
+          } catch(error) {
+            await client.query('ROLLBACK');
+            throw error;
+          } finally {
+            client.release();
+          }
         }
         if(action==='resetUserPassword'){
           const password=String(data.newPassword||'');
