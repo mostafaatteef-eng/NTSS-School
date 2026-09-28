@@ -667,7 +667,9 @@ export default {
         const records = Array.isArray(body.records) ? body.records : [];
         if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || records.length > 500) return json({ status: 'error', code: 'INVALID_BATCH' }, 400, corsOrigin);
         const canonical: any[] = [];
-        const requestedIds = [...new Set(records.map((rec: any) => String(isStudent ? rec.studentId : rec.employeeId || '').trim()).filter(Boolean))];
+        const normalizedIds = records.map((rec: any) => String((isStudent ? rec.studentId : rec.employeeId) || '').trim());
+        if (normalizedIds.some((id: string) => !id)) return json({ status: 'error', code: 'INVALID_BATCH' }, 400, corsOrigin);
+        const requestedIds = [...new Set(normalizedIds)];
         const personTable = isStudent ? 'students' : 'employees';
         const people = requestedIds.length
           ? await pool.query(`SELECT id,full_name FROM ${personTable} WHERE school_id=$1 AND id = ANY($2::text[])`, [schoolId, requestedIds])
