@@ -4,7 +4,6 @@ import {
   QualityStandard,
   StandardScore,
   User,
-  CorrectiveAction,
 } from '../../types';
 import { storageService } from '../../services/storageService';
 import {
@@ -18,8 +17,6 @@ import {
   Trash2,
   Sparkles,
   AlertTriangle,
-  Building,
-  UserCheck,
 } from 'lucide-react';
 
 interface Props {
