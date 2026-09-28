@@ -205,12 +205,16 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
   // Schedule lessons relevant to this plan's subject & grade
   const availableScheduleLessons = useMemo(() => {
     if (!selectedPlan) return [];
+    const actorTeacherId = isTeacher ? (currentUser?.employeeId || currentUser?.id) : undefined;
     return allSchedule.filter(s => {
+      if (s.isActive === false || s.isCancelled) return false;
+      if (selectedPlan.schoolId && s.schoolId && s.schoolId !== selectedPlan.schoolId) return false;
       const matchSub = s.subject.trim().toLowerCase() === selectedPlan.subject.trim().toLowerCase();
       const matchGrade = s.grade.trim().toLowerCase() === selectedPlan.grade.trim().toLowerCase();
-      return matchSub && matchGrade;
+      const matchTeacher = !actorTeacherId || s.teacherId === actorTeacherId;
+      return matchSub && matchGrade && matchTeacher;
     });
-  }, [allSchedule, selectedPlan]);
+  }, [allSchedule, selectedPlan, isTeacher, currentUser]);
 
   const handleAutoLinkWeek = (week: number) => {
     if (!selectedPlan) return;
