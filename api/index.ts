@@ -11,6 +11,8 @@ const allowedOrigins = new Set([
 ]);
 const isAllowedOrigin = (origin: string) => allowedOrigins.has(origin.replace(/\/$/, ''));
 const tokenHash = (value: string) => crypto.createHash('sha256').update(value).digest('hex');
+const dummyPasswordSalt = 'ntss-login-timing-equalizer';
+const consumeDummyPasswordHash = (password: string) => legacyPasswordHash(password, dummyPasswordSalt, 10000);
 
 const legacyPasswordHash = (password: string, salt: string, iterations: number) => {
   let digest = crypto.createHmac('sha256', salt).update(password + salt).digest();
@@ -94,6 +96,7 @@ const ntssHandler = {
           [studentCode]
         );
         if (result.rowCount !== 1) {
+          consumeDummyPasswordHash(password);
           console.log(JSON.stringify({ marker: 'NTSS_STUDENT_LOGIN_DENIED', requestId, reason: 'identifier', totalMs: Math.round(performance.now()-startedAt) }));
           return json({ status: 'error', code: 'INVALID_CREDENTIALS' }, 401, corsOrigin);
         }
@@ -136,6 +139,7 @@ const ntssHandler = {
         const user = query.rows[0];
         if (user?.role === 'Student') return json({ status: 'error', code: 'INVALID_CREDENTIALS' }, 401, corsOrigin);
         if (!user || !user.is_active || user.status !== 'Active') {
+          consumeDummyPasswordHash(password);
           console.log(JSON.stringify({ marker: 'NTSS_LOGIN_DENIED', requestId, reason: 'user', dbMs, totalMs: Math.round(performance.now() - loginStartedAt) }));
           return json({ status: 'error', code: 'INVALID_CREDENTIALS' }, 401, corsOrigin);
         }
