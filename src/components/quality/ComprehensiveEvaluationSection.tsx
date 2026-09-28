@@ -41,6 +41,7 @@ export const ComprehensiveEvaluationSection: React.FC<Props> = ({
   canCreate,
   canApprove,
 }) => {
+  const schoolId = storageService.getActiveSchoolId() || currentUser?.schoolId || '';
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [viewingEval, setViewingEval] = useState<ComprehensiveEvaluation | null>(null);
 
@@ -103,7 +104,7 @@ export const ComprehensiveEvaluationSection: React.FC<Props> = ({
     }));
   };
 
-  const handleSaveEvaluation = (asDraft: boolean) => {
+  const handleSaveEvaluation = async (asDraft: boolean) => {
     if (!targetEntityName) {
       alert('يرجى تحديد الجهة / القسم المستهدف بالتقييم.');
       return;
@@ -147,38 +148,24 @@ export const ComprehensiveEvaluationSection: React.FC<Props> = ({
         : [],
     };
 
-    const res = storageService.saveComprehensiveEvaluation(newEval, currentUser);
-
-    if (res.success) {
-      setIsModalOpen(false);
-      onRefresh();
-    } else {
-      alert(res.message);
-    }
+    try {
+      await storageService.saveAuthoritativeQualityRecord('COMPREHENSIVE_EVALUATION',newEval,schoolId);
+      setIsModalOpen(false); onRefresh();
+    } catch(error:any){ alert(error?.message || 'تعذر حفظ التقييم الشامل'); }
   };
 
-  const handleApprove = (item: ComprehensiveEvaluation) => {
+  const handleApprove = async (item: ComprehensiveEvaluation) => {
     if (!window.confirm('هل ترغب في اعتماد هذا التقييم الشامل رسمياً؟')) return;
-    const res = storageService.approveComprehensiveEvaluation(item.id, currentUser);
-    if (res.success) {
-      onRefresh();
-      if (viewingEval && viewingEval.id === item.id) {
-        setViewingEval({ ...viewingEval, status: 'APPROVED' });
-      }
-    } else {
-      alert(res.message);
-    }
+    try {
+      await storageService.approveAuthoritativeQualityRecord(item.id,schoolId); onRefresh();
+      if(viewingEval?.id===item.id)setViewingEval({...viewingEval,status:'APPROVED'});
+    } catch(error:any){ alert(error?.message || 'تعذر اعتماد التقييم'); }
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (!window.confirm('هل أنت متأكد من رغبتك في حذف هذا التقييم؟')) return;
-    const res = storageService.deleteComprehensiveEvaluation(id, currentUser);
-    if (res.success) {
-      onRefresh();
-      if (viewingEval?.id === id) setViewingEval(null);
-    } else {
-      alert(res.message);
-    }
+    try { await storageService.deleteAuthoritativeQualityRecord(id,schoolId); onRefresh(); if(viewingEval?.id===id)setViewingEval(null); }
+    catch(error:any){ alert(error?.message || 'تعذر حذف التقييم'); }
   };
 
   return (
