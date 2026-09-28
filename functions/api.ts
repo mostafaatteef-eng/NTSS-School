@@ -37,7 +37,7 @@ async function authenticate(request: Request) {
     `SELECT s.id session_id,s.expires_at,s.active_school_id,u.id user_id,u.email,u.full_name,u.role,u.access_scope,u.school_id,u.employee_id,u.student_id
      FROM sessions s JOIN users u ON u.id=s.user_id
      WHERE s.token_hash=$1 AND s.status='ACTIVE' AND s.revoked_at IS NULL
-       AND s.expires_at>now() AND u.is_active=true LIMIT 1`,
+       AND s.expires_at>now() AND u.is_active=true AND u.status='Active' LIMIT 1`,
     [tokenHash(token)]
   );
   return rows[0] || null;
