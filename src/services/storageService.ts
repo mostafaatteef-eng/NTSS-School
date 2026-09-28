@@ -7495,6 +7495,9 @@ class StorageService {
         message: 'المعلم يمكنه حفظ الخطة كمسودة أو إرسالها للمراجعة فقط.',
       };
     }
+    if (!String(plan.classroom || '').trim()) {
+      return { success: false, message: 'يجب تحديد الفصل عند إنشاء أو تعديل خطة المنهج؛ لكل فصل خطة مستقلة.' };
+    }
     if (!plan.id && (requestedStatus === 'Approved' || requestedStatus === 'Rejected')) {
       return {
         success: false,
@@ -7551,6 +7554,7 @@ class StorageService {
         term: plan.term || 'الفصل الدراسي الأول',
         grade: plan.grade,
         gradeId: plan.gradeId,
+        classroom: String(plan.classroom || '').trim(),
         subject: plan.subject,
         subjectId: plan.subjectId,
         version: 1,
