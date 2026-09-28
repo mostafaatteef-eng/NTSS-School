@@ -654,7 +654,7 @@ const ntssHandler = {
             ON CONFLICT(id) DO UPDATE SET schedule_item_id=EXCLUDED.schedule_item_id,teacher_id=EXCLUDED.teacher_id,teacher_name=EXCLUDED.teacher_name,grade=EXCLUDED.grade,classroom=EXCLUDED.classroom,subject=EXCLUDED.subject,day_of_week=EXCLUDED.day_of_week,period_number=EXCLUDED.period_number,status=EXCLUDED.status,target_date=EXCLUDED.target_date,notes=EXCLUDED.notes,updated_at=now()
             WHERE curriculum_distributions.school_id=EXCLUDED.school_id AND curriculum_distributions.teacher_id=EXCLUDED.teacher_id RETURNING *`,
             [id,schoolId,planId,planItemId,scheduleItemId,teacherId,String(data.teacherName||''),String(data.grade||''),String(data.classroom||''),String(data.subject||''),String(data.dayOfWeek||''),Number(data.periodNumber||0),String(data.targetDate||''),String(data.status||'Planned'),String(data.notes||'')]);
-          if(!q.rowCount)return json({status:'error',code:'WRITE_REJECTED'},409,corsOrigin);return json({status:'success',data:{id:q.rows[0].id}},200,corsOrigin);
+          if(!q.rowCount)return json({status:'error',code:'WRITE_REJECTED'},409,corsOrigin);await pool.query('INSERT INTO audit_logs(school_id,user_id,username,role,action,entity,target_id,details) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[schoolId,user.user_id,user.email,user.role,isCancellation?'CANCEL_DISTRIBUTION':'UPSERT_DISTRIBUTION','CURRICULUM',id,`Curriculum distribution ${String(data.status||'Planned')}`]);return json({status:'success',data:{id:q.rows[0].id}},200,corsOrigin);
         }
         if(action==='deletePlan'){
           if(!isAdmin)return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);
@@ -663,6 +663,7 @@ const ntssHandler = {
           if(!existing.rowCount)return json({status:'error',code:'PLAN_NOT_FOUND'},404,corsOrigin);
           if(['Submitted','Approved'].includes(String(existing.rows[0].status)))return json({status:'error',code:'PLAN_DELETE_LOCKED',message:'لا يمكن حذف خطة مرسلة للمراجعة أو معتمدة.'},409,corsOrigin);
           await pool.query('DELETE FROM curriculum_plans WHERE id=$1 AND school_id=$2',[id,schoolId]);
+          await pool.query('INSERT INTO audit_logs(school_id,user_id,username,role,action,entity,target_id,details) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[schoolId,user.user_id,user.email,user.role,'DELETE_PLAN','CURRICULUM',id,'Deleted draft/rejected curriculum plan']);
           return json({status:'success'},200,corsOrigin);
         }
         if(action==='savePlan'){
