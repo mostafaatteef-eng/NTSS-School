@@ -8,6 +8,8 @@ import {
 import { storageService } from '../../services/storageService';
 import {
   CheckCircle2,
+  FileText,
+  Plus,
   Clock,
   Send,
   Eye,
@@ -39,11 +41,11 @@ export const DailyQualityReportSection: React.FC<Props> = ({
   const dailyStandards = standards.filter(
     (s) => s.isActive && s.applicableTo?.includes('DAILY_REPORT')
   );
-  const standardsByDomain = dailyStandards.reduce<Record<string, QualityStandard[]>>((groups, standard) => {
+  const standardsByDomain = dailyStandards.reduce((groups: Record<string, QualityStandard[]>, standard: QualityStandard) => {
     const domain = standard.domain?.trim() || 'محور عام';
     (groups[domain] ||= []).push(standard);
     return groups;
-  }, {});
+  }, {} as Record<string, QualityStandard[]>);
   // Form state
   const [reportDate, setReportDate] = useState(new Date().toISOString().split('T')[0]);
   const [executiveSummary, setExecutiveSummary] = useState('');
@@ -53,7 +55,7 @@ export const DailyQualityReportSection: React.FC<Props> = ({
   const [generalNotes, setGeneralNotes] = useState('');
   const [dailyScores, setDailyScores] = useState<Record<string, { score: number; notes: string }>>({});
 
-  const scoredItems = Object.values(dailyScores).filter(item => Number(item.score) > 0);
+  const scoredItems = (Object.values(dailyScores) as Array<{ score: number; notes: string }>).filter((item) => Number(item.score) > 0);
   const liveAverage = scoredItems.length
     ? scoredItems.reduce((sum, item) => sum + Number(item.score || 0), 0) / scoredItems.length
     : 0;
