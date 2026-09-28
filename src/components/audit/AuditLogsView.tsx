@@ -71,7 +71,7 @@ export const AuditLogsView: React.FC<AuditLogsViewProps> = ({ logs }) => {
         return <span className="bg-rose-50 text-rose-800 border border-rose-200 px-2 py-0.5 rounded text-[10px] font-bold">الانضباط والسلوك</span>;
       case 'SCHEDULE':
       case 'LESSON':
-        return <span className="bg-indigo-50 text-indigo-800 border border-indigo-200 px-2 py-0.5 rounded text-[10px] font-bold">الجدول والدروس</span>;
+        return <span className="bg-teal-50 text-teal-900 border border-teal-200 px-2 py-0.5 rounded text-[10px] font-bold">الجدول والدروس</span>;
       default:
         return <span className="bg-slate-100 text-slate-800 px-2 py-0.5 rounded text-[10px] font-bold">{entity || 'عام'}</span>;
     }
