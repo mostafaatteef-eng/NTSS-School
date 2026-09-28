@@ -8,7 +8,6 @@ import {
 } from '../../types';
 import { storageService } from '../../services/storageService';
 import {
-  UserCheck,
   Plus,
   CheckCircle2,
   Clock,
