@@ -2588,6 +2588,23 @@ class StorageService {
     this.notifyChange();
   }
 
+  private removeLocalCurriculumDistributionsIfScheduleIdentityChanged(item: ScheduleItem): void {
+    if (!item.id) return;
+    const previous = this.getSchedule().find(s => s.id === item.id);
+    if (!previous) return;
+    const normalize = (value?: string | number) => String(value ?? '').trim().toLowerCase();
+    const identityChanged =
+      normalize(previous.subject) !== normalize(item.subject) ||
+      normalize(previous.grade) !== normalize(item.grade) ||
+      normalize(previous.classroom) !== normalize(item.classroom) ||
+      normalize(previous.teacherId) !== normalize(item.teacherId) ||
+      normalize(previous.dayOfWeek || previous.dayName) !== normalize(item.dayOfWeek || item.dayName) ||
+      Number(previous.periodNumber || 0) !== Number(item.periodNumber || 0);
+    if (identityChanged) {
+      this.removeLocalCurriculumDistributionsForSchedule(item.id, this.getActiveSchoolId());
+    }
+  }
+
   public async saveScheduleItem(item: ScheduleItem): Promise<{ success: boolean; message?: string }> {
     const caller = this.getCurrentUser();
     if (!caller || !caller.sessionToken) {
@@ -2611,6 +2628,7 @@ class StorageService {
           return { success: false, message: res.message || 'فشل حفظ الحصة في PostgreSQL.' };
         }
         const saved = (res.data || item) as ScheduleItem;
+        this.removeLocalCurriculumDistributionsIfScheduleIdentityChanged(saved);
         const list = this.getSchedule();
         const idx = list.findIndex(s => s.id === saved.id || s.id === item.id);
         if (idx >= 0) list[idx] = saved; else list.push(saved);
@@ -2682,6 +2700,7 @@ class StorageService {
     }
 
     // Backend success ONLY: update localStorage cache and notify
+    this.removeLocalCurriculumDistributionsIfScheduleIdentityChanged(item);
     const list = this.getSchedule();
     const idx = list.findIndex(s => s.id === item.id);
     if (idx >= 0) {
