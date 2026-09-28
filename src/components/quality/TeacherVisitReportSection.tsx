@@ -50,6 +50,11 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
   const visitStandards = standards.filter(
     (s) => s.isActive && s.applicableTo?.includes('TEACHER_VISIT')
   );
+  const standardsByDomain = visitStandards.reduce<Record<string, QualityStandard[]>>((groups, standard) => {
+    const domain = standard.domain?.trim() || 'الممارسة الصفية';
+    (groups[domain] ||= []).push(standard);
+    return groups;
+  }, {});
 
   // Form states
   const [visitDate, setVisitDate] = useState(new Date().toISOString().split('T')[0]);
@@ -66,6 +71,11 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
   const [recommendations, setRecommendations] = useState('');
   const [teacherFeedback, setTeacherFeedback] = useState('');
   const [scores, setScores] = useState<Record<string, { score: number; notes: string }>>({});
+
+  const scoredItems = Object.values(scores).filter(item => Number(item.score) > 0);
+  const liveAverage = scoredItems.length
+    ? scoredItems.reduce((sum, item) => sum + Number(item.score || 0), 0) / scoredItems.length
+    : 0;
 
   // Teachers list from storage
   const allTeachers = storageService.getTeachers();
@@ -526,10 +536,10 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
                 <div className="flex items-center justify-between">
                   <h4 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                     <Sparkles className="w-4 h-4 text-indigo-600" />
-                    تقييم معايير الزيارة الصفية ({visitStandards.length} معيار)
+                    محاور الملاحظة الصفية المهنية ({visitStandards.length} مؤشر)
                   </h4>
                   <span className="text-xs text-slate-400">
-                    الوزن والدرجات تُحسب وفق معايير إتقان المسجلة
+                    سجّل الشاهد الفعلي للممارسة، ثم اختر المستوى المطابق دون افتراض الدرجة الأعلى
                   </span>
                 </div>
 
@@ -538,14 +548,27 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
                     لم يتم العثور على معايير مطبقة على زيارة المعلم الصفية. يرجى تفعيل أو إضافة معايير من تبويب "معايير إتقان".
                   </div>
                 ) : (
-                  <div className="space-y-3">
-                    {visitStandards.map((std) => {
+                  <div className="space-y-5">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      <div className="rounded-xl border border-slate-200 bg-white p-3"><div className="text-[11px] text-slate-500">المحاور</div><div className="text-lg font-black text-slate-900">{Object.keys(standardsByDomain).length}</div></div>
+                      <div className="rounded-xl border border-slate-200 bg-white p-3"><div className="text-[11px] text-slate-500">المؤشرات</div><div className="text-lg font-black text-slate-900">{visitStandards.length}</div></div>
+                      <div className="rounded-xl border border-slate-200 bg-white p-3"><div className="text-[11px] text-slate-500">تم تقييمها</div><div className="text-lg font-black text-slate-900">{scoredItems.length}</div></div>
+                      <div className="rounded-xl border border-slate-200 bg-white p-3"><div className="text-[11px] text-slate-500">متوسط المستوى</div><div className="text-lg font-black text-slate-900">{liveAverage ? liveAverage.toFixed(1) : '—'}</div></div>
+                    </div>
+                    {(Object.entries(standardsByDomain) as [string, QualityStandard[]][]).map(([domain, domainStandards]) => (
+                      <section key={domain} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                        <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3">
+                          <div><h5 className="text-sm font-black text-slate-900">{domain}</h5><p className="mt-0.5 text-[11px] text-slate-500">{domainStandards.length} مؤشر ملاحظة</p></div>
+                          <span className="rounded-full bg-indigo-50 px-2.5 py-1 text-[11px] font-bold text-indigo-700">محور زيارة</span>
+                        </div>
+                        <div className="space-y-3 p-3">
+                    {domainStandards.map((std) => {
                       const curScore = scores[std.id]?.score ?? 4;
                       const curNotes = scores[std.id]?.notes ?? '';
                       return (
                         <div
                           key={std.id}
-                          className="p-3.5 border border-slate-200 rounded-xl bg-slate-50 space-y-2"
+                          className="p-4 border border-slate-200 rounded-xl bg-slate-50/70 space-y-3"
                         >
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                             <div>
@@ -590,12 +613,15 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
                             type="text"
                             value={curNotes}
                             onChange={(e) => handleNotesChange(std.id, e.target.value)}
-                            placeholder="شواهد الممارسة الصفية أو توصيات خاصة بهذا المعيار..."
+                            placeholder="الشاهد الملاحظ: ماذا فعل المعلم؟ كيف استجاب الطلاب؟ وما الأثر الظاهر على التعلم؟"
                             className="w-full px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:ring-1 focus:ring-indigo-500"
                           />
                         </div>
                       );
                     })}
+                        </div>
+                      </section>
+                    ))}
                   </div>
                 )}
               </div>
@@ -604,7 +630,7 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-emerald-800 mb-1">
-                    نقاط القوة والتميز في الحصة (سطر لكل نقطة)
+                    ممارسات فعّالة وشواهد قوة
                   </label>
                   <textarea
                     rows={3}
@@ -617,7 +643,7 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
 
                 <div>
                   <label className="block text-xs font-bold text-amber-800 mb-1">
-                    جوانب تحتاج إلى تحسين وتطوير (سطر لكل نقطة)
+                    فجوات مهنية وأولويات تطوير
                   </label>
                   <textarea
                     rows={3}
@@ -631,20 +657,20 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
-                  التوصيات والتوجيهات المهنية للمعلم
+                  خطة التحسين المهنية المقترحة
                 </label>
                 <textarea
                   rows={2}
                   value={recommendations}
                   onChange={(e) => setRecommendations(e.target.value)}
-                  placeholder="التوصية بحضور حصة مشاهدة لدى زميل متميز، وتفعيل استراتيجيات التقييم التكويني..."
+                  placeholder="إجراء تطويري محدد وقابل للمتابعة: ماذا سيُنفذ؟ متى؟ وما الشاهد المتوقع في الزيارة التالية؟"
                   className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
                 />
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
-                  رأي وتغذية راجعة من المعلم (Teacher Feedback)
+                  انعكاس المعلم واتفاق المتابعة
                 </label>
                 <textarea
                   rows={2}
