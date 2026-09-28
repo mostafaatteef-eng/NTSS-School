@@ -7512,6 +7512,15 @@ class StorageService {
       if (isTeacher && existing.status === 'Approved') {
         return { success: false, message: 'لا يمكن للمعلم تعديل خطة تم اعتمادها.' };
       }
+      if (isTeacher && existing.status === 'Submitted' && requestedStatus !== 'Submitted') {
+        return { success: false, message: 'الخطة مرسلة للمراجعة ولا يمكن تعديلها حتى تعتمدها الإدارة أو ترفضها.' };
+      }
+      if (isCurriculumAdmin && requestedStatus === 'Submitted' && existing.status !== 'Draft' && existing.status !== 'Rejected') {
+        return { success: false, message: 'يمكن إرسال المسودة أو الخطة المرفوضة للمراجعة فقط.' };
+      }
+      if (isCurriculumAdmin && (requestedStatus === 'Approved' || requestedStatus === 'Rejected') && existing.status !== 'Submitted') {
+        return { success: false, message: 'يجب أن تكون الخطة مرسلة للمراجعة قبل اعتمادها أو رفضها.' };
+      }
       // Multi-school check
       if (existing.schoolId !== activeSchoolId && currentUser?.role !== 'Admin') {
         return {
