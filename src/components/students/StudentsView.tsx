@@ -408,9 +408,9 @@ export const StudentsView: React.FC = () => {
         actions={<div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => setIsPromotionWizardOpen(true)}
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs rounded-2xl border border-indigo-200 transition-colors shadow-xs cursor-pointer"
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-teal-50 hover:bg-teal-100 text-teal-800 font-bold text-xs rounded-2xl border border-teal-200 transition-colors shadow-xs cursor-pointer"
           >
-            <Sparkles className="w-4 h-4 text-indigo-600" />
+            <Sparkles className="w-4 h-4 text-[#008e8b]" />
             <span>معالج ترحيل الطلاب</span>
           </button>
 
@@ -644,7 +644,7 @@ export const StudentsView: React.FC = () => {
                       <td className="p-4">
                         <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-medium ${
                           rVal === 'مسلم' ? 'bg-emerald-50 text-emerald-700' :
-                          rVal === 'مسيحي' ? 'bg-indigo-50 text-indigo-700' :
+                          rVal === 'مسيحي' ? 'bg-teal-50 text-teal-800' :
                           'bg-slate-100 text-slate-500'
                         }`}>
                           {rVal}
@@ -710,7 +710,7 @@ export const StudentsView: React.FC = () => {
                           <button
                             disabled={managementAction !== null}
                             onClick={() => handleOpenTransfer(student)}
-                            className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer disabled:opacity-40"
+                            className="p-1.5 text-slate-500 hover:text-[#008e8b] hover:bg-teal-50 rounded-lg transition-colors cursor-pointer disabled:opacity-40"
                             title="نقل فصل / تحويل شعبة"
                           >
                             <ArrowRightLeft className="w-4 h-4" />
@@ -753,14 +753,14 @@ export const StudentsView: React.FC = () => {
           <div className="bg-white rounded-3xl p-6 max-w-md w-full border border-slate-200 shadow-2xl space-y-4 text-right">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <ArrowRightLeft className="w-5 h-5 text-indigo-600" />
+                <ArrowRightLeft className="w-5 h-5 text-[#008e8b]" />
                 <span>نقل وتحويل الطالب: {transferModalStudent.name}</span>
               </h3>
               <button onClick={() => setTransferModalStudent(null)} className="text-slate-400 hover:text-slate-600 cursor-pointer">✕</button>
             </div>
 
             <form onSubmit={handleExecuteTransfer} className="space-y-3.5">
-              <div className="p-3 bg-indigo-50 rounded-xl text-xs text-indigo-900">
+              <div className="p-3 bg-teal-50 rounded-xl text-xs text-indigo-900">
                 <span>الصف والفصل الحالي: <strong>{transferModalStudent.grade} (فصل {transferModalStudent.classroom})</strong></span>
               </div>
 
@@ -821,7 +821,7 @@ export const StudentsView: React.FC = () => {
                 <button
                   type="submit"
                   disabled={managementAction !== null}
-                  className="px-6 py-2 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 cursor-pointer shadow-xs disabled:opacity-50"
+                  className="px-6 py-2 rounded-xl text-xs font-bold text-white bg-[#008e8b] hover:bg-teal-700 cursor-pointer shadow-xs disabled:opacity-50"
                 >
                   {managementAction?.startsWith('transfer-student:') ? 'جارٍ النقل...' : 'تأكيد النقل الآن'}
                 </button>
