@@ -173,6 +173,7 @@ export class CurriculumPlanService {
     notes?: string;
     user?: User | null;
     replaceExisting?: boolean;
+    replaceDistributionId?: string;
   }): { success: boolean; distribution?: CurriculumLessonDistribution; message: string } {
     const plan = storageService.getCurriculumPlanById(params.planId);
     if (!plan) return { success: false, message: 'خطة المنهج غير موجودة' };
@@ -248,9 +249,15 @@ export class CurriculumPlanService {
 
     // Manual re-linking replaces prior active links. Auto-linking can deliberately
     // keep multiple active slots when estimatedPeriods requires more than one period.
-    if (params.replaceExisting !== false) {
+    if (params.replaceDistributionId) {
+      const previous = previousItemLinks.find(d => d.id === params.replaceDistributionId);
+      if (!previous) return { success: false, message: 'رابط الحصة المطلوب تعديله غير موجود أو لم يعد نشطًا.' };
+      const cancelResult = storageService.saveCurriculumDistribution({ ...previous, status: 'Cancelled' }, params.user);
+      if (!cancelResult.success) return { success: false, message: cancelResult.message };
+    } else if (params.replaceExisting !== false) {
       for (const previous of previousItemLinks) {
-        storageService.saveCurriculumDistribution({ ...previous, status: 'Cancelled' }, params.user);
+        const cancelResult = storageService.saveCurriculumDistribution({ ...previous, status: 'Cancelled' }, params.user);
+        if (!cancelResult.success) return { success: false, message: cancelResult.message };
       }
     }
 
