@@ -54,6 +54,7 @@ export const TeacherAccountsManager: React.FC<TeacherAccountsManagerProps> = ({ 
   const [teachingStaff, setTeachingStaff] = useState<SafeTeachingEmployee[]>([]);
   const [effectiveSchoolId, setEffectiveSchoolId] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'ALL'|'ACTIVE'|'INACTIVE'|'LOCKED'>('ALL');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [pageError, setPageError] = useState('');
@@ -115,14 +116,20 @@ export const TeacherAccountsManager: React.FC<TeacherAccountsManagerProps> = ({ 
 
   const filteredAccounts = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
-    if (!query) return accounts;
-    return accounts.filter(account =>
-      String(account.teacherName || '').toLowerCase().includes(query) ||
-      String(account.username || '').toLowerCase().includes(query) ||
-      String(account.teacherCode || '').toLowerCase().includes(query) ||
-      String(account.department || '').toLowerCase().includes(query)
-    );
-  }, [accounts, searchQuery]);
+    return accounts.filter(account => {
+      const locked = account.lockedUntil ? new Date(account.lockedUntil).getTime() > Date.now() : false;
+      const statusMatch = statusFilter === 'ALL' ||
+        (statusFilter === 'LOCKED' && locked) ||
+        (statusFilter === 'ACTIVE' && account.status === 'Active' && !locked) ||
+        (statusFilter === 'INACTIVE' && account.status !== 'Active');
+      const searchMatch = !query ||
+        String(account.teacherName || '').toLowerCase().includes(query) ||
+        String(account.username || '').toLowerCase().includes(query) ||
+        String(account.teacherCode || '').toLowerCase().includes(query) ||
+        String(account.department || '').toLowerCase().includes(query);
+      return statusMatch && searchMatch;
+    });
+  }, [accounts, searchQuery, statusFilter]);
 
   const activeCount = accounts.filter(account => account.status === 'Active').length;
   const disabledCount = accounts.filter(account => account.status !== 'Active').length;
@@ -330,11 +337,11 @@ export const TeacherAccountsManager: React.FC<TeacherAccountsManagerProps> = ({ 
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Summary label="إجمالي الحسابات" value={accounts.length} />
-        <Summary label="الحسابات النشطة" value={activeCount} />
-        <Summary label="الحسابات المعطلة" value={disabledCount} />
-        <Summary label="المجمدة مؤقتًا" value={lockedCount} />
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4" aria-busy={loading}>
+        <Summary label="إجمالي الحسابات" value={loading ? null : accounts.length} />
+        <Summary label="الحسابات النشطة" value={loading ? null : activeCount} />
+        <Summary label="الحسابات المعطلة" value={loading ? null : disabledCount} />
+        <Summary label="المجمدة مؤقتًا" value={loading ? null : lockedCount} />
       </div>
 
       <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -348,19 +355,28 @@ export const TeacherAccountsManager: React.FC<TeacherAccountsManagerProps> = ({ 
               className="w-full rounded-xl border border-slate-200 py-2.5 pr-9 pl-3 text-sm outline-none focus:border-indigo-500"
             />
           </label>
-          <div className="text-xs font-bold text-slate-500">
-            معلمون بدون حساب: {availableTeachers.length}
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+            <label className="sr-only" htmlFor="teacher-account-status-filter">تصفية حسب الحالة</label>
+            <select id="teacher-account-status-filter" value={statusFilter} onChange={e=>setStatusFilter(e.target.value as any)} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-bold text-slate-700 outline-none focus:border-indigo-500">
+              <option value="ALL">كل الحالات</option>
+              <option value="ACTIVE">نشط</option>
+              <option value="INACTIVE">غير نشط</option>
+              <option value="LOCKED">مجمّد مؤقتًا</option>
+            </select>
+            <div className="text-xs font-bold text-slate-500">معلمون بدون حساب: {availableTeachers.length}</div>
           </div>
         </div>
 
         {loading ? (
-          <div className="flex min-h-52 items-center justify-center text-sm text-slate-500">
-            <RefreshCw className="ml-2 h-4 w-4 animate-spin" />
-            جارٍ تحميل حسابات المعلمين...
+          <div className="space-y-3 p-5" aria-label="جارٍ تحميل حسابات المعلمين">
+            {[0,1,2,3].map(row=><div key={row} className="h-12 animate-pulse rounded-xl bg-slate-100" />)}
           </div>
         ) : !pageError && filteredAccounts.length === 0 ? (
-          <div className="flex min-h-52 items-center justify-center text-sm text-slate-500">
-            لا توجد حسابات معلمين ضمن المدرسة الحالية.
+          <div className="flex min-h-60 flex-col items-center justify-center px-6 text-center">
+            <span className="mb-3 rounded-2xl bg-indigo-50 p-3 text-indigo-600"><GraduationCap className="h-6 w-6" /></span>
+            <h3 className="font-bold text-slate-900">{searchQuery || statusFilter!=='ALL' ? 'لا توجد نتائج مطابقة' : 'لا توجد حسابات معلمين حتى الآن'}</h3>
+            <p className="mt-1 max-w-md text-xs leading-6 text-slate-500">{searchQuery || statusFilter!=='ALL' ? 'جرّب تعديل البحث أو فلتر الحالة.' : 'يمكنك إنشاء حساب للمعلم بعد إضافته إلى سجل العاملين.'}</p>
+            {!searchQuery && statusFilter==='ALL' && availableTeachers.length>0 && <button type="button" onClick={openCreate} className="mt-4 inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-indigo-700"><Plus className="h-4 w-4" />إنشاء حساب معلم</button>}
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -518,7 +534,7 @@ export const TeacherAccountsManager: React.FC<TeacherAccountsManagerProps> = ({ 
   );
 };
 
-const Summary: React.FC<{ label: string; value: number }> = ({ label, value }) => (
+const Summary: React.FC<{ label: string; value: number | null }> = ({ label, value }) => (
   <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
     <div className="text-[11px] font-bold text-slate-500">{label}</div>
     <div className="mt-2 text-2xl font-black text-slate-900">{value.toLocaleString('ar-EG')}</div>
@@ -605,6 +621,6 @@ const ModalActions: React.FC<{ saving: boolean; onCancel: () => void }> = ({ sav
 const CredentialRow: React.FC<{ label: string; value: string }> = ({ label, value }) => (
   <div className="mb-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
     <div className="text-[10px] font-bold text-slate-500">{label}</div>
-    <div className="mt-1 break-all font-mono text-sm font-bold text-slate-900">{value}</div>
+    <div className="mt-1 break-all font-mono text-sm font-bold text-slate-900">{value === null ? <span className="inline-block h-5 w-10 animate-pulse rounded bg-slate-200" /> : value}</div>
   </div>
 );
