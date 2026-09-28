@@ -16,6 +16,7 @@ import {
 import { ExamSchedule, Employee } from '../../types';
 import { timetableService } from '../../services/timetableService';
 import * as XLSX from 'xlsx';
+import { PageHeader } from '../common/UiStates';
 
 export const ExamScheduleView: React.FC = () => {
   const [exams, setExams] = useState<ExamSchedule[]>([]);
@@ -140,19 +141,11 @@ export const ExamScheduleView: React.FC = () => {
 
   return (
     <div className="space-y-6" dir="rtl">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-        <div>
-          <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-            <Award className="w-6 h-6 text-indigo-600" />
-            جدول الامتحانات والاختبارات المدرسية
-          </h2>
-          <p className="text-sm text-slate-500 mt-1">
-            إدارة اختبارات نصف الفصل، والامتحانات العملية والنهائية ونشرها على بوابات المعلمين والطلاب
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2">
+      <PageHeader
+        title="جدول الامتحانات والاختبارات"
+        description="إدارة مواعيد الاختبارات ونشرها للمعلمين والطلاب من مساحة واحدة."
+        icon={<span className="rounded-xl bg-teal-50 p-2 text-[#008e8b]"><Award className="h-5 w-5" /></span>}
+        actions={<div className="flex flex-wrap items-center gap-2">
           <button
             onClick={handleExportExcel}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-xl border border-emerald-200 transition"
@@ -169,13 +162,13 @@ export const ExamScheduleView: React.FC = () => {
           </button>
           <button
             onClick={handleOpenAdd}
-            className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-sm transition mr-2"
+            className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-white bg-[#008e8b] hover:bg-teal-700 rounded-xl shadow-sm transition mr-2"
           >
             <Plus className="w-4 h-4" />
             إضافة موعد امتحان
           </button>
-        </div>
-      </div>
+        </div>}
+      />
 
       {/* Grade Selector */}
       <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex items-center gap-3">
@@ -183,7 +176,7 @@ export const ExamScheduleView: React.FC = () => {
         <select
           value={selectedGrade}
           onChange={e => setSelectedGrade(e.target.value)}
-          className="bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-medium focus:ring-2 focus:ring-indigo-500"
+          className="bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-medium focus:ring-2 focus:ring-[#008e8b]/30"
         >
           <option value="ALL">جميع الصفوف الدراسية</option>
           <option value="الصف الأول الثانوي">الصف الأول الثانوي</option>
@@ -193,10 +186,10 @@ export const ExamScheduleView: React.FC = () => {
       </div>
 
       {/* Exams Table */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-right text-xs border-collapse">
-            <thead className="bg-slate-100 text-slate-700 font-bold border-b">
+            <thead className="sticky top-0 z-10 bg-slate-100 text-slate-700 font-bold border-b">
               <tr>
                 <th className="p-3">المادة</th>
                 <th className="p-3">نوع الامتحان</th>
@@ -221,7 +214,7 @@ export const ExamScheduleView: React.FC = () => {
                   <tr key={exam.id} className="hover:bg-slate-50 transition">
                     <td className="p-3 font-bold text-slate-900">{exam.subjectName}</td>
                     <td className="p-3">
-                      <span className="inline-block px-2 py-0.5 rounded text-[11px] font-bold bg-indigo-50 text-indigo-700">
+                      <span className="inline-block px-2 py-0.5 rounded text-[11px] font-bold bg-teal-50 text-teal-800">
                         {exam.examType === 'MIDTERM'
                           ? 'نصف الفصل'
                           : exam.examType === 'FINAL'
@@ -434,7 +427,7 @@ export const ExamScheduleView: React.FC = () => {
               </button>
               <button
                 onClick={handleSaveExam}
-                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-sm"
+                className="px-5 py-2 bg-[#008e8b] hover:bg-teal-700 text-white rounded-lg text-xs font-bold shadow-sm"
               >
                 حفظ موعد الامتحان
               </button>
