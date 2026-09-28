@@ -298,7 +298,16 @@ export class CurriculumPlanService {
     const existingDistributions = storageService
       .getCurriculumDistributions(plan.schoolId)
       .filter(d => d.status !== 'Cancelled');
-    const occupiedScheduleIds = new Set(existingDistributions.map(d => d.scheduleItemId));
+    const occupiedScheduleIds = new Set(
+      existingDistributions
+        .filter(d => {
+          if (!d.scheduleItemId) return false;
+          if (Number(d.week || 0) === Number(params.week)) return true;
+          const legacyItem = plan.items.find(item => item.id === d.planItemId);
+          return !d.week && Number(legacyItem?.week || 0) === Number(params.week);
+        })
+        .map(d => d.scheduleItemId)
+    );
     const schoolWeekOrder = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
     const dayRank = (value?: string) => {
       const index = schoolWeekOrder.indexOf(String(value || '').trim());
