@@ -66,6 +66,7 @@ class UserAdminService {
         ? Array.from(new Set(raw.allowedSchoolIds.map((x: unknown) => String(x || '').trim().toUpperCase()).filter(Boolean)))
         : [],
       employeeId: raw?.employeeId ? String(raw.employeeId).trim() : undefined,
+      studentId: raw?.studentId ? String(raw.studentId).trim() : undefined,
       status: raw?.status === 'Inactive' || raw?.status === 'Suspended' ? raw.status : 'Active',
       department: raw?.department ? String(raw.department).trim() : undefined,
       createdAt: raw?.createdAt || undefined,
