@@ -27,7 +27,7 @@ export const CANONICAL_STAFF_ROLES: CanonicalStaffRole[] = [
 
 export type StaffRole = CanonicalStaffRole | 'Admin';
 
-export type UserRole = StaffRole;
+export type UserRole = StaffRole | 'Student';
 
 export interface ServerSession {
   sessionToken: string;
@@ -42,6 +42,8 @@ export interface ServerSession {
   activeSchoolId: string;
   expiresAt: string;
   employeeId?: string;
+  studentId?: string;
+  studentCode?: string;
   teacherId?: string;
   isActive?: boolean;
   status?: string;
@@ -92,7 +94,7 @@ export type LegacyUserRole =
   | 'Employee'
   | 'Viewer'
   | 'Parent'  // Historical archive only - forbidden from login
-  | 'Student'; // Historical archive only - forbidden from login
+  | 'Student'; // Student portal account; strictly SELF-scoped
 
 /**
  * Normalizes legacy roles to the canonical Staff roles.
@@ -100,9 +102,10 @@ export type LegacyUserRole =
  */
 export function normalizeStaffRole(role: string): StaffRole {
   const r = (role || '').trim();
-  if (r === 'Parent' || r === 'Student') {
+  if (r === 'Parent') {
     throw new Error('ACCOUNT_ROLE_NOT_ALLOWED');
   }
+  if (r === 'Student') return 'Student' as UserRole;
   if (r === 'SystemAdmin') return 'SystemAdmin';
   if (r === 'SchoolAdmin') return 'SchoolAdmin';
   if (r === 'Admin') return 'Admin';
