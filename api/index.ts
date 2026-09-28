@@ -403,9 +403,9 @@ const ntssHandler = {
         if(action!=='saveUser')return json({status:'error',code:'ACTION_NOT_MIGRATED'},400,corsOrigin);
         const email=String(data.email||'').trim().toLowerCase(); const username=String(data.username||'').trim().toLowerCase();
         const role=String(data.role||'').trim(); const fullName=String(data.fullName||'').trim();
-        const assignableRoles=new Set(['SystemAdmin','SchoolAdmin','HR','StudentAffairs','TeacherAffairs','Training','Quality','Finance','Security','Teacher']);
-        if(role && !assignableRoles.has(role))return json({status:'error',code:'INVALID_ROLE'},400,corsOrigin);
+        const assignableRoles=new Set(['SystemAdmin','SchoolAdmin','SchoolDirector','StudentAffairs','TeacherAffairs','QualityOfficer','TrainingOfficer','SocialSpecialist','Teacher','AdministrativeEmployee','Admin']);
         if(role==='Student')return json({status:'error',code:'STUDENT_ACCOUNT_REQUIRES_ACTIVATION'},400,corsOrigin);
+        if(role && !assignableRoles.has(role))return json({status:'error',code:'INVALID_ROLE'},400,corsOrigin);
         if(role==='SystemAdmin' && user.role!=='SystemAdmin')return json({status:'error',code:'ROLE_ESCALATION_DENIED'},403,corsOrigin);
         const allowed: string[]=Array.isArray(data.allowedSchoolIds)?[...new Set<string>(data.allowedSchoolIds.map((x:any)=>String(x||'').trim().toUpperCase()).filter(Boolean))]:[];
         const requestedSchoolId=String(data.schoolId||'').trim().toUpperCase();
@@ -420,7 +420,7 @@ const ntssHandler = {
           return json({status:'success',message:'تم إنشاء الحساب.',user:await project(s.rows[0])},201,corsOrigin);
         }
         const existing=await pool.query('SELECT * FROM users WHERE id=$1',[targetId]); if(!existing.rowCount)return json({status:'error',code:'NOT_FOUND'},404,corsOrigin);
-        const old=existing.rows[0]; const nextRole=role||old.role; const scope=nextRole==='SystemAdmin'?'GLOBAL':'SCHOOL'; const schoolId=scope==='GLOBAL'?null:(data.schoolId===undefined?old.school_id:String(data.schoolId||'').trim().toUpperCase()||null);
+        const old=existing.rows[0]; if(old.role==='Student')return json({status:'error',code:'STUDENT_ACCOUNT_MANAGED_SEPARATELY'},400,corsOrigin); const nextRole=role||old.role; const scope=nextRole==='SystemAdmin'?'GLOBAL':'SCHOOL'; const schoolId=scope==='GLOBAL'?null:(data.schoolId===undefined?old.school_id:String(data.schoolId||'').trim().toUpperCase()||null);
         const u=await pool.query('UPDATE users SET email=COALESCE(NULLIF($2,\'\'),email),username=COALESCE(NULLIF($3,\'\'),username),full_name=COALESCE(NULLIF($4,\'\'),full_name),role=$5,access_scope=$6,school_id=$7,employee_id=CASE WHEN $8=\'\' THEN employee_id ELSE $8 END,updated_at=now() WHERE id=$1 RETURNING *',[targetId,email,username,fullName,nextRole,scope,schoolId,String(data.employeeId||'')]);
         if(data.allowedSchoolIds!==undefined){await pool.query('DELETE FROM user_school_access WHERE user_id=$1',[targetId]);for(const sid of allowed.length?allowed:(schoolId?[schoolId]:[]))await pool.query('INSERT INTO user_school_access(user_id,school_id) SELECT $1,$2 WHERE EXISTS(SELECT 1 FROM schools WHERE id=$2) ON CONFLICT DO NOTHING',[targetId,sid]);}
         return json({status:'success',message:'تم تحديث الحساب.',user:await project(u.rows[0])},200,corsOrigin);
