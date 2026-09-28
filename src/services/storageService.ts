@@ -7513,6 +7513,23 @@ class StorageService {
 
     let finalPlan: CurriculumMasterPlan;
 
+    if (requestedStatus === 'Approved') {
+      const norm = (value?: string) => String(value || '').trim().toLowerCase();
+      const conflictingPlan = plans.find(p =>
+        p.id !== plan.id &&
+        p.schoolId === activeSchoolId &&
+        p.status === 'Approved' &&
+        norm(p.academicYear) === norm(plan.academicYear || this.getActiveAcademicYear()?.name || '2026-2027') &&
+        norm(p.term) === norm(plan.term || 'الفصل الدراسي الأول') &&
+        norm(p.grade) === norm(plan.grade) &&
+        norm(p.subject) === norm(plan.subject) &&
+        norm(p.classroom) === norm(plan.classroom)
+      );
+      if (conflictingPlan) {
+        return { success: false, message: 'توجد بالفعل خطة معتمدة لنفس المادة والصف والفصل والفصل الدراسي.' };
+      }
+    }
+
     if (existingIndex >= 0) {
       const existing = plans[existingIndex];
       if (isTeacher && existing.uploadedBy !== teacherId) {
