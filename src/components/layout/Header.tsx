@@ -129,7 +129,7 @@ export const Header: React.FC<HeaderProps> = ({
 
   return (
     <>
-      <header className="h-16 bg-white/95 backdrop-blur-md border-b border-slate-200/80 flex items-center justify-between px-4 sm:px-6 lg:px-8 shrink-0 sticky top-0 z-30 shadow-xs">
+      <header className="h-16 bg-white/95 backdrop-blur-md border-b border-slate-200/80 flex items-center justify-between px-4 sm:px-6 lg:px-8 shrink-0 sticky top-0 z-30">
         {/* 1. Left: Brand & Mobile Menu */}
         <div className="flex items-center gap-3 sm:gap-4">
           {onToggleMobileMenu && (
@@ -208,7 +208,7 @@ export const Header: React.FC<HeaderProps> = ({
             <button
               type="button"
               onClick={() => setIsSearchOpen(true)}
-              className="flex items-center gap-2 text-xs text-slate-400 bg-slate-100/80 hover:bg-slate-100 border border-slate-200/80 px-3 py-1.5 rounded-full cursor-pointer transition-all"
+              className="flex items-center gap-2 text-xs text-slate-500 bg-slate-50 hover:bg-slate-100 border border-slate-200 px-3 py-2 rounded-xl cursor-pointer transition-colors focus:outline-none focus:ring-2 focus:ring-[#008e8b]/30"
             >
               <Search className="w-3.5 h-3.5 text-slate-500" />
               <span>بحث سريع في النظام...</span>
