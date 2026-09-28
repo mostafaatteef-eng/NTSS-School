@@ -114,6 +114,7 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
       subject: filterSubject !== 'ALL' ? filterSubject : undefined,
       grade: filterGrade !== 'ALL' ? filterGrade : undefined,
       term: filterTerm !== 'ALL' ? filterTerm : undefined,
+      teacherId: currentUser?.role === 'Teacher' ? (currentUser.employeeId || currentUser.id) : undefined,
     });
   }, [plans, distributions, filterSubject, filterGrade, filterTerm, currentUser]);
 
