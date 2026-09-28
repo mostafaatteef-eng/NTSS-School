@@ -243,7 +243,7 @@ export const TimetableReportsView: React.FC = () => {
                     <tr key={c.classroomId} className="hover:bg-slate-50">
                       <td className="p-3 font-bold text-slate-900">فصل {c.classroomName}</td>
                       <td className="p-3 text-slate-600">{c.totalRequiredPeriods} حصة</td>
-                      <td className="p-3 font-bold text-indigo-700">{c.totalScheduledPeriods} حصة</td>
+                      <td className="p-3 font-bold text-teal-800">{c.totalScheduledPeriods} حصة</td>
                       <td className="p-3 font-bold">
                         <span className={c.difference === 0 ? 'text-emerald-600' : 'text-rose-600'}>
                           {c.difference > 0 ? `+${c.difference}` : c.difference}
@@ -289,7 +289,7 @@ export const TimetableReportsView: React.FC = () => {
                 <tbody className="divide-y divide-slate-100">
                   {teacherLoads.map(t => (
                     <tr key={t.teacherId} className="hover:bg-slate-50">
-                      <td className="p-3 font-mono font-bold text-indigo-700">{t.teacherCode}</td>
+                      <td className="p-3 font-mono font-bold text-teal-800">{t.teacherCode}</td>
                       <td className="p-3 font-bold text-slate-900">{t.teacherName}</td>
                       <td className="p-3 text-center">{t.assignedLoad}</td>
                       <td className="p-3 text-center font-bold">{t.scheduledBasePeriods}</td>
@@ -337,11 +337,11 @@ export const TimetableReportsView: React.FC = () => {
                 <tbody className="divide-y divide-slate-100">
                   {fairnessList.map(f => (
                     <tr key={f.teacherId} className="hover:bg-slate-50">
-                      <td className="p-3 font-mono font-bold text-indigo-700">{f.teacherCode}</td>
+                      <td className="p-3 font-mono font-bold text-teal-800">{f.teacherCode}</td>
                       <td className="p-3 font-bold text-slate-900">{f.teacherName}</td>
                       <td className="p-3 text-center">{f.weeklyCount}</td>
                       <td className="p-3 text-center">{f.monthlyCount}</td>
-                      <td className="p-3 text-center font-bold text-indigo-700">{f.termCount}</td>
+                      <td className="p-3 text-center font-bold text-teal-800">{f.termCount}</td>
                       <td className="p-3 text-center font-bold text-purple-700">{f.annualCount}</td>
                       <td className="p-3 text-center">
                         <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700">
@@ -420,7 +420,7 @@ export const TimetableReportsView: React.FC = () => {
                     {conflictReport.map((c, i) => (
                       <tr key={i} className="hover:bg-rose-50/50 bg-rose-50/20">
                         <td className="p-3 font-bold">{c.item.dayOfWeek}</td>
-                        <td className="p-3 font-bold text-indigo-700">الحصة {c.item.periodNumber}</td>
+                        <td className="p-3 font-bold text-teal-800">الحصة {c.item.periodNumber}</td>
                         <td className="p-3">{c.item.classroom}</td>
                         <td className="p-3 font-medium">{c.item.subject}</td>
                         <td className="p-3">{c.item.teacherName}</td>
