@@ -654,6 +654,10 @@ const ntssHandler = {
           } else if(['Approved','Rejected'].includes(status)) {
             return json({status:'error',code:'INVALID_PLAN_TRANSITION',message:'لا يمكن إنشاء خطة جديدة بحالة اعتماد أو رفض.'},409,corsOrigin);
           }
+          if(status==='Approved'){
+            const duplicate=await pool.query(`SELECT id FROM curriculum_plans WHERE school_id=$1 AND id<>$2 AND status='Approved' AND academic_year=$3 AND term=$4 AND lower(trim(grade))=lower(trim($5)) AND lower(trim(subject))=lower(trim($6)) AND lower(trim(COALESCE(file_meta->>'classroom','')))=lower(trim($7)) LIMIT 1`,[schoolId,id,String(data.academicYear||existing.rows[0]?.academic_year||'2026-2027'),String(data.term||existing.rows[0]?.term||''),String(data.grade||existing.rows[0]?.grade||''),String(data.subject||existing.rows[0]?.subject||''),classroom]);
+            if(duplicate.rowCount)return json({status:'error',code:'APPROVED_PLAN_CONFLICT',message:'توجد بالفعل خطة معتمدة لنفس المادة والصف والفصل والفصل الدراسي.'},409,corsOrigin);
+          }
           const client=await pool.connect();try{await client.query('BEGIN');
             const q=await client.query(`INSERT INTO curriculum_plans(id,school_id,academic_year,term,grade,grade_id,subject,subject_id,version,status,uploaded_by,uploaded_by_name,file_meta)
               VALUES($1,$2,$3,$4,$5,NULLIF($6,''),$7,NULLIF($8,''),1,$9,$10,$11,$12::jsonb)
