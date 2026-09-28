@@ -35,6 +35,7 @@ export async function postgresApiRequest<T>(
     const response = await fetch(`${POSTGRES_API_URL}/api${path.startsWith('/') ? path : `/${path}`}`, {
       ...init,
       headers,
+      credentials: 'include',
       signal: controller.signal,
     });
     const body = await response.json().catch(() => ({}));
