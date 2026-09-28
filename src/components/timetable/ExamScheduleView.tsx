@@ -162,7 +162,7 @@ export const ExamScheduleView: React.FC = () => {
           </button>
           <button
             onClick={handleOpenAdd}
-            className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-white bg-[#008e8b] hover:bg-teal-700 rounded-xl shadow-sm transition mr-2"
+            className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-white bg-[#008e8b] hover:bg-teal-700 rounded-xl  transition mr-2"
           >
             <Plus className="w-4 h-4" />
             إضافة موعد امتحان
@@ -241,7 +241,7 @@ export const ExamScheduleView: React.FC = () => {
                           </span>
                         )}
                         {exam.status === 'APPROVED' && (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-800">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-teal-100 text-teal-900">
                             <CheckCircle2 className="w-3 h-3" /> معتمد
                           </span>
                         )}
@@ -263,7 +263,7 @@ export const ExamScheduleView: React.FC = () => {
                             handleToggleStatus(exam, next);
                           }}
                           title="تغيير حالة الاعتماد / النشر"
-                          className="text-[10px] text-indigo-600 hover:underline mr-1 font-bold"
+                          className="text-[10px] text-[#008e8b] hover:underline mr-1 font-bold"
                         >
                           تغيير
                         </button>
@@ -273,7 +273,7 @@ export const ExamScheduleView: React.FC = () => {
                       <div className="flex items-center justify-center gap-1">
                         <button
                           onClick={() => handleOpenEdit(exam)}
-                          className="text-slate-400 hover:text-indigo-600 p-1"
+                          className="text-slate-400 hover:text-[#008e8b] p-1"
                         >
                           <Edit2 className="w-3.5 h-3.5" />
                         </button>
@@ -427,7 +427,7 @@ export const ExamScheduleView: React.FC = () => {
               </button>
               <button
                 onClick={handleSaveExam}
-                className="px-5 py-2 bg-[#008e8b] hover:bg-teal-700 text-white rounded-lg text-xs font-bold shadow-sm"
+                className="px-5 py-2 bg-[#008e8b] hover:bg-teal-700 text-white rounded-lg text-xs font-bold "
               >
                 حفظ موعد الامتحان
               </button>
