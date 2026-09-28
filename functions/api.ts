@@ -822,28 +822,32 @@ export default {
         const canWrite=new Set(['SystemAdmin','Admin','SchoolAdmin','SchoolDirector','QualityOfficer','Supervisor']);
         const canApprove=new Set(['SystemAdmin','Admin','SchoolAdmin','SchoolDirector']);
         if(!canRead.has(String(user.role||''))) return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);
-        const allowedTypes=new Set(['TEACHER_VISIT','DAILY_REPORT','COMPREHENSIVE_EVALUATION','CORRECTIVE_ACTION','QUALITY_STANDARD']);
+        const reportTypes=new Set(['TEACHER_VISIT','DAILY_REPORT','COMPREHENSIVE_EVALUATION']);
+        const allowedTypes=new Set([...reportTypes,'CORRECTIVE_ACTION','QUALITY_STANDARD']);
         const recordType=String(data.recordType||body.recordType||'').toUpperCase();
         if(action==='list'){
           const params:any[]=[schoolId]; let sql='SELECT * FROM quality_records WHERE school_id=$1';
           if(recordType){if(!allowedTypes.has(recordType))return json({status:'error',code:'INVALID_RECORD_TYPE'},400,corsOrigin);params.push(recordType);sql+=' AND record_type=$2';}
           sql+=' ORDER BY updated_at DESC';
           const q=await pool.query(sql,params);
-          return json({status:'success',data:q.rows.map((r:any)=>({...r.payload,id:r.id,schoolId:r.school_id,recordType:r.record_type,status:r.status,createdAt:r.created_at,updatedAt:r.updated_at,approvedAt:r.approved_at}))},200,corsOrigin);
+          return json({status:'success',data:q.rows.map((r:any)=>({...r.payload,id:r.id,schoolId:r.school_id,recordType:r.record_type,status:r.record_type==='CORRECTIVE_ACTION'?(r.payload?.status||'OPEN'):r.status,workflowStatus:r.status,createdAt:r.created_at,updatedAt:r.updated_at,approvedAt:r.approved_at}))},200,corsOrigin);
         }
         if(!canWrite.has(String(user.role||''))) return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);
         const suppliedId=String(data.id||'').trim();
         if((action==='delete'||action==='approve')&&!suppliedId)return json({status:'error',code:'INVALID_ID'},400,corsOrigin);
         const id=suppliedId||('QLT-'+crypto.randomBytes(8).toString('hex').toUpperCase());
         if(action==='delete'){
-          const existing=await pool.query('SELECT status FROM quality_records WHERE school_id=$1 AND id=$2',[schoolId,id]);
+          const existing=await pool.query('SELECT status,record_type FROM quality_records WHERE school_id=$1 AND id=$2',[schoolId,id]);
           if(!existing.rowCount)return json({status:'error',code:'NOT_FOUND'},404,corsOrigin);
-          if(String(existing.rows[0].status).toUpperCase()!=='DRAFT')return json({status:'error',code:'FINALIZED_RECORD_LOCKED'},409,corsOrigin);
+          if(reportTypes.has(String(existing.rows[0].record_type)) && String(existing.rows[0].status).toUpperCase()!=='DRAFT')return json({status:'error',code:'FINALIZED_RECORD_LOCKED'},409,corsOrigin);
           await pool.query('DELETE FROM quality_records WHERE school_id=$1 AND id=$2',[schoolId,id]);
           return json({status:'success'},200,corsOrigin);
         }
         if(action==='approve'){
           if(!canApprove.has(String(user.role||'')))return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);
+          const typeCheck=await pool.query('SELECT record_type FROM quality_records WHERE school_id=$1 AND id=$2',[schoolId,id]);
+          if(!typeCheck.rowCount)return json({status:'error',code:'NOT_FOUND'},404,corsOrigin);
+          if(!reportTypes.has(String(typeCheck.rows[0].record_type)))return json({status:'error',code:'APPROVAL_NOT_SUPPORTED'},409,corsOrigin);
           const q=await pool.query("UPDATE quality_records SET status='APPROVED',approved_by=$3,approved_at=now(),updated_at=now() WHERE school_id=$1 AND id=$2 AND upper(status)='SUBMITTED' RETURNING *",[schoolId,id,user.user_id]);
           if(!q.rowCount)return json({status:'error',code:'INVALID_STATUS_TRANSITION'},409,corsOrigin);
           await pool.query('INSERT INTO audit_logs(school_id,user_id,username,role,action,entity,target_id,details) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[schoolId,user.user_id,user.email,user.role,'APPROVE','QUALITY',id,'Approved quality record']);
@@ -852,9 +856,14 @@ export default {
         if(action!=='save'||!allowedTypes.has(recordType))return json({status:'error',code:'INVALID_ACTION'},400,corsOrigin);
         const existing=await pool.query('SELECT status FROM quality_records WHERE school_id=$1 AND id=$2',[schoolId,id]);
         if(existing.rowCount&&['APPROVED','FINALIZED'].includes(String(existing.rows[0].status).toUpperCase()))return json({status:'error',code:'FINALIZED_RECORD_LOCKED'},409,corsOrigin);
-        const status=String(data.status||'DRAFT').toUpperCase();
-        if(!['DRAFT','SUBMITTED','REQUIRES_REVISION'].includes(status))return json({status:'error',code:'INVALID_STATUS'},400,corsOrigin);
-        const payload=JSON.stringify({...data,id,schoolId,recordType});
+        const requestedStatus=String(data.workflowStatus||data.status||'DRAFT').toUpperCase();
+        const domainStatus=String(data.status||'').toUpperCase();
+        const status=reportTypes.has(recordType)
+          ? requestedStatus
+          : (recordType==='QUALITY_STANDARD' ? (data.isActive===false?'INACTIVE':'ACTIVE') : 'ACTIVE');
+        if(reportTypes.has(recordType)&&!['DRAFT','SUBMITTED','REQUIRES_REVISION'].includes(status))return json({status:'error',code:'INVALID_STATUS'},400,corsOrigin);
+        if(recordType==='CORRECTIVE_ACTION'&&domainStatus&&!['OPEN','IN_PROGRESS','RESOLVED','CLOSED','OVERDUE'].includes(domainStatus))return json({status:'error',code:'INVALID_ACTION_STATUS'},400,corsOrigin);
+        const payload=JSON.stringify({...data,id,schoolId,recordType,status:recordType==='CORRECTIVE_ACTION'?(domainStatus||'OPEN'):data.status});
         const q=await pool.query(`INSERT INTO quality_records(id,school_id,record_type,status,payload,created_by) VALUES($1,$2,$3,$4,$5::jsonb,$6)
           ON CONFLICT(id) DO UPDATE SET status=EXCLUDED.status,payload=EXCLUDED.payload,updated_at=now()
           WHERE quality_records.school_id=EXCLUDED.school_id RETURNING *`,[id,schoolId,recordType,status,payload,user.user_id]);
