@@ -235,7 +235,6 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
       planId: selectedPlan.id,
       week,
       user: currentUser,
-      replaceDistributionId: linkingItem.distributionId,
     });
     if (!res.success) {
       alert(res.message);
@@ -256,6 +255,7 @@ export const CurriculumPlansView: React.FC<CurriculumPlansViewProps> = ({ curren
       targetDate: targetDate || undefined,
       notes: linkNotes.trim() || undefined,
       user: currentUser,
+      replaceDistributionId: linkingItem.distributionId,
     });
 
     if (res.success) {
