@@ -652,21 +652,39 @@ export const DEFAULT_HOLIDAYS: SchoolHoliday[] = [
   { id: 'HOL009', name: 'ثورة 30 يونيو', startDate: '2026-06-30', endDate: '2026-06-30', affectsAbsenceCalculation: false },
 ];
 
+export const SAMAT_TRAITS = [
+  { key: 'SELF_LEADERSHIP', name: 'أقود نفسي', description: 'الانضباط الذاتي واتخاذ القرار وإدارة السلوك.' },
+  { key: 'RESPONSIBILITY', name: 'أتحمل المسؤولية', description: 'الاستعداد والالتزام وتحمل أثر الاختيارات.' },
+  { key: 'RESPECT', name: 'أحترم الآخرين', description: 'التواصل المسؤول وحفظ الحقوق والحدود.' },
+  { key: 'SAFETY', name: 'أتصرف بأمان', description: 'اتباع إجراءات السلامة وحماية النفس والآخرين.' },
+  { key: 'INTEGRITY', name: 'أتصرف بأمانة', description: 'الصدق والأمانة والمحافظة على الحقوق والممتلكات.' },
+  { key: 'COOPERATION', name: 'أتعاون وأبادر', description: 'التعاون والمبادرة والمساهمة الإيجابية.' },
+  { key: 'LEARNING', name: 'أتعلم بفاعلية', description: 'الاستعداد للتعلم واحترام وقت الحصة ومتطلباتها.' },
+] as const;
+
+export const SAMAT_STUDENT_LEVELS = [
+  { min: 0, max: 59, name: 'أبني سماتي' },
+  { min: 60, max: 74, name: 'أنمّي سماتي' },
+  { min: 75, max: 84, name: 'أُظهر سماتي' },
+  { min: 85, max: 94, name: 'أتميز بسماتي' },
+  { min: 95, max: 100, name: 'قدوة بسماتي' },
+] as const;
+
 export const DEFAULT_BEHAVIOR_TYPES: BehaviorType[] = [
-  { id: 'SAMAT001', name: 'عدم إحضار الأدوات والمتطلبات الدراسية', category: 'المسؤولية والاستعداد للتعلم', severity: 'بسيطة', points: 5, weight: 5, defaultAction: 'تذكير وتوجيه وتحديد ما يلزم إحضاره في اليوم التالي', notifyParent: false, requiresAdminReview: false, isActive: true, sortOrder: 1 },
-  { id: 'SAMAT002', name: 'عدم الالتزام بالزي المدرسي أو المظهر والنظافة الشخصية', category: 'الانضباط الذاتي والعناية بالنفس', severity: 'بسيطة', points: 5, weight: 5, defaultAction: 'توجيه تربوي ومتابعة الالتزام', notifyParent: false, requiresAdminReview: false, isActive: true, sortOrder: 2 },
-  { id: 'SAMAT003', name: 'استخدام الموبايل أثناء الحصة', category: 'الانضباط الذاتي والتعلم', severity: 'متوسطة', points: 10, weight: 10, defaultAction: 'إيقاف الاستخدام وتوثيق الموقف ومراجعة قواعد الاستخدام', notifyParent: true, requiresAdminReview: false, isActive: true, sortOrder: 3 },
-  { id: 'SAMAT004', name: 'المشاجرات البسيطة', category: 'احترام الآخرين وضبط النفس', severity: 'متوسطة', points: 10, weight: 10, defaultAction: 'تهدئة الموقف وجلسة إصلاح ومتابعة سلوكية', notifyParent: true, requiresAdminReview: false, isActive: true, sortOrder: 4 },
-  { id: 'SAMAT005', name: 'التنمر', category: 'احترام الآخرين والأمان النفسي', severity: 'متوسطة', points: 10, weight: 10, defaultAction: 'تدخل فوري وتوثيق ومتابعة الأطراف وخطة منع التكرار', notifyParent: true, requiresAdminReview: true, isActive: true, sortOrder: 5 },
-  { id: 'SAMAT006', name: 'استخدام ألفاظ غير لائقة', category: 'الاحترام والتواصل المسؤول', severity: 'شديدة', points: 15, weight: 15, defaultAction: 'تدخل تربوي واعتذار وإصلاح أثر السلوك ومتابعة', notifyParent: true, requiresAdminReview: true, isActive: true, sortOrder: 6 },
-  { id: 'SAMAT007', name: 'المشاجرات مع وقوع ضرر', category: 'السلامة وضبط النفس', severity: 'شديدة', points: 15, weight: 15, defaultAction: 'تأمين الأطراف والتحقيق وتوثيق الضرر وخطة تدخل', notifyParent: true, requiresAdminReview: true, isActive: true, sortOrder: 7 },
-  { id: 'SAMAT008', name: 'عدم ارتداء أدوات السلامة أو الإجراءات الاحترازية', category: 'السلامة والمسؤولية', severity: 'شديدة', points: 15, weight: 15, defaultAction: 'إيقاف النشاط غير الآمن وتصحيح الإجراء قبل الاستمرار', notifyParent: true, requiresAdminReview: true, isActive: true, sortOrder: 8 },
+  { id: 'SAMAT001', name: 'عدم إحضار الأدوات والمتطلبات الدراسية', category: 'المسؤولية والاستعداد للتعلم', traitKey: 'LEARNING', traitName: 'أتعلم بفاعلية', severity: 'بسيطة', points: 5, weight: 5, defaultAction: 'تذكير وتوجيه وتحديد ما يلزم إحضاره في اليوم التالي', notifyParent: false, requiresAdminReview: false, isActive: true, sortOrder: 1 },
+  { id: 'SAMAT002', name: 'عدم الالتزام بالزي المدرسي أو المظهر والنظافة الشخصية', category: 'الانضباط الذاتي والعناية بالنفس', traitKey: 'SELF_LEADERSHIP', traitName: 'أقود نفسي', severity: 'بسيطة', points: 5, weight: 5, defaultAction: 'توجيه تربوي ومتابعة الالتزام', notifyParent: false, requiresAdminReview: false, isActive: true, sortOrder: 2 },
+  { id: 'SAMAT003', name: 'استخدام الموبايل أثناء الحصة', category: 'الانضباط الذاتي والتعلم', traitKey: 'SELF_LEADERSHIP', traitName: 'أقود نفسي', severity: 'متوسطة', points: 10, weight: 10, defaultAction: 'إيقاف الاستخدام وتوثيق الموقف ومراجعة قواعد الاستخدام', notifyParent: true, requiresAdminReview: false, isActive: true, sortOrder: 3 },
+  { id: 'SAMAT004', name: 'المشاجرات البسيطة', category: 'احترام الآخرين وضبط النفس', traitKey: 'RESPECT', traitName: 'أحترم الآخرين', severity: 'متوسطة', points: 10, weight: 10, defaultAction: 'تهدئة الموقف وجلسة إصلاح ومتابعة سلوكية', notifyParent: true, requiresAdminReview: false, isActive: true, sortOrder: 4 },
+  { id: 'SAMAT005', name: 'التنمر', category: 'احترام الآخرين والأمان النفسي', traitKey: 'RESPECT', traitName: 'أحترم الآخرين', severity: 'متوسطة', points: 10, weight: 10, defaultAction: 'تدخل فوري وتوثيق ومتابعة الأطراف وخطة منع التكرار', notifyParent: true, requiresAdminReview: true, isActive: true, sortOrder: 5 },
+  { id: 'SAMAT006', name: 'استخدام ألفاظ غير لائقة', category: 'الاحترام والتواصل المسؤول', traitKey: 'RESPECT', traitName: 'أحترم الآخرين', severity: 'شديدة', points: 15, weight: 15, defaultAction: 'تدخل تربوي واعتذار وإصلاح أثر السلوك ومتابعة', notifyParent: true, requiresAdminReview: true, isActive: true, sortOrder: 6 },
+  { id: 'SAMAT007', name: 'المشاجرات مع وقوع ضرر', category: 'السلامة وضبط النفس', traitKey: 'SAFETY', traitName: 'أتصرف بأمان', severity: 'شديدة', points: 15, weight: 15, defaultAction: 'تأمين الأطراف والتحقيق وتوثيق الضرر وخطة تدخل', notifyParent: true, requiresAdminReview: true, isActive: true, sortOrder: 7 },
+  { id: 'SAMAT008', name: 'عدم ارتداء أدوات السلامة أو الإجراءات الاحترازية', category: 'السلامة والمسؤولية', traitKey: 'SAFETY', traitName: 'أتصرف بأمان', severity: 'شديدة', points: 15, weight: 15, defaultAction: 'إيقاف النشاط غير الآمن وتصحيح الإجراء قبل الاستمرار', notifyParent: true, requiresAdminReview: true, isActive: true, sortOrder: 8 },
   { id: 'SAMAT009', name: 'حالات الفصل من المدرسة', category: 'إجراء إداري', severity: 'شديدة', points: 15, weight: 15, defaultAction: 'إحالة للإدارة ومراجعة ملف الحالة والإجراءات السابقة', notifyParent: true, requiresAdminReview: true, isActive: true, sortOrder: 9 },
-  { id: 'SAMAT010', name: 'التعصب الديني أو القبلي', category: 'الاحترام والمواطنة', severity: 'خطيرة جداً', points: 30, weight: 30, defaultAction: 'إحالة فورية للإدارة والأخصائي مع تدخل تربوي موثق', notifyParent: true, requiresAdminReview: true, isActive: true, sortOrder: 10 },
-  { id: 'SAMAT011', name: 'التطاول على المدرس', category: 'الاحترام والمسؤولية', severity: 'خطيرة جداً', points: 30, weight: 30, defaultAction: 'إحالة للإدارة وتوثيق الواقعة وخطة إصلاح ومتابعة', notifyParent: true, requiresAdminReview: true, isActive: true, sortOrder: 11 },
-  { id: 'SAMAT012', name: 'التحرش', category: 'السلامة والحدود الشخصية', severity: 'خطيرة جداً', points: 30, weight: 30, defaultAction: 'تأمين الحالة وإحالة فورية للإدارة وفق إجراءات الحماية المعتمدة', notifyParent: true, requiresAdminReview: true, isActive: true, sortOrder: 12 },
-  { id: 'SAMAT013', name: 'السرقة', category: 'الأمانة والمسؤولية', severity: 'خطيرة جداً', points: 30, weight: 30, defaultAction: 'إحالة للإدارة والتحقق من الواقعة وإصلاح الأثر ومتابعة الحالة', notifyParent: true, requiresAdminReview: true, isActive: true, sortOrder: 13 },
-  { id: 'SAMAT014', name: 'عدم نظافة الأظافر وطولها', category: 'العناية بالنفس والصحة', severity: 'بسيطة', points: 5, weight: 5, defaultAction: 'توجيه صحي ومتابعة التحسن', notifyParent: false, requiresAdminReview: false, isActive: true, sortOrder: 14 },
+  { id: 'SAMAT010', name: 'التعصب الديني أو القبلي', category: 'الاحترام والمواطنة', traitKey: 'RESPECT', traitName: 'أحترم الآخرين', severity: 'خطيرة جداً', points: 30, weight: 30, defaultAction: 'إحالة فورية للإدارة والأخصائي مع تدخل تربوي موثق', notifyParent: true, requiresAdminReview: true, isActive: true, sortOrder: 10 },
+  { id: 'SAMAT011', name: 'التطاول على المدرس', category: 'الاحترام والمسؤولية', traitKey: 'RESPECT', traitName: 'أحترم الآخرين', severity: 'خطيرة جداً', points: 30, weight: 30, defaultAction: 'إحالة للإدارة وتوثيق الواقعة وخطة إصلاح ومتابعة', notifyParent: true, requiresAdminReview: true, isActive: true, sortOrder: 11 },
+  { id: 'SAMAT012', name: 'التحرش', category: 'السلامة والحدود الشخصية', traitKey: 'SAFETY', traitName: 'أتصرف بأمان', severity: 'خطيرة جداً', points: 30, weight: 30, defaultAction: 'تأمين الحالة وإحالة فورية للإدارة وفق إجراءات الحماية المعتمدة', notifyParent: true, requiresAdminReview: true, isActive: true, sortOrder: 12 },
+  { id: 'SAMAT013', name: 'السرقة', category: 'الأمانة والمسؤولية', traitKey: 'INTEGRITY', traitName: 'أتصرف بأمانة', severity: 'خطيرة جداً', points: 30, weight: 30, defaultAction: 'إحالة للإدارة والتحقق من الواقعة وإصلاح الأثر ومتابعة الحالة', notifyParent: true, requiresAdminReview: true, isActive: true, sortOrder: 13 },
+  { id: 'SAMAT014', name: 'عدم نظافة الأظافر وطولها', category: 'العناية بالنفس والصحة', traitKey: 'SELF_LEADERSHIP', traitName: 'أقود نفسي', severity: 'بسيطة', points: 5, weight: 5, defaultAction: 'توجيه صحي ومتابعة التحسن', notifyParent: false, requiresAdminReview: false, isActive: true, sortOrder: 14 },
 ];
 
 export const DEFAULT_BEHAVIOR_RULES: BehaviorScoreRule = {
