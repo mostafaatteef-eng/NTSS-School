@@ -52,6 +52,7 @@ import { runMigrationScope012RemoveLocalPasswords } from './services/migrationSc
 import { runMigrationScope013RetireTeacherPin } from './services/migrationScope013RetireTeacherPin';
 import { runMigrationScope014MultiSchool } from './services/migrationScope014MultiSchool';
 import { runMigrationScope015RemoveFirstLogin } from './services/migrationScope015RemoveFirstLogin';
+import { isPostgresBackendEnabled } from './services/backend/postgresRuntime';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(() => storageService.getCurrentUser());
@@ -101,14 +102,20 @@ export default function App() {
 
   // Run scope reduction, retirement, and timetable security migrations on boot
   useEffect(() => {
-    runMigrationScope008RemoveSamatPayroll();
-    runMigrationScope009SecurityAndFinalRetirement();
-    runMigrationScope010TimetableSecureBackend();
-    runMigrationScope011LoginNumbersFirstLogin();
+    // Security sanitation remains safe and useful in every mode.
     runMigrationScope012RemoveLocalPasswords();
-    runMigrationScope013RetireTeacherPin();
-    runMigrationScope014MultiSchool();
-    runMigrationScope015RemoveFirstLogin();
+
+    // Legacy browser-data migrations must never mutate operational state when
+    // PostgreSQL is authoritative. They remain available only for local/legacy mode.
+    if (!isPostgresBackendEnabled()) {
+      runMigrationScope008RemoveSamatPayroll();
+      runMigrationScope009SecurityAndFinalRetirement();
+      runMigrationScope010TimetableSecureBackend();
+      runMigrationScope011LoginNumbersFirstLogin();
+      runMigrationScope013RetireTeacherPin();
+      runMigrationScope014MultiSchool();
+      runMigrationScope015RemoveFirstLogin();
+    }
   }, []);
 
   // Sync with browser back/forward and URL hash
