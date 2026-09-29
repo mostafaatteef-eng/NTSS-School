@@ -81,6 +81,18 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ onBackToLo
   const [homeworkSaveError, setHomeworkSaveError] = useState('');
   const [resourceSaveError, setResourceSaveError] = useState('');
   const [portalNotice, setPortalNotice] = useState('');
+  const portalClassrooms = Array.from(
+    new Map(
+      weeklySchedule
+        .filter(item => item.classroomId || item.classroom)
+        .map(item => {
+          const id = String(item.classroomId || item.classroom || '');
+          const name = String(item.classroom || item.classroomName || item.classroomId || '');
+          const grade = String(item.grade || item.gradeName || '');
+          return [id, { id, name, grade }] as const;
+        })
+    ).values()
+  );
 
   // Teacher portal access is session-authoritative. Stored session metadata is
   // never sufficient by itself; the token is revalidated by the backend.
@@ -301,11 +313,7 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ onBackToLo
       title: newHwTitle,
       description: newHwDesc,
       subject: newHwSubject || 'العلوم التقنية التخصصية',
-      grade: newHwClassroom.startsWith('1')
-        ? 'الصف الأول الثانوي'
-        : newHwClassroom.startsWith('2')
-          ? 'الصف الثاني الثانوي'
-          : 'الصف الثالث الثانوي',
+      grade: portalClassrooms.find(c => c.id === newHwClassroom)?.grade || '',
       classroom: newHwClassroom,
       assignedDate: new Date().toISOString().split('T')[0],
       dueDate: newHwDueDate || new Date().toISOString().split('T')[0],
@@ -962,11 +970,9 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ onBackToLo
                     onChange={e => setNewHwClassroom(e.target.value)}
                     className="w-full border border-slate-300 rounded-lg p-2 text-xs"
                   >
-                    <option value="1/1">فصل 1/1</option>
-                    <option value="1/2">فصل 1/2</option>
-                    <option value="2/1">فصل 2/1</option>
-                    <option value="2/2">فصل 2/2</option>
-                    <option value="3/1">فصل 3/1</option>
+                    {(portalClassrooms.length ? portalClassrooms : [{ id: '', name: 'لا توجد فصول مسندة', grade: '' }]).map(c => (
+                      <option key={c.id || 'none'} value={c.id} disabled={!c.id}>فصل {c.name}</option>
+                    ))}
                   </select>
                 </div>
                 <div>
@@ -1047,11 +1053,9 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ onBackToLo
                     onChange={e => setResClassroom(e.target.value)}
                     className="w-full border border-slate-300 rounded-lg p-2 text-xs"
                   >
-                    <option value="1/1">فصل 1/1</option>
-                    <option value="1/2">فصل 1/2</option>
-                    <option value="2/1">فصل 2/1</option>
-                    <option value="2/2">فصل 2/2</option>
-                    <option value="3/1">فصل 3/1</option>
+                    {(portalClassrooms.length ? portalClassrooms : [{ id: '', name: 'لا توجد فصول مسندة', grade: '' }]).map(c => (
+                      <option key={c.id || 'none'} value={c.id} disabled={!c.id}>فصل {c.name}</option>
+                    ))}
                   </select>
                 </div>
                 <div>
