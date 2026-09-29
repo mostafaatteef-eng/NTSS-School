@@ -28,6 +28,7 @@ import * as XLSX from 'xlsx';
 import { BehaviorType, BehaviorViolation, PositiveBehaviorType, Student } from '../../types';
 import { storageService } from '../../services/storageService';
 import { getSamatStudentLevel } from '../../services/behavior/samatScoring';
+import { SAMAT_SKILLS, SAMAT_SKILL_SCORE_SCALE } from '../../data/initialData';
 import {
   formatEgyptianDate,
   getCairoCurrentDate,
@@ -59,6 +60,9 @@ export const BehaviorView: React.FC = () => {
   const [followupNextDate, setFollowupNextDate] = useState('');
   const [closePlanId, setClosePlanId] = useState<string | null>(null);
   const [closePlanResult, setClosePlanResult] = useState('');
+  const [skillId, setSkillId] = useState('');
+  const [skillScore, setSkillScore] = useState(0);
+  const [skillEvidence, setSkillEvidence] = useState('');
 
   const [activeSubTab, setActiveSubTab] = useState<'violations' | 'positive' | 'types_manager' | 'at_risk'>('violations');
 
@@ -156,6 +160,8 @@ export const BehaviorView: React.FC = () => {
     return { open, overdue, closed };
   }, [allImprovementPlans]);
   const profilePlans = useMemo(() => profileStudentId ? allImprovementPlans.filter(x => x.studentId === profileStudentId) : [], [profileStudentId, allImprovementPlans]);
+  const profileSkillAssessments = useMemo(() => profileStudentId ? storageService.getSamatSkillAssessments(profileStudentId) : [], [profileStudentId, skillId, skillScore, skillEvidence]);
+  const profileSkillAverage = useMemo(() => profileSkillAssessments.length ? profileSkillAssessments.reduce((sum,row)=>sum+Number(row.score),0)/profileSkillAssessments.length : null, [profileSkillAssessments]);
   const profileTimeline = useMemo(() => {
     if (!profileStudentId) return [];
     const negative = violations.filter(v => v.studentId === profileStudentId).map(v => ({
@@ -369,6 +375,27 @@ export const BehaviorView: React.FC = () => {
     storageService.closeBehaviorCase(closePlanId, summary);
     setClosePlanId(null); setClosePlanResult('');
     alert('تم إغلاق خطة تحسين سمات وتوثيق نتيجة الإغلاق.');
+  };
+
+  const handleSaveSkillAssessment = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!profileStudent || !skillId) return;
+    const skill = SAMAT_SKILLS.find(item => item.id === skillId);
+    if (!skill) return;
+    storageService.saveSamatSkillAssessment({
+      id: `SAMAT-SKILL-${Date.now()}`,
+      studentId: profileStudent.id,
+      studentName: profileStudent.name,
+      grade: profileStudent.grade,
+      classroom: profileStudent.classroom,
+      skillId: skill.id,
+      skillName: skill.name,
+      score: skillScore as 0 | 2 | 4 | 6 | 8 | 10,
+      evidence: skillEvidence.trim() || undefined,
+      date: getCairoCurrentDate(),
+    });
+    setSkillId(''); setSkillScore(0); setSkillEvidence('');
+    alert('تم حفظ تقييم المهارة في ملف سمات الطالب.');
   };
 
   const handleDeleteViolation = (id: string) => {
@@ -941,6 +968,17 @@ export const BehaviorView: React.FC = () => {
                 <div className="rounded-xl bg-slate-50 border border-slate-100 p-4"><div className="text-[11px] text-slate-500">المواقف المسجلة</div><div className="text-2xl font-black text-slate-900">{profileTimeline.length}</div></div>
               </div>
             ); })()}
+            <div className="rounded-2xl border border-slate-200 p-4">
+              <div className="flex items-center justify-between gap-3 mb-3"><div><h4 className="text-sm font-extrabold text-slate-900">تقييم المهارات الحياتية</h4><p className="text-[11px] text-slate-500 mt-0.5">المقياس المعتمد في ملف المصدر: 0 / 2 / 4 / 6 / 8 / 10</p></div>{profileSkillAverage !== null && <div className="text-center"><div className="text-[10px] text-slate-500">المتوسط</div><div className="text-xl font-black text-teal-700">{profileSkillAverage.toFixed(1)}/10</div></div>}</div>
+              <form onSubmit={handleSaveSkillAssessment} className="grid grid-cols-1 md:grid-cols-4 gap-2">
+                <select required value={skillId} onChange={e=>setSkillId(e.target.value)} className="md:col-span-2 text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2"><option value="">— اختر المهارة —</option>{SAMAT_SKILLS.map(skill=><option key={skill.id} value={skill.id}>{skill.name}</option>)}</select>
+                <select value={skillScore} onChange={e=>setSkillScore(Number(e.target.value))} className="text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">{SAMAT_SKILL_SCORE_SCALE.map(score=><option key={score} value={score}>{score}</option>)}</select>
+                <button type="submit" className="bg-teal-600 text-white rounded-xl text-xs font-bold px-3 py-2">حفظ التقييم</button>
+                <input value={skillEvidence} onChange={e=>setSkillEvidence(e.target.value)} placeholder="دليل/ملاحظة التقييم (اختياري)" className="md:col-span-4 text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2"/>
+              </form>
+              {profileSkillAssessments.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{profileSkillAssessments.slice(0,12).map(row=><span key={row.id} className="px-2.5 py-1 rounded-full bg-slate-50 border border-slate-200 text-[10px] text-slate-700">{row.skillName}: <b>{row.score}/10</b></span>)}</div>}
+            </div>
+
             {profilePlans.length > 0 && <div>
               <h4 className="text-sm font-extrabold text-slate-900 mb-3">خطط تحسين سمات</h4>
               <div className="space-y-2 mb-5">{profilePlans.map(plan => {
