@@ -54,3 +54,9 @@ if (!qualityDashboard.includes('لم يتم تقييم هذا المجال بع�
 
 const pgRuntime = fs.readFileSync('src/services/backend/postgresRuntime.ts','utf8');
 if (!pgRuntime.includes("response.headers.get('x-request-id')")) throw new Error('PostgreSQL client must preserve server request IDs for traceability.');
+
+const masterManager = fs.readFileSync('src/components/masterdata/MasterDataManagerView.tsx','utf8');
+if (!masterManager.includes('currentUser?.activeSchoolId') || !masterManager.includes('currentUser?.sessionToken')) throw new Error('Master Data must refresh when school/session context changes.');
+if (!masterManager.includes('isPostgresBackendEnabled() ? [] : MasterDataService.getMasterData()')) throw new Error('Master Data must fail closed instead of falling back to browser authority in PostgreSQL mode.');
+const apiSource = fs.readFileSync('api/index.ts','utf8');
+if (!apiSource.includes("code:'MASTER_DATA_CODE_EXISTS'")) throw new Error('Master Data duplicate codes need a deterministic 409 contract.');
