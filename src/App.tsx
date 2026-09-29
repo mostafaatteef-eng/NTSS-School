@@ -41,6 +41,7 @@ import { TimetableModuleView } from './components/timetable/TimetableModuleView'
 import { PublicStudentScheduleView } from './components/timetable/PublicStudentScheduleView';
 import { TeacherPortalView } from './components/timetable/TeacherPortalView';
 import { QualityModule } from './components/quality/QualityModule';
+import { ModuleErrorBoundary } from './components/errors/ModuleErrorBoundary';
 import { LoginView } from './components/auth/LoginView';
 import { StudentPortalView } from './components/student/StudentPortalView';
 import { ForceChangePasswordModal } from './components/auth/ForceChangePasswordModal';
@@ -521,7 +522,11 @@ export default function App() {
         );
 
       case 'quality':
-        return <QualityModule currentUser={currentUser} />;
+        return (
+          <ModuleErrorBoundary moduleName="منظومة الجودة">
+            <QualityModule currentUser={currentUser} />
+          </ModuleErrorBoundary>
+        );
 
       case 'users':
         return (
