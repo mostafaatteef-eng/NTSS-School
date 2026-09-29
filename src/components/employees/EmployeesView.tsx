@@ -247,14 +247,14 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
 
   const handleDeleteEmployee = async (emp: Employee) => {
     if (!canDelete) return;
-    if (!window.confirm(`هل أنت متأكد من حذف الموظف (${emp.name}) نهائياً من النظام؟`)) return;
+    if (!window.confirm(`هل تريد أرشفة الموظف (${emp.name}) وتعطيل حسابه مع الاحتفاظ بسجلاته السابقة؟`)) return;
 
     setEmployeeAction(`delete:${emp.id}`);
     const result = await storageService.deleteManagedEmployeeAuthoritative(emp.id);
     setEmployeeAction(null);
 
     if (!result.success) {
-      setEmployeesError(result.message || 'تعذر حذف الموظف.');
+      setEmployeesError(result.message || 'تعذر أرشفة الموظف.');
       return;
     }
 
@@ -526,7 +526,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                               disabled={employeeAction !== null}
                               onClick={() => void handleDeleteEmployee(emp)}
                               className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors disabled:opacity-40"
-                              title="حذف الموظف"
+                              title="أرشفة الموظف"
                             >
                               <Trash2 className="w-4 h-4" />
                             </button>
