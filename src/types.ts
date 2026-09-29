@@ -895,6 +895,9 @@ export interface BehaviorCase {
   createdBy: string;
   createdAt: string;
   updatedAt?: string;
+  baselineScore?: number;
+  closingScore?: number;
+  improvementDelta?: number;
 }
 
 export interface BehaviorFollowup {
