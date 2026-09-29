@@ -39,6 +39,14 @@ const readinessStart = operations.indexOf('public static evaluateGoLiveDecision'
 const readinessBlock = operations.slice(readinessStart);
 if (!readinessBlock.includes('PRODUCTION_READINESS_EVIDENCE_UNAVAILABLE')) throw new Error('Production readiness must fail closed without authoritative evidence.');
 
+const legacyMaster = fs.readFileSync('src/services/masterDataService.ts','utf8');
+for (const getter of ['getMasterData','saveMasterDataItem','toggleActive']) {
+  const start = legacyMaster.indexOf('public static ' + getter);
+  const next = legacyMaster.indexOf('public static ', start + 14);
+  const block = legacyMaster.slice(start, next < 0 ? legacyMaster.length : next);
+  if (start < 0 || !block.includes('isPostgresBackendEnabled()')) throw new Error(getter + ' must fail closed under PostgreSQL master-data authority.');
+}
+
 console.log('Canonical data authority guard passed.');
 
 const app = fs.readFileSync('src/App.tsx','utf8');
