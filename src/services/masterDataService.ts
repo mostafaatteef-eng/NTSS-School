@@ -1,6 +1,7 @@
 import { MasterDataCategory, MasterDataItem } from '../types';
 import { DEFAULT_MASTER_DATA, STORAGE_KEYS } from './storageServiceConstants';
 import { getCairoNowISO } from '../utils/egyptianTime';
+import { isPostgresBackendEnabled } from './backend/postgresRuntime';
 
 export class MasterDataService {
   private static getStorageKey(): string {
@@ -8,6 +9,7 @@ export class MasterDataService {
   }
 
   public static getMasterData(category?: MasterDataCategory, typeKey?: string): MasterDataItem[] {
+    if (isPostgresBackendEnabled()) return [];
     const raw = localStorage.getItem(this.getStorageKey());
     let list: MasterDataItem[] = [];
     if (raw) {
@@ -31,6 +33,7 @@ export class MasterDataService {
   }
 
   public static saveMasterDataItem(item: Partial<MasterDataItem>): { success: boolean; data?: MasterDataItem; message?: string } {
+    if (isPostgresBackendEnabled()) return { success: false, message: 'LEGACY_LOCAL_MASTER_DATA_WRITE_DISABLED' };
     const list = this.getMasterData();
     const now = getCairoNowISO();
 
@@ -65,6 +68,7 @@ export class MasterDataService {
   }
 
   public static toggleActive(id: string): { success: boolean } {
+    if (isPostgresBackendEnabled()) return { success: false };
     const list = this.getMasterData();
     const idx = list.findIndex(i => i.id === id);
     if (idx >= 0) {
