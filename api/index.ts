@@ -144,6 +144,18 @@ function buildRequestContext(user: any): RequestContext {
   };
 }
 
+const BACKEND_ROLE_POLICIES = {
+  QUALITY_READ: new Set(['SystemAdmin','Admin','SchoolAdmin','SchoolDirector','QualityOfficer','Supervisor']),
+  QUALITY_WRITE: new Set(['SystemAdmin','Admin','SchoolAdmin','SchoolDirector','QualityOfficer','Supervisor']),
+  QUALITY_APPROVE: new Set(['SystemAdmin','Admin','SchoolAdmin','SchoolDirector']),
+} as const;
+
+type BackendPermission = keyof typeof BACKEND_ROLE_POLICIES;
+
+function hasBackendPermission(context: RequestContext, permission: BackendPermission): boolean {
+  return BACKEND_ROLE_POLICIES[permission].has(context.role as never);
+}
+
 async function canAccessSchool(user: any, schoolId: string) {
   if (!schoolId) return false;
   if (user.access_scope === 'GLOBAL') {
@@ -868,10 +880,7 @@ export const ntssHandler = {
         const requestContext=buildRequestContext(user);
         const schoolId=String(body.schoolId||requestContext.activeSchoolId).trim();
         if(!(await canAccessSchool(user,schoolId))) return respond({status: 'error',code:'FORBIDDEN'},403,corsOrigin);
-        const canRead=new Set(['SystemAdmin','Admin','SchoolAdmin','SchoolDirector','QualityOfficer','Supervisor']);
-        const canWrite=new Set(['SystemAdmin','Admin','SchoolAdmin','SchoolDirector','QualityOfficer','Supervisor']);
-        const canApprove=new Set(['SystemAdmin','Admin','SchoolAdmin','SchoolDirector']);
-        if(!canRead.has(String(user.role||''))) return respond({status: 'error',code:'FORBIDDEN'},403,corsOrigin);
+        if(!hasBackendPermission(requestContext,'QUALITY_READ')) return respond({status: 'error',code:'FORBIDDEN'},403,corsOrigin);
         const reportTypes=new Set(['TEACHER_VISIT','DAILY_REPORT','COMPREHENSIVE_EVALUATION']);
         const allowedTypes=new Set([...reportTypes,'CORRECTIVE_ACTION','QUALITY_STANDARD']);
         const recordType=String(data.recordType||body.recordType||'').toUpperCase();
@@ -882,7 +891,7 @@ export const ntssHandler = {
           const q=await pool.query(sql,params);
           return json({status:'success',data:q.rows.map((r:any)=>({...r.payload,id:r.id,schoolId:r.school_id,recordType:r.record_type,status:r.record_type==='CORRECTIVE_ACTION'?(r.payload?.status||'OPEN'):r.status,workflowStatus:r.status,createdAt:r.created_at,updatedAt:r.updated_at,approvedAt:r.approved_at}))},200,corsOrigin);
         }
-        if(!canWrite.has(String(user.role||''))) return respond({status: 'error',code:'FORBIDDEN'},403,corsOrigin);
+        if(!hasBackendPermission(requestContext,'QUALITY_WRITE')) return respond({status: 'error',code:'FORBIDDEN'},403,corsOrigin);
         const suppliedId=String(data.id||'').trim();
         if((action==='delete'||action==='approve')&&!suppliedId)return respond({status: 'error',code:'INVALID_ID'},400,corsOrigin);
         const id=suppliedId||('QLT-'+crypto.randomBytes(8).toString('hex').toUpperCase());
@@ -895,7 +904,7 @@ export const ntssHandler = {
           return json({status:'success'},200,corsOrigin);
         }
         if(action==='approve'){
-          if(!canApprove.has(String(user.role||'')))return respond({status: 'error',code:'FORBIDDEN'},403,corsOrigin);
+          if(!hasBackendPermission(requestContext,'QUALITY_APPROVE'))return respond({status: 'error',code:'FORBIDDEN'},403,corsOrigin);
           const typeCheck=await pool.query('SELECT record_type FROM quality_records WHERE school_id=$1 AND id=$2',[schoolId,id]);
           if(!typeCheck.rowCount)return respond({status: 'error',code:'NOT_FOUND'},404,corsOrigin);
           if(!reportTypes.has(String(typeCheck.rows[0].record_type)))return respond({status: 'error',code:'APPROVAL_NOT_SUPPORTED'},409,corsOrigin);
