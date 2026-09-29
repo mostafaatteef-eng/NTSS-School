@@ -26,6 +26,7 @@ import { MasterDataCategory, MasterDataItem } from '../../types';
 import { MasterDataService } from '../../services/masterDataService';
 import { masterDataAuthoritativeService } from '../../services/masterDataAuthoritativeService';
 import { storageService } from '../../services/storageService';
+import { isPostgresBackendEnabled } from '../../services/backend/postgresRuntime';
 import { AcademicYearsManagement } from '../settings/AcademicYearsManagement';
 
 type MainTab = 'ACADEMIC' | 'YEARS' | 'HR' | 'STUDENTS' | 'BEHAVIOR';
@@ -51,20 +52,24 @@ export const MasterDataManagerView: React.FC = () => {
       const result = await masterDataAuthoritativeService.list(currentUser);
       if (result.success && result.data) { setMasterData(result.data); return; }
     }
-    setMasterData(MasterDataService.getMasterData());
+    setMasterData(isPostgresBackendEnabled() ? [] : MasterDataService.getMasterData());
   };
 
   useEffect(() => {
     let active = true;
     (async () => {
+      setServerMasterDataAvailable(false);
+      if (isPostgresBackendEnabled()) setMasterData([]);
       const capability = await masterDataAuthoritativeService.capability(currentUser);
       if (!active || !capability.success || !capability.available) return;
       setServerMasterDataAvailable(true);
       const result = await masterDataAuthoritativeService.list(currentUser);
-      if (active && result.success && result.data) setMasterData(result.data);
+      if (!active) return;
+      if (result.success && result.data) setMasterData(result.data);
+      else if (isPostgresBackendEnabled()) setMasterData([]);
     })();
     return () => { active = false; };
-  }, []);
+  }, [currentUser?.id, currentUser?.activeSchoolId, currentUser?.schoolId, currentUser?.sessionToken]);
 
   const subTypeOptions: Record<string, Array<{ key: string; label: string }>> = {
     ACADEMIC: [
