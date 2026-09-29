@@ -896,6 +896,54 @@ export const ntssHandler = {
         return json({status:'success',data:{...q.rows[0].payload,id,status:q.rows[0].status}},200,corsOrigin);
       }
 
+      if (request.method === 'POST' && path === '/notifications/manage') {
+        const body:any=await request.json();
+        const action=String(body.action||'');
+        const schoolId=String(body.schoolId||user.active_school_id||user.school_id||'').trim();
+        if(!(await canAccessSchool(user,schoolId))) return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);
+        if(action==='capability') {
+          const q=await pool.query("SELECT to_regclass('public.notifications') AS notifications, to_regclass('public.notification_reads') AS reads");
+          return json({status:'success',available:Boolean(q.rows[0]?.notifications&&q.rows[0]?.reads)},200,corsOrigin);
+        }
+        const userId=String(user.user_id||'');
+        const role=String(user.role||'');
+        if(action==='list') {
+          const q=await pool.query(`SELECT n.*, (nr.user_id IS NOT NULL) AS is_read, nr.read_at
+            FROM notifications n
+            LEFT JOIN notification_reads nr ON nr.notification_id=n.id AND nr.user_id=$2
+            WHERE n.school_id=$1
+              AND (n.expires_at IS NULL OR n.expires_at>now())
+              AND (n.target_user_id IS NULL OR n.target_user_id=$2)
+              AND (n.target_role IS NULL OR n.target_role='ALL' OR n.target_role=$3 OR $3 IN ('SystemAdmin','Admin'))
+            ORDER BY n.created_at DESC LIMIT 100`,[schoolId,userId,role]);
+          const data=q.rows.map((r:any)=>({id:r.id,type:r.type,category:r.category,title:r.title,message:r.message,targetUserId:r.target_user_id||undefined,targetRole:r.target_role||undefined,targetStudentId:r.target_student_id||undefined,relatedEntity:r.related_entity||undefined,relatedEntityId:r.related_entity_id||undefined,priority:r.priority,isRead:Boolean(r.is_read),readAt:r.read_at?new Date(r.read_at).toISOString():undefined,createdAt:new Date(r.created_at).toISOString(),expiresAt:r.expires_at?new Date(r.expires_at).toISOString():undefined,actionUrl:r.action_url||undefined,createdBySystem:Boolean(r.created_by_system),deduplicationKey:r.deduplication_key||undefined}));
+          return json({status:'success',data},200,corsOrigin);
+        }
+        if(action==='read'||action==='read-all') {
+          if(action==='read') {
+            const id=String(body.id||'').trim();
+            const visible=await pool.query(`SELECT 1 FROM notifications WHERE id=$1 AND school_id=$2 AND (target_user_id IS NULL OR target_user_id=$3) AND (target_role IS NULL OR target_role='ALL' OR target_role=$4 OR $4 IN ('SystemAdmin','Admin'))`,[id,schoolId,userId,role]);
+            if(!visible.rowCount)return json({status:'error',code:'NOT_FOUND'},404,corsOrigin);
+            await pool.query('INSERT INTO notification_reads(notification_id,user_id) VALUES($1,$2) ON CONFLICT(notification_id,user_id) DO UPDATE SET read_at=now()',[id,userId]);
+          } else {
+            await pool.query(`INSERT INTO notification_reads(notification_id,user_id)
+              SELECT id,$2 FROM notifications WHERE school_id=$1 AND (target_user_id IS NULL OR target_user_id=$2) AND (target_role IS NULL OR target_role='ALL' OR target_role=$3 OR $3 IN ('SystemAdmin','Admin'))
+              ON CONFLICT(notification_id,user_id) DO UPDATE SET read_at=now()`,[schoolId,userId,role]);
+          }
+          return json({status:'success'},200,corsOrigin);
+        }
+        if(action==='delete') {
+          const id=String(body.id||'').trim();
+          const canDelete=['SystemAdmin','Admin','SchoolAdmin','SchoolDirector'].includes(role);
+          if(!canDelete)return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);
+          const q=await pool.query('DELETE FROM notifications WHERE id=$1 AND school_id=$2 RETURNING id',[id,schoolId]);
+          if(!q.rowCount)return json({status:'error',code:'NOT_FOUND'},404,corsOrigin);
+          await pool.query('INSERT INTO audit_logs(school_id,user_id,username,role,action,entity,target_id,details) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[schoolId,user.user_id,user.email,user.role,'DELETE','NOTIFICATION',id,'']);
+          return json({status:'success'},200,corsOrigin);
+        }
+        return json({status:'error',code:'ACTION_NOT_MIGRATED'},400,corsOrigin);
+      }
+
       if (request.method === 'POST' && path === '/master-data/manage') {
         const body:any=await request.json();
         const action=String(body.action||'');
