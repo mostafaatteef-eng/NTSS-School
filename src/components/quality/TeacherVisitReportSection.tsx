@@ -327,7 +327,7 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
                       </span>
                     </td>
                     <td className="p-3.5 text-center font-bold text-slate-900">
-                      {rep.earnedScore.toFixed(1)} / {rep.totalScore.toFixed(1)}
+                      {Number(rep.earnedScore ?? 0).toFixed(1)} / {Number(rep.totalScore ?? 0).toFixed(1)}
                     </td>
                     <td className="p-3.5 text-center">
                       <span
@@ -339,7 +339,7 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
                             : 'bg-rose-100 text-rose-800'
                         }`}
                       >
-                        {rep.percentage.toFixed(1)}%
+                        {Number(rep.percentage ?? 0).toFixed(1)}%
                       </span>
                     </td>
                     <td className="p-3.5 text-center">
@@ -749,9 +749,9 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
                 <div>
                   <div className="text-xs font-bold text-teal-900">الدرجة الموزونة المحققة</div>
                   <div className="text-2xl font-black text-indigo-950 mt-0.5">
-                    {viewingReport.earnedScore.toFixed(1)}{' '}
+                    {Number(viewingReport.earnedScore ?? 0).toFixed(1)}{' '}
                     <span className="text-sm font-normal text-[#008e8b]">
-                      / {viewingReport.totalScore.toFixed(1)}
+                      / {Number(viewingReport.totalScore ?? 0).toFixed(1)}
                     </span>
                   </div>
                 </div>
@@ -766,7 +766,7 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
                         : 'bg-rose-100 text-rose-800'
                     }`}
                   >
-                    {viewingReport.percentage.toFixed(1)}%
+                    {Number(viewingReport.percentage ?? 0).toFixed(1)}%
                   </span>
                 </div>
               </div>
@@ -786,7 +786,7 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
                 <div>
                   <span className="text-slate-400 block">نوع الزيارة:</span>
                   <span className="font-bold text-slate-800">
-                    {visitTypeLabels[viewingReport.visitType]}
+                    {visitTypeLabels[viewingReport.visitType] || viewingReport.visitType || '—'}
                   </span>
                 </div>
                 <div>
@@ -812,7 +812,7 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {viewingReport.standardScores.map((sc, i) => (
+                      {(viewingReport.standardScores ?? []).map((sc, i) => (
                         <tr key={i}>
                           <td className="p-2.5 font-mono font-bold text-[#008e8b]">{sc.standardCode}</td>
                           <td className="p-2.5 text-slate-800">
