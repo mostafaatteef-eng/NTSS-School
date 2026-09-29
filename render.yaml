@@ -3,7 +3,7 @@ services:
     name: ntss-school-api
     runtime: node
     plan: free
-    buildCommand: npm ci --include=dev
+    buildCommand: npm ci --include=dev && npm run api:build
     startCommand: npm run api:start:canonical
     healthCheckPath: /api/health
     autoDeployTrigger: commit
