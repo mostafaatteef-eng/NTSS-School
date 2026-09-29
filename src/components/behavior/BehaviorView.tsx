@@ -70,6 +70,7 @@ export const BehaviorView: React.FC = () => {
   const [excellencePoints, setExcellencePoints] = useState(0);
   const [excellenceBonus, setExcellenceBonus] = useState(0);
   const [excellenceNomination, setExcellenceNomination] = useState('');
+  const [samatRecordsRevision, setSamatRecordsRevision] = useState(0);
 
   const [activeSubTab, setActiveSubTab] = useState<'violations' | 'positive' | 'types_manager' | 'at_risk'>('violations');
 
@@ -178,10 +179,10 @@ export const BehaviorView: React.FC = () => {
     return { open, overdue, closed, averageImprovement };
   }, [allImprovementPlans]);
   const profilePlans = useMemo(() => profileStudentId ? allImprovementPlans.filter(x => x.studentId === profileStudentId) : [], [profileStudentId, allImprovementPlans]);
-  const profileSkillAssessments = useMemo(() => profileStudentId ? storageService.getSamatSkillAssessments(profileStudentId) : [], [profileStudentId, skillId, skillScore, skillEvidence]);
+  const profileSkillAssessments = useMemo(() => profileStudentId ? storageService.getSamatSkillAssessments(profileStudentId) : [], [profileStudentId, samatRecordsRevision]);
   const profileSkillAverage = useMemo(() => profileSkillAssessments.length ? profileSkillAssessments.reduce((sum,row)=>sum+Number(row.score),0)/profileSkillAssessments.length : null, [profileSkillAssessments]);
-  const profileDisciplineRecords = useMemo(() => profileStudentId ? storageService.getSamatDisciplineRecords(profileStudentId) : [], [profileStudentId, disciplineItem, disciplinePoints, disciplineNotes]);
-  const profileExcellenceRecords = useMemo(() => profileStudentId ? storageService.getSamatExcellenceRecords(profileStudentId) : [], [profileStudentId, excellenceItem, excellencePoints, excellenceBonus, excellenceNomination]);
+  const profileDisciplineRecords = useMemo(() => profileStudentId ? storageService.getSamatDisciplineRecords(profileStudentId) : [], [profileStudentId, samatRecordsRevision]);
+  const profileExcellenceRecords = useMemo(() => profileStudentId ? storageService.getSamatExcellenceRecords(profileStudentId) : [], [profileStudentId, samatRecordsRevision]);
   const profileTimeline = useMemo(() => {
     if (!profileStudentId) return [];
     const negative = violations.filter(v => v.studentId === profileStudentId).map(v => ({
@@ -192,8 +193,11 @@ export const BehaviorView: React.FC = () => {
       id: e.id, date: e.date, kind: e.type, title: e.type === 'RESTORE' ? 'استعادة نقاط بعد المتابعة' : 'تميز وتعزيز إيجابي',
       points: Math.abs(Number(e.pointsAwarded ?? e.points ?? 0)), detail: e.reason || '', balanceAfter: e.balanceAfter,
     }));
-    return [...negative, ...ledger].sort((a,b) => String(b.date).localeCompare(String(a.date)));
-  }, [profileStudentId, violations]);
+    const discipline = storageService.getSamatDisciplineRecords(profileStudentId).map(row => ({ id: row.id, date: row.date, kind: 'DISCIPLINE', title: `عدم انضباط: ${row.item}`, points: 0, detail: row.notes || `قيمة السجل: ${row.points}`, balanceAfter: undefined as number | undefined }));
+    const excellence = storageService.getSamatExcellenceRecords(profileStudentId).map(row => ({ id: row.id, date: row.date, kind: 'EXCELLENCE', title: `تميز وبونص: ${row.excellenceItem}`, points: 0, detail: row.nominationSourceAndReason || `النقاط المسجلة: ${row.points} · بونص إضافي: ${row.additionalBonus || 0}`, balanceAfter: undefined as number | undefined }));
+    const skills = storageService.getSamatSkillAssessments(profileStudentId).map(row => ({ id: row.id, date: row.date, kind: 'SKILL', title: `تقييم مهارة: ${row.skillName}`, points: 0, detail: `الدرجة: ${row.score}/10${row.evidence ? ` · ${row.evidence}` : ''}`, balanceAfter: undefined as number | undefined }));
+    return [...negative, ...ledger, ...discipline, ...excellence, ...skills].sort((a,b) => String(b.date).localeCompare(String(a.date)));
+  }, [profileStudentId, violations, samatRecordsRevision]);
 
   const studentsWithScores = useMemo(() => {
     const studentDeductionsMap = new Map<string, { total: number; count: number }>();
@@ -408,7 +412,7 @@ export const BehaviorView: React.FC = () => {
       grade: profileStudent.grade, classroom: profileStudent.classroom, item: disciplineItem.trim(),
       points: Number(disciplinePoints) || 0, date: getCairoCurrentDate(), notes: disciplineNotes.trim() || undefined,
     });
-    setDisciplineItem(''); setDisciplinePoints(0); setDisciplineNotes('');
+    setDisciplineItem(''); setDisciplinePoints(0); setDisciplineNotes(''); setSamatRecordsRevision(v => v + 1);
   };
 
   const handleSaveExcellenceRecord = (e: React.FormEvent) => {
@@ -422,7 +426,7 @@ export const BehaviorView: React.FC = () => {
       level: getSamatStudentLevel(score), date: getCairoCurrentDate(),
       nominationSourceAndReason: excellenceNomination.trim() || undefined,
     });
-    setExcellenceItem(''); setExcellencePoints(0); setExcellenceBonus(0); setExcellenceNomination('');
+    setExcellenceItem(''); setExcellencePoints(0); setExcellenceBonus(0); setExcellenceNomination(''); setSamatRecordsRevision(v => v + 1);
   };
 
   const handleSaveSkillAssessment = (e: React.FormEvent) => {
@@ -442,7 +446,7 @@ export const BehaviorView: React.FC = () => {
       evidence: skillEvidence.trim() || undefined,
       date: getCairoCurrentDate(),
     });
-    setSkillId(''); setSkillScore(0); setSkillEvidence('');
+    setSkillId(''); setSkillScore(0); setSkillEvidence(''); setSamatRecordsRevision(v => v + 1);
     alert('تم حفظ تقييم المهارة في ملف سمات الطالب.');
   };
 
