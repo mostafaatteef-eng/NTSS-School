@@ -16,6 +16,13 @@ if (!backupExport.includes('isPostgresBackendEnabled')) throw new Error('Backup 
 if (!backupExport.includes('if (postgresMode) return')) throw new Error('Browser backup export must fail closed in PostgreSQL mode.');
 if (backupExport.includes('كافة جداول وقواعد بيانات المدرسة')) throw new Error('Browser export must not claim to be a full production database backup.');
 
+const operations = fs.readFileSync('src/services/operationsService.ts','utf8');
+if (!operations.includes('LEGACY_MUTATING_UAT_DISABLED_IN_POSTGRES_MODE')) throw new Error('Mutating browser UAT must be disabled in PostgreSQL mode.');
+const uatStart = operations.indexOf('public static runAutomatedSecurityUAT');
+const uatEnd = operations.indexOf('public static getUatTestCases', uatStart);
+const uatBlock = operations.slice(uatStart, uatEnd);
+if (!uatBlock.includes('isPostgresBackendEnabled()')) throw new Error('Operations UAT must explicitly guard PostgreSQL production before local mutations.');
+
 console.log('Canonical data authority guard passed.');
 
 const app = fs.readFileSync('src/App.tsx','utf8');
