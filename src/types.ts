@@ -958,11 +958,23 @@ export type SeverityLevel =
   | 'الدرجة الرابعة'
   | string;
 
+export type SamatTraitKey = 'SELF_LEADERSHIP' | 'RESPONSIBILITY' | 'RESPECT' | 'SAFETY' | 'INTEGRITY' | 'COOPERATION' | 'LEARNING';
+
+export interface SamatTraitDefinition {
+  key: SamatTraitKey;
+  name: string;
+  description: string;
+}
+
+export type SamatStudentLevel = 'أبني سماتي' | 'أنمّي سماتي' | 'أُظهر سماتي' | 'أتميز بسماتي' | 'قدوة بسماتي';
+
 export interface BehaviorType {
   id: string; // BEH001
   name: string; // اسم المخالفة
   category: string; // سلوكية، أكاديمية، انضباط مدرسي
   description?: string;
+  traitKey?: SamatTraitKey;
+  traitName?: string;
   severity: SeverityLevel;
   points?: number; // عدد النقاط
   weight: number; // خصم نقاط السلوك (مثلاً 2، 5، 10)
