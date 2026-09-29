@@ -137,7 +137,7 @@ async function canAccessSchool(user: any, schoolId: string) {
   return result.rowCount > 0;
 }
 
-const ntssHandler = {
+export const ntssHandler = {
   async fetch(request: Request) {
     const origin = String(request.headers.get('origin') || '').trim();
     const hasOrigin = Boolean(origin);
