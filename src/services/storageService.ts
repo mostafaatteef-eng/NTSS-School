@@ -7457,7 +7457,7 @@ class StorageService {
 
   public async getCurriculumPlansAuthoritative(user?: User | null): Promise<{ success: boolean; plans?: CurriculumMasterPlan[]; message?: string }> {
     const caller = user || this.getCurrentUser();
-    if (!caller?.sessionToken || !this.isAuthenticated(caller)) return { success: false, message: 'يجب تسجيل الدخول لتحميل خطط المنهج.' };
+    if (!caller || !this.isAuthenticated(caller)) return { success: false, message: 'يجب تسجيل الدخول لتحميل خطط المنهج.' };
     if (!isPostgresBackendEnabled()) return { success: true, plans: this.getCurriculumPlans(caller.schoolId) };
     const schoolId = (caller.activeSchoolId || caller.schoolId || this.getActiveSchoolId()).trim();
     if (!schoolId) return { success: false, message: 'يرجى اختيار المدرسة أولاً.' };
@@ -7477,7 +7477,7 @@ class StorageService {
   ): Promise<{ success: boolean; plan?: CurriculumMasterPlan; message: string }> {
     const caller = user || this.getCurrentUser();
     if (!isPostgresBackendEnabled()) return this.saveCurriculumPlan(plan, caller);
-    if (!caller?.sessionToken || !this.isAuthenticated(caller)) return { success: false, message: 'يجب تسجيل الدخول لحفظ خطة المنهج.' };
+    if (!caller || !this.isAuthenticated(caller)) return { success: false, message: 'يجب تسجيل الدخول لحفظ خطة المنهج.' };
     const schoolId = (plan.schoolId || caller.activeSchoolId || caller.schoolId || this.getActiveSchoolId()).trim();
     const pg = await postgresApiRequest<any>('/curriculum/manage', caller.sessionToken, { method: 'POST', body: JSON.stringify({ action: 'savePlan', schoolId, data: plan }) });
     const res = pg.body || {};
@@ -7643,7 +7643,7 @@ class StorageService {
   public async deleteCurriculumPlanAuthoritative(id: string, user?: User | null): Promise<{ success:boolean; message:string }> {
     const caller=user||this.getCurrentUser();
     if(!isPostgresBackendEnabled())return this.deleteCurriculumPlan(id,caller);
-    if(!caller?.sessionToken||!this.isAuthenticated(caller))return {success:false,message:'يجب تسجيل الدخول لحذف خطة المنهج.'};
+    if(!caller||!this.isAuthenticated(caller))return {success:false,message:'يجب تسجيل الدخول لحذف خطة المنهج.'};
     const schoolId=(caller.activeSchoolId||caller.schoolId||this.getActiveSchoolId()).trim();
     const pg=await postgresApiRequest<any>('/curriculum/manage',caller.sessionToken,{method:'POST',body:JSON.stringify({action:'deletePlan',schoolId,data:{id}})});
     const res=pg.body||{};if(!pg.ok||res.status!=='success')return {success:false,message:res.message||'رفض الخادم حذف خطة المنهج.'};
