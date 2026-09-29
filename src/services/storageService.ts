@@ -935,7 +935,7 @@ class StorageService {
     if (user?.sessionToken) headers.set('Authorization', 'Bearer ' + user.sessionToken);
     const target = base + path;
     try {
-      return await fetch(target, { ...init, headers, credentials: 'include' });
+      return await fetch(target, { ...init, headers, credentials: 'include', cache: 'no-store' });
     } catch (error: any) {
       const details = [
         error?.name,
