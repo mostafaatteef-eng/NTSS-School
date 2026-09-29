@@ -29,6 +29,7 @@ import {
 import { ExportService } from '../../services/exportService';
 import { storageService } from '../../services/storageService';
 import { HRPayrollService } from '../../services/hrService';
+import { hrAttendanceClosingService } from '../../services/hrAttendanceClosingService';
 import { getCairoCurrentDate, formatEgyptianDate } from '../../utils/egyptianTime';
 
 interface MonthlyMatrixViewProps {
@@ -55,15 +56,27 @@ export const MonthlyMatrixView: React.FC<MonthlyMatrixViewProps> = ({
   const [selectedCellRecord, setSelectedCellRecord] = useState<AttendanceRecord | null>(null);
 
   // Closing & Snapshot State
-  const [closing, setClosing] = useState<MonthlyAttendanceClosing | undefined>(() =>
-    HRPayrollService.getMonthlyClosing(selectedMonth, selectedYear)
-  );
+  const [closing, setClosing] = useState<MonthlyAttendanceClosing | undefined>();
+  const [serverClosingAvailable, setServerClosingAvailable] = useState(false);
   const [isSnapshotModalOpen, setIsSnapshotModalOpen] = useState(false);
   const [snapshots, setSnapshots] = useState<PayrollAttendanceSnapshot[]>([]);
 
   useEffect(() => {
-    setClosing(HRPayrollService.getMonthlyClosing(selectedMonth, selectedYear));
-  }, [selectedMonth, selectedYear]);
+    let active = true;
+    (async () => {
+      const capability = await hrAttendanceClosingService.capability(currentUser, selectedMonth, selectedYear);
+      if (!active) return;
+      if (!capability.success || !capability.available) {
+        setServerClosingAvailable(false);
+        setClosing(HRPayrollService.getMonthlyClosing(selectedMonth, selectedYear));
+        return;
+      }
+      setServerClosingAvailable(true);
+      const result = await hrAttendanceClosingService.get(currentUser, selectedMonth, selectedYear);
+      if (active) setClosing(result.success ? result.closing : undefined);
+    })();
+    return () => { active = false; };
+  }, [selectedMonth, selectedYear, currentUser]);
 
   const isAdmin = currentUser?.role === 'Admin';
   const canClose = isAdmin || currentUser?.role === 'HR';
@@ -199,23 +212,31 @@ export const MonthlyMatrixView: React.FC<MonthlyMatrixViewProps> = ({
     }
   };
 
-  const handleCloseMonthlyPeriod = () => {
+  const handleCloseMonthlyPeriod = async () => {
     const notes = window.prompt(`ملاحظات إقفال دورة شهر ${selectedMonth}/${selectedYear}:`, 'إقفال نهائي لاعتماد الحضور والمسير');
     if (notes !== null) {
-      const res = HRPayrollService.closeMonthlyPeriod(selectedMonth, selectedYear, notes, currentUser);
-      if (res.success) {
-        setClosing(res.closing);
+      if (serverClosingAvailable) {
+        const res = await hrAttendanceClosingService.close(currentUser, selectedMonth, selectedYear, notes);
+        if (res.success) setClosing(res.closing);
+        alert(res.message || (res.success ? 'تم إقفال دورة الحضور.' : 'تعذر إقفال دورة الحضور.'));
+      } else {
+        const res = HRPayrollService.closeMonthlyPeriod(selectedMonth, selectedYear, notes, currentUser);
+        if (res.success) setClosing(res.closing);
         alert(res.message);
       }
     }
   };
 
-  const handleReopenMonthlyPeriod = () => {
+  const handleReopenMonthlyPeriod = async () => {
     const reason = window.prompt(`يرجى كتابة سبب إعادة فتح دورة شهر ${selectedMonth}/${selectedYear}:`);
     if (reason) {
-      const res = HRPayrollService.reopenMonthlyPeriod(selectedMonth, selectedYear, reason, currentUser);
-      if (res.success) {
-        setClosing(HRPayrollService.getMonthlyClosing(selectedMonth, selectedYear));
+      if (serverClosingAvailable) {
+        const res = await hrAttendanceClosingService.reopen(currentUser, selectedMonth, selectedYear, reason);
+        if (res.success) setClosing(res.closing);
+        alert(res.message || (res.success ? 'تمت إعادة فتح دورة الحضور.' : 'تعذر إعادة فتح دورة الحضور.'));
+      } else {
+        const res = HRPayrollService.reopenMonthlyPeriod(selectedMonth, selectedYear, reason, currentUser);
+        if (res.success) setClosing(HRPayrollService.getMonthlyClosing(selectedMonth, selectedYear));
         alert(res.message);
       }
     }
