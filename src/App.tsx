@@ -118,6 +118,16 @@ export default function App() {
     }
   }, []);
 
+  // Keep the displayed audit trail aligned with the authoritative PostgreSQL log.
+  useEffect(() => {
+    if (!currentUser || !isPostgresBackendEnabled()) return;
+    let active = true;
+    void storageService.getAuthoritativeAuditLogs(300)
+      .then(logs => { if (active) setAuditLogs(logs as AuditLog[]); })
+      .catch(error => console.error('Authoritative audit load failed', error));
+    return () => { active = false; };
+  }, [currentUser?.id, currentUser?.activeSchoolId, currentUser?.schoolId, currentUser?.sessionToken]);
+
   // Sync with browser back/forward and URL hash
   useEffect(() => {
     const onHashChange = () => {
