@@ -2755,7 +2755,7 @@ export interface ComprehensiveEvaluation {
 export interface QualityKpiContract {
   value: number | null;
   sampleSize: number;
-  period: string | null;
+  period: string | { from: string; to: string } | null;
   status: 'AVAILABLE' | 'N/A';
 }
 
