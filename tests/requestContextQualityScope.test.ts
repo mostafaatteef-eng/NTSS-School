@@ -8,8 +8,8 @@ describe('API request context', () => {
     expect(source).toContain('function buildRequestContext(user: any): RequestContext');
     expect(source).toContain('allowedSchoolIds: string[];');
     expect(source).toContain('permissions: string[];');
-    expect(source).toContain('const requestContext=buildRequestContext(user);');
+    expect(source).toContain('const requestContext=await resolveRequestContext(user);');
     expect(source).toContain('const schoolId=String(body.schoolId||requestContext.activeSchoolId).trim();');
-    expect(source).toContain('if(!(await canAccessSchool(user,schoolId)))');
+    expect(source).toContain('!requestContext.allowedSchoolIds.includes(schoolId)');
   });
 });
