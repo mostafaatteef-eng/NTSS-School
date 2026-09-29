@@ -20,7 +20,8 @@ export async function postgresApiRequest<T>(
   const headers = new Headers(init.headers || {});
   headers.set('Accept', 'application/json');
   if (init.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
-  // Bearer remains a temporary compatibility path only. Normal browser auth uses HttpOnly cookie.
+  // Bearer is the primary cross-origin browser credential. HttpOnly cookie remains a secondary
+  // defense-in-depth path for same-site/compatible browsers.
   if (sessionToken) headers.set('Authorization', `Bearer ${sessionToken}`);
   // Authoritative session-bound data must never be satisfied from browser/proxy cache.
   headers.set('Cache-Control', 'no-cache');
