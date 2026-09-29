@@ -435,6 +435,9 @@ class StorageService {
       STORAGE_KEYS.BEHAVIOR_VIOLATIONS,
       STORAGE_KEYS.BEHAVIOR_LEDGER,
       STORAGE_KEYS.BEHAVIOR_CASES,
+      STORAGE_KEYS.SAMAT_SKILL_ASSESSMENTS,
+      STORAGE_KEYS.SAMAT_DISCIPLINE_RECORDS,
+      STORAGE_KEYS.SAMAT_EXCELLENCE_RECORDS,
       STORAGE_KEYS.SCHEDULE,
       STORAGE_KEYS.SCHEDULE_SUBSTITUTIONS,
       STORAGE_KEYS.LESSON_INSTANCES,
@@ -4029,6 +4032,9 @@ class StorageService {
         if (Array.isArray(d.positiveBehaviorTypes)) localStorage.setItem(STORAGE_KEYS.POSITIVE_BEHAVIOR_TYPES, JSON.stringify(d.positiveBehaviorTypes));
         if (Array.isArray(d.behaviorLedger)) localStorage.setItem(STORAGE_KEYS.BEHAVIOR_LEDGER, JSON.stringify(d.behaviorLedger));
         if (Array.isArray(d.behaviorCases)) localStorage.setItem(STORAGE_KEYS.BEHAVIOR_CASES, JSON.stringify(d.behaviorCases));
+        if (Array.isArray(d.samatSkillAssessments)) localStorage.setItem(STORAGE_KEYS.SAMAT_SKILL_ASSESSMENTS, JSON.stringify(d.samatSkillAssessments));
+        if (Array.isArray(d.samatDisciplineRecords)) localStorage.setItem(STORAGE_KEYS.SAMAT_DISCIPLINE_RECORDS, JSON.stringify(d.samatDisciplineRecords));
+        if (Array.isArray(d.samatExcellenceRecords)) localStorage.setItem(STORAGE_KEYS.SAMAT_EXCELLENCE_RECORDS, JSON.stringify(d.samatExcellenceRecords));
         if (Array.isArray(d.substitutions)) {
           localStorage.setItem(STORAGE_KEYS.SCHEDULE_SUBSTITUTIONS, JSON.stringify(d.substitutions));
         } else if (Array.isArray(d.scheduleSubstitutions)) {
