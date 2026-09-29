@@ -896,6 +896,46 @@ export const ntssHandler = {
         return json({status:'success',data:{...q.rows[0].payload,id,status:q.rows[0].status}},200,corsOrigin);
       }
 
+      if (request.method === 'POST' && path === '/master-data/manage') {
+        const body:any=await request.json();
+        const action=String(body.action||'');
+        const data:any=body.data||{};
+        const schoolId=String(body.schoolId||user.active_school_id||user.school_id||'').trim();
+        if(!(await canAccessSchool(user,schoolId))) return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);
+        const canManage=new Set(['SystemAdmin','Admin','SchoolAdmin','SchoolDirector']);
+        const mapItem=(row:any)=>({...row.payload,id:row.id,category:row.category,typeKey:row.type_key,code:row.code,nameAr:row.name_ar,nameEn:row.name_en||'',description:row.description||'',parentId:row.parent_id||undefined,sortOrder:Number(row.sort_order||0),isActive:Boolean(row.is_active),isSystemProtected:Boolean(row.is_system_protected),effectiveFrom:row.effective_from?String(row.effective_from).slice(0,10):undefined,effectiveTo:row.effective_to?String(row.effective_to).slice(0,10):undefined,createdAt:new Date(row.created_at).toISOString(),updatedAt:new Date(row.updated_at).toISOString()});
+        if(action==='capability') {
+          const q=await pool.query("SELECT to_regclass('public.master_data_items') AS table_name");
+          return json({status:'success',available:Boolean(q.rows[0]?.table_name)},200,corsOrigin);
+        }
+        if(action==='list') {
+          const q=await pool.query('SELECT * FROM master_data_items WHERE school_id=$1 ORDER BY category,type_key,sort_order,name_ar',[schoolId]);
+          return json({status:'success',data:q.rows.map(mapItem)},200,corsOrigin);
+        }
+        if(!canManage.has(String(user.role||''))) return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);
+        if(action==='save') {
+          const id=String(data.id||'').trim()||'MD-'+crypto.randomBytes(8).toString('hex').toUpperCase();
+          const category=String(data.category||'').trim(),typeKey=String(data.typeKey||'').trim(),code=String(data.code||'').trim().toUpperCase(),nameAr=String(data.nameAr||'').trim();
+          if(!category||!typeKey||!code||!nameAr)return json({status:'error',code:'MISSING_FIELDS'},400,corsOrigin);
+          const payload=JSON.stringify(data.metaData===undefined?{}:{metaData:data.metaData});
+          const q=await pool.query(`INSERT INTO master_data_items(id,school_id,category,type_key,code,name_ar,name_en,description,parent_id,sort_order,is_active,is_system_protected,payload,effective_from,effective_to)
+            VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,NULLIF($14,'')::date,NULLIF($15,'')::date)
+            ON CONFLICT(id) DO UPDATE SET category=EXCLUDED.category,type_key=EXCLUDED.type_key,code=EXCLUDED.code,name_ar=EXCLUDED.name_ar,name_en=EXCLUDED.name_en,description=EXCLUDED.description,parent_id=EXCLUDED.parent_id,sort_order=EXCLUDED.sort_order,is_active=EXCLUDED.is_active,is_system_protected=EXCLUDED.is_system_protected,payload=EXCLUDED.payload,effective_from=EXCLUDED.effective_from,effective_to=EXCLUDED.effective_to,updated_at=now()
+            WHERE master_data_items.school_id=EXCLUDED.school_id RETURNING *`,[id,schoolId,category,typeKey,code,nameAr,String(data.nameEn||''),String(data.description||''),data.parentId||null,Number(data.sortOrder||0),data.isActive!==false,Boolean(data.isSystemProtected),payload,String(data.effectiveFrom||''),String(data.effectiveTo||'')]);
+          if(!q.rowCount)return json({status:'error',code:'MASTER_DATA_WRITE_REJECTED'},409,corsOrigin);
+          await pool.query('INSERT INTO audit_logs(school_id,user_id,username,role,action,entity,target_id,details) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[schoolId,user.user_id,user.email,user.role,'UPSERT','MASTER_DATA',id,`${category}/${typeKey}/${code}`]);
+          return json({status:'success',data:mapItem(q.rows[0])},200,corsOrigin);
+        }
+        if(action==='toggle') {
+          const id=String(data.id||'').trim();
+          const q=await pool.query('UPDATE master_data_items SET is_active=NOT is_active,updated_at=now() WHERE school_id=$1 AND id=$2 RETURNING *',[schoolId,id]);
+          if(!q.rowCount)return json({status:'error',code:'NOT_FOUND'},404,corsOrigin);
+          await pool.query('INSERT INTO audit_logs(school_id,user_id,username,role,action,entity,target_id,details) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[schoolId,user.user_id,user.email,user.role,'TOGGLE','MASTER_DATA',id,String(q.rows[0].is_active)]);
+          return json({status:'success',data:mapItem(q.rows[0])},200,corsOrigin);
+        }
+        return json({status:'error',code:'ACTION_NOT_MIGRATED'},400,corsOrigin);
+      }
+
       if (request.method === 'POST' && path === '/attendance-month-closing') {
         const body:any=await request.json();
         const action=String(body.action||'');
