@@ -36,10 +36,12 @@ export const TimetableReportsView: React.FC = () => {
     setAllAssignments(timetableService.getAllTeacherAssignments());
 
     const schedule = storageService.getSchedule();
-    const classrooms = ['1/1', '1/2', '2/1', '2/2', '3/1', '3/2'];
-    const covs = classrooms.map(c => {
-      const gId = c.startsWith('1') ? 'G1' : c.startsWith('2') ? 'G2' : 'G3';
-      return timetableService.validateClassroomCurriculumCoverage(c, gId);
+    const configuredGrades = storageService.getGrades();
+    const configuredClassrooms = storageService.getClassrooms();
+    const covs = configuredClassrooms.map(c => {
+      const classroomId = String((c as any).id || (c as any).name || (c as any).displayName || '');
+      const gradeId = String((c as any).gradeId || configuredGrades.find(g => (g as any).name === (c as any).gradeName)?.id || '');
+      return timetableService.validateClassroomCurriculumCoverage(classroomId, gradeId || undefined);
     });
     setCoverageData(covs);
 
