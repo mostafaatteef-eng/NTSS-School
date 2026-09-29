@@ -8730,6 +8730,13 @@ class StorageService {
 
     const availableScores=[avgDaily,avgVisits,avgEvals].filter((v):v is number=>v!==null);
     const overall=availableScores.length ? availableScores.reduce((a,b)=>a+b,0)/availableScores.length : null;
+    const approvedSampleSize=approvedDaily.length+approvedVisits.length+approvedEvals.length;
+    const overallQualityKpi={
+      value: overall,
+      sampleSize: approvedSampleSize,
+      period: null,
+      status: approvedSampleSize > 0 ? 'AVAILABLE' as const : 'N/A' as const,
+    };
     const resolvedActions=actions.filter(a=>a.status==='Closed'||a.status===('RESOLVED' as any)).length;
     const resRate=actions.length ? (resolvedActions/actions.length)*100 : null;
 
@@ -8753,6 +8760,7 @@ class StorageService {
 
     return {
       overallQualityScore:overall,
+      overallQualityKpi,
       totalDailyReports:daily.length, averageDailyScore:avgDaily,
       totalTeacherVisits:visits.length, averageTeacherVisitScore:avgVisits,
       totalComprehensiveEvaluations:evals.length, averageComprehensiveScore:avgEvals,
