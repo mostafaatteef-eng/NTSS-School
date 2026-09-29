@@ -414,7 +414,7 @@ export default {
         const action=String(body.action||''); const data: any=body.data||{};
         const project = async (row: any) => {
           const access=await pool.query('SELECT school_id FROM user_school_access WHERE user_id=$1 ORDER BY school_id',[row.id]);
-          return {id:row.id,email:row.email,username:row.username,fullName:row.full_name,role:row.role,accessScope:row.access_scope,schoolId:row.school_id||'',employeeId:row.employee_id||undefined,studentId:row.student_id||undefined,status:row.status,allowedSchoolIds:access.rows.map((x:any)=>x.school_id),createdAt:row.created_at,updatedAt:row.updated_at,lastLogin:row.last_login_at};
+          return {id:row.id,email:row.email,username:row.username,fullName:row.full_name,role:row.role,accessScope:row.access_scope,schoolId:row.school_id||'',employeeId:row.employee_id||undefined,studentId:row.student_id||undefined,status:row.status,allowedSchoolIds: row.role === 'SystemAdmin' && row.access_scope === 'GLOBAL' ? (await pool.query("SELECT id FROM schools WHERE status='ACTIVE' ORDER BY name")).rows.map((x:any)=>x.id) : access.rows.map((x:any)=>x.school_id),createdAt:row.created_at,updatedAt:row.updated_at,lastLogin:row.last_login_at};
         };
         if(action==='adminGetUsers'){
           const rows=user.access_scope==='GLOBAL'
