@@ -32,4 +32,12 @@ for (const forbiddenAdapterLogic of ['new Pool', 'pool.query', 'CREATE TABLE', "
   }
 }
 
+const canonicalApi = fs.readFileSync(new URL('../api/index.ts', import.meta.url), 'utf8');
+const handlerStart = canonicalApi.indexOf('export const ntssHandler = {');
+const handlerEnd = canonicalApi.indexOf('export default async function vercelHandler', handlerStart);
+const handlerBody = canonicalApi.slice(handlerStart, handlerEnd);
+if (/return json\(\{\s*status\s*:\s*['"]error['"]/.test(handlerBody)) {
+  throw new Error('Canonical handler errors must use respond() so the request trace ID is preserved.');
+}
+
 console.log('Canonical API runtime guard passed.');
