@@ -6715,9 +6715,13 @@ class StorageService {
   }
 
   public async deleteManagedEmployeeAuthoritative(id: string) {
-    return this.postEmployeeManagementAction('deleteEmployee', {
-      id: String(id || '').trim().toUpperCase(),
-    });
+    // Preserve referential integrity and historical attendance/schedule records.
+    // "Delete" from the management UI is implemented as a safe archival action;
+    // physical deletion is intentionally not exposed to normal application flows.
+    return this.setManagedEmployeeStatusAuthoritative(
+      String(id || '').trim().toUpperCase(),
+      'Inactive'
+    );
   }
 
   public async importManagedEmployeesAuthoritative(importedEmployees: Partial<Employee>[]): Promise<{
