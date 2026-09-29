@@ -232,3 +232,29 @@ CREATE TABLE IF NOT EXISTS notification_reads (
   read_at timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY(notification_id,user_id)
 );
+
+
+-- SAMAT source registers. Additive only: no legacy rows are deleted or rewritten.
+CREATE TABLE IF NOT EXISTS samat_records (
+  id text NOT NULL,
+  school_id text NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+  student_id text NOT NULL,
+  record_type text NOT NULL CHECK (record_type IN ('SKILL_ASSESSMENT','DISCIPLINE','EXCELLENCE')),
+  record_date date,
+  payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_by text REFERENCES users(id) ON DELETE SET NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (school_id,id)
+);
+CREATE INDEX IF NOT EXISTS samat_records_school_type_date_idx
+  ON samat_records(school_id,record_type,record_date DESC);
+CREATE INDEX IF NOT EXISTS samat_records_school_student_idx
+  ON samat_records(school_id,student_id,record_type,record_date DESC);
+DO $ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='samat_records_student_school_fkey') THEN
+    ALTER TABLE samat_records ADD CONSTRAINT samat_records_student_school_fkey
+      FOREIGN KEY (school_id,student_id) REFERENCES students(school_id,id)
+      ON DELETE NO ACTION NOT VALID;
+  END IF;
+END $;
