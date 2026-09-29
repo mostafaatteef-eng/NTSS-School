@@ -66,7 +66,7 @@ export const QualityDashboardSection: React.FC<Props> = ({
           <div className="bg-white/10 backdrop-blur-md p-4 rounded-xl border border-white/15 text-center min-w-[160px]">
             <span className="text-xs font-medium text-indigo-200 block">معدل التقييم العام</span>
             <div className="text-3xl font-black text-amber-300 mt-0.5">
-              {metrics.overallQualityScore.toFixed(1)}%
+              {metrics.overallQualityScore === null ? '—' : `${metrics.overallQualityScore.toFixed(1)}%`}
             </div>
             <span className="text-[11px] text-indigo-200 block mt-1">
               محسوب وفق أوزان إتقان
@@ -83,7 +83,7 @@ export const QualityDashboardSection: React.FC<Props> = ({
             <span className="text-xs font-bold text-slate-500 block mb-1">التقارير اليومية</span>
             <div className="text-2xl font-black text-slate-900">{metrics.totalDailyReports}</div>
             <div className="text-xs text-[#008e8b] font-semibold mt-1 flex items-center gap-1">
-              <span>المتوسط: {metrics.averageDailyScore.toFixed(1)}%</span>
+              <span>المتوسط: {metrics.averageDailyScore === null ? '—' : `${metrics.averageDailyScore.toFixed(1)}%`}</span>
             </div>
           </div>
           <div className="w-12 h-12 rounded-xl bg-teal-50 text-[#008e8b] flex items-center justify-center">
@@ -97,7 +97,7 @@ export const QualityDashboardSection: React.FC<Props> = ({
             <span className="text-xs font-bold text-slate-500 block mb-1">الزيارات الصفية</span>
             <div className="text-2xl font-black text-slate-900">{metrics.totalTeacherVisits}</div>
             <div className="text-xs text-emerald-600 font-semibold mt-1 flex items-center gap-1">
-              <span>المتوسط: {metrics.averageTeacherVisitScore.toFixed(1)}%</span>
+              <span>المتوسط: {metrics.averageTeacherVisitScore === null ? '—' : `${metrics.averageTeacherVisitScore.toFixed(1)}%`}</span>
             </div>
           </div>
           <div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
@@ -111,7 +111,7 @@ export const QualityDashboardSection: React.FC<Props> = ({
             <span className="text-xs font-bold text-slate-500 block mb-1">التقييم الشامل</span>
             <div className="text-2xl font-black text-slate-900">{metrics.totalComprehensiveEvaluations}</div>
             <div className="text-xs text-purple-600 font-semibold mt-1 flex items-center gap-1">
-              <span>المتوسط: {metrics.averageComprehensiveScore.toFixed(1)}%</span>
+              <span>المتوسط: {metrics.averageComprehensiveScore === null ? '—' : `${metrics.averageComprehensiveScore.toFixed(1)}%`}</span>
             </div>
           </div>
           <div className="w-12 h-12 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center">
@@ -133,7 +133,7 @@ export const QualityDashboardSection: React.FC<Props> = ({
                   {overdueActionsCount} إجراء متأخر
                 </span>
               ) : (
-                <span className="text-emerald-600 font-medium">نسبة الإنجاز: {metrics.actionsResolutionRate.toFixed(1)}%</span>
+                <span className="text-emerald-600 font-medium">نسبة الإنجاز: {metrics.actionsResolutionRate === null ? '—' : `${metrics.actionsResolutionRate.toFixed(1)}%`}</span>
               )}
             </div>
           </div>
@@ -166,14 +166,14 @@ export const QualityDashboardSection: React.FC<Props> = ({
                   <span className="text-xs font-bold text-slate-800">{da.domain}</span>
                   <span
                     className={`text-xs font-black ${
-                      da.averagePercentage >= 85
+                      (da.averagePercentage ?? -1) >= 85
                         ? 'text-emerald-700'
-                        : da.averagePercentage >= 70
+                        : (da.averagePercentage ?? -1) >= 70
                         ? 'text-amber-700'
                         : 'text-rose-700'
                     }`}
                   >
-                    {da.averagePercentage.toFixed(1)}%
+                    {da.averagePercentage === null ? '—' : `${da.averagePercentage.toFixed(1)}%`}
                   </span>
                 </div>
 
@@ -182,22 +182,22 @@ export const QualityDashboardSection: React.FC<Props> = ({
                     className={`h-full rounded-full transition-all ${
                       da.averagePercentage >= 85
                         ? 'bg-emerald-500'
-                        : da.averagePercentage >= 70
+                        : (da.averagePercentage ?? -1) >= 70
                         ? 'bg-amber-500'
                         : 'bg-rose-500'
                     }`}
-                    style={{ width: `${Math.min(100, Math.max(0, da.averagePercentage))}%` }}
+                    style={{ width: `${Math.min(100, Math.max(0, da.averagePercentage ?? 0))}%` }}
                   />
                 </div>
 
                 <div className="text-[11px] text-slate-500 flex justify-between">
                   <span>إجمالي المعايير المقيمة: {da.count}</span>
                   <span>
-                    {da.averagePercentage >= 85
+                    {(da.averagePercentage ?? -1) >= 85
                       ? 'متميز'
                       : da.averagePercentage >= 70
                       ? 'جيد جداً'
-                      : 'يحتاج تحسين'}
+                      : da.averagePercentage === null ? 'لا توجد بيانات' : 'يحتاج تحسين'}
                   </span>
                 </div>
               </div>
