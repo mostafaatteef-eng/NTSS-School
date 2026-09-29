@@ -31,6 +31,15 @@ export const TeacherLoadView: React.FC = () => {
   const [newSubject, setNewSubject] = useState('');
   const [newClassroom, setNewClassroom] = useState('1/1');
   const [newPeriods, setNewPeriods] = useState<number>(4);
+  const configuredClassrooms = storageService.getClassrooms();
+  const classroomOptions = configuredClassrooms.length
+    ? configuredClassrooms.map(c => ({
+        id: String((c as any).id || (c as any).name || (c as any).displayName || ''),
+        name: String((c as any).name || (c as any).displayName || (c as any).id || ''),
+        gradeId: String((c as any).gradeId || ''),
+        gradeName: String((c as any).gradeName || ''),
+      })).filter(c => c.id)
+    : [{ id: '1/1', name: '1/1', gradeId: 'G1', gradeName: 'الصف الأول الثانوي' }];
 
   const loadData = () => {
     const list = timetableService.getAllTeachersLoadCalculations();
@@ -53,6 +62,7 @@ export const TeacherLoadView: React.FC = () => {
     const currentYear = storageService.getAcademicYears().find(y => y.isCurrent || y.isActive || y.status === 'ACTIVE');
     const currentTerm = currentYear?.terms?.find(term => (term as any).isCurrent || (term as any).isActive) || currentYear?.terms?.[0];
 
+    const classroom = classroomOptions.find(c => c.id === newClassroom || c.name === newClassroom) || classroomOptions[0];
     const newAssign: TeacherTeachingAssignment = {
       id: `TTA-${Date.now()}`,
       teacherId: selectedTeacherForAssignments.teacherId,
@@ -60,10 +70,10 @@ export const TeacherLoadView: React.FC = () => {
       teacherName: selectedTeacherForAssignments.teacherName,
       subjectId: `SUB-${Date.now()}`,
       subjectName: newSubject.trim(),
-      gradeId: newClassroom.startsWith('1') ? 'G1' : newClassroom.startsWith('2') ? 'G2' : 'G3',
-      gradeName: newClassroom.startsWith('1') ? 'الصف الأول الثانوي' : newClassroom.startsWith('2') ? 'الصف الثاني الثانوي' : 'الصف الثالث الثانوي',
-      classroomId: newClassroom,
-      classroomName: newClassroom,
+      gradeId: classroom?.gradeId || '',
+      gradeName: classroom?.gradeName || '',
+      classroomId: classroom?.id || newClassroom,
+      classroomName: classroom?.name || newClassroom,
       requiredPeriodsPerWeek: Number(newPeriods) || 1,
       academicYearId: currentYear?.id || currentYear?.name || '2026/2027',
       termId: currentTerm?.id || 'FIRST',
@@ -335,11 +345,9 @@ export const TeacherLoadView: React.FC = () => {
                     onChange={e => setNewClassroom(e.target.value)}
                     className="w-full border border-slate-300 rounded-lg p-2 text-xs"
                   >
-                    <option value="1/1">فصل 1/1</option>
-                    <option value="1/2">فصل 1/2</option>
-                    <option value="2/1">فصل 2/1</option>
-                    <option value="2/2">فصل 2/2</option>
-                    <option value="3/1">فصل 3/1</option>
+                    {classroomOptions.map(c => (
+                      <option key={c.id} value={c.id}>فصل {c.name}</option>
+                    ))}
                   </select>
                 </div>
                 <div>
