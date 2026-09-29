@@ -8,7 +8,7 @@ describe('Samat workbook alignment',()=>{
     expect(view).toContain('سمات | السلوك والمهارات والانضباط');
     expect(data).toContain('SAMAT_TRAITS');
     expect(data).toContain('SAMAT_STUDENT_LEVELS');
-    expect(data).toContain('قدوة بسماتي');
+    for(const level of ['قيد التأسيس','مبتدئ','متمكن','قدوة حسنة','المحترف']) expect(data).toContain(level);
   });
   it('preserves workbook discipline weights and representative items',()=>{
     for(const item of ['استخدام الموبايل أثناء الحصة','التنمر','التحرش','السرقة','عدم ارتداء أدوات السلامة أو الإجراءات الاحترازية']){
