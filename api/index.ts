@@ -93,7 +93,7 @@ function json(data: unknown, status = 200, origin = '', extraHeaders: Record<str
   return new Response(JSON.stringify(data), { status, headers: {
     'content-type': 'application/json',
     ...(origin ? { 'access-control-allow-origin': origin } : {}),
-    'access-control-allow-headers': 'content-type, authorization',
+    'access-control-allow-headers': 'content-type, authorization, cache-control, pragma',
     'access-control-allow-methods': 'GET,POST,OPTIONS',
     'access-control-allow-credentials': 'true',
     'cache-control': 'no-store, no-cache, must-revalidate, private',
@@ -149,7 +149,7 @@ export const ntssHandler = {
     }
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: {
       ...(corsOrigin ? { 'access-control-allow-origin': corsOrigin } : {}),
-      'access-control-allow-headers': 'content-type, authorization', 'access-control-allow-methods': 'GET,POST,OPTIONS', 'access-control-allow-credentials': 'true', vary: 'Origin'
+      'access-control-allow-headers': 'content-type, authorization, cache-control, pragma', 'access-control-allow-methods': 'GET,POST,OPTIONS', 'access-control-allow-credentials': 'true', vary: 'Origin'
     }});
 
     console.log(JSON.stringify({ marker: 'NTSS_REQ', method: request.method, origin, corsOrigin, url: request.url }));
