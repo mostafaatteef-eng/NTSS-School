@@ -20,9 +20,12 @@ export async function postgresApiRequest<T>(
   const headers = new Headers(init.headers || {});
   headers.set('Accept', 'application/json');
   if (init.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
-  // Bearer is the primary cross-origin browser credential. HttpOnly cookie remains a secondary
-  // defense-in-depth path for same-site/compatible browsers.
-  if (sessionToken) headers.set('Authorization', `Bearer ${sessionToken}`);
+  // Prefer the Secure HttpOnly session cookie. Keep Bearer only as a temporary
+  // compatibility fallback while legacy clients are migrated off browser-readable tokens.
+  // This switch can be disabled explicitly after cookie-only production verification.
+  const bearerFallbackEnabled =
+    !((typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_DISABLE_BEARER_SESSION_FALLBACK) === 'true');
+  if (sessionToken && bearerFallbackEnabled) headers.set('Authorization', `Bearer ${sessionToken}`);
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 15000);
   const externalSignal = init.signal;
