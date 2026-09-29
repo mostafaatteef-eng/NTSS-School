@@ -159,7 +159,7 @@ export default {
       if (request.method === 'GET' && path === '/health') {
         await pool.query('SELECT 1');
         console.log(JSON.stringify({ marker: 'NTSS_HEALTH_OK', corsOrigin }));
-        return json({ status: 'success', serviceAvailable: true, backend: 'vercel-postgres', version: '1.0.2' }, 200, corsOrigin);
+        return json({ status: 'success', serviceAvailable: true, backend: 'ntss-postgres', version: '1.1.0' }, 200, corsOrigin);
       }
 
       if (request.method === 'POST' && path === '/student/login') {
