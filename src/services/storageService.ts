@@ -4662,7 +4662,10 @@ class StorageService {
     if (!target) return { success: false };
 
     const now = getCairoNowISO();
+    const closingScore = this.calculateStudentBehaviorScore(target.studentId).currentScore;
     target.status = 'CLOSED';
+    target.closingScore = closingScore;
+    if (typeof target.baselineScore === 'number') target.improvementDelta = closingScore - target.baselineScore;
     target.resolutionSummary = resolutionSummary;
     target.closedAt = now;
     target.updatedAt = now;
