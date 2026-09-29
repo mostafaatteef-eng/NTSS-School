@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { ExamSchedule, Employee } from '../../types';
 import { timetableService } from '../../services/timetableService';
+import { storageService } from '../../services/storageService';
 import * as XLSX from 'xlsx';
 import { PageHeader } from '../common/UiStates';
 
@@ -43,9 +44,16 @@ export const ExamScheduleView: React.FC = () => {
     return true;
   });
 
+  const getCurrentAcademicYear = () => {
+    const year = storageService.getAcademicYears().find(y => y.isCurrent || y.isActive || y.status === 'ACTIVE');
+    return year || storageService.getAcademicYears()[0];
+  };
+
   const handleOpenAdd = () => {
+    const currentYear = getCurrentAcademicYear();
     setEditingExam({
-      academicYear: '2024/2025',
+      academicYearId: currentYear?.id,
+      academicYear: currentYear?.name || '2026/2027',
       term: 'FIRST',
       examType: 'MIDTERM',
       subjectName: '',
@@ -71,10 +79,11 @@ export const ExamScheduleView: React.FC = () => {
   const handleSaveExam = () => {
     if (!editingExam || !editingExam.subjectName?.trim()) return;
 
+    const currentYear = getCurrentAcademicYear();
     const examToSave: ExamSchedule = {
       id: editingExam.id || `EXM-${Date.now()}`,
-      academicYearId: editingExam.academicYearId || editingExam.academicYear || '2024/2025',
-      academicYear: editingExam.academicYear || '2024/2025',
+      academicYearId: editingExam.academicYearId || currentYear?.id || currentYear?.name || '2026/2027',
+      academicYear: editingExam.academicYear || currentYear?.name || '2026/2027',
       term: editingExam.term || 'FIRST',
       termId: editingExam.termId || 'FIRST',
       examType: editingExam.examType || 'MIDTERM',
