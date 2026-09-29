@@ -41,11 +41,17 @@ export const TimetableWeeklyMatrixView: React.FC<TimetableWeeklyMatrixViewProps>
   );
   const [teachers, setTeachers] = useState<Employee[]>([]);
   const [breaks, setBreaks] = useState<ScheduleBreak[]>([]);
-  const [selectedGrade, setSelectedGrade] = useState<string>('الصف الأول الثانوي');
-  const [selectedClassroom, setSelectedClassroom] = useState<string>('1/1');
+  const configuredGrades = storageService.getGrades();
+  const configuredClassrooms = storageService.getClassrooms();
+  const [selectedGrade, setSelectedGrade] = useState<string>(() => configuredGrades[0]?.id || '');
+  const [selectedClassroom, setSelectedClassroom] = useState<string>(() => {
+    const firstGradeId = configuredGrades[0]?.id;
+    const classroom = configuredClassrooms.find(c => !firstGradeId || c.gradeId === firstGradeId) || configuredClassrooms[0];
+    return String(classroom?.id || classroom?.displayName || classroom?.classroomNumber || '');
+  });
   const [selectedTeacherId, setSelectedTeacherId] = useState<string>('');
   const [selectedDay, setSelectedDay] = useState<string>('الأحد');
-  const [selectedRoom, setSelectedRoom] = useState<string>('معمل حاسب 1');
+  const [selectedRoom, setSelectedRoom] = useState<string>('');
   const [cycleFilter, setCycleFilter] = useState<'ALL' | 'A' | 'B'>('ALL');
   const [curriculumWeek, setCurriculumWeek] = useState<number>(1);
 
@@ -76,19 +82,17 @@ export const TimetableWeeklyMatrixView: React.FC<TimetableWeeklyMatrixViewProps>
   }, []);
 
   // Distinct classrooms & rooms
-  const availableClassrooms = Array.from(
-    new Set(scheduleItems.map(s => s.classroom).filter(Boolean))
-  );
-  if (availableClassrooms.length === 0) {
-    availableClassrooms.push('1/1', '1/2', '2/1', '2/2', '3/1');
-  }
+  const availableClassrooms = configuredClassrooms
+    .filter(c => !selectedGrade || c.gradeId === selectedGrade)
+    .map(c => ({
+      id: String(c.id || c.displayName || c.classroomNumber || ''),
+      name: String(c.displayName || c.classroomNumber || c.id || ''),
+    }))
+    .filter(c => c.id);
 
   const availableRooms = Array.from(
-    new Set(scheduleItems.map(s => s.room || s.roomId).filter(Boolean))
+    new Set(scheduleItems.map(s => String(s.room || s.roomId || '')).filter(Boolean))
   );
-  if (availableRooms.length === 0) {
-    availableRooms.push('معمل حاسب 1', 'معمل شبكات', 'ورشة إلكترونيات', 'قاعة 101', 'قاعة 102');
-  }
 
   // Filter items based on current viewMode & selection
   const filteredItems = scheduleItems.filter(item => {
@@ -145,8 +149,8 @@ export const TimetableWeeklyMatrixView: React.FC<TimetableWeeklyMatrixViewProps>
       periodNumber,
       startTime: periodTime?.startTime || '08:00',
       endTime: periodTime?.endTime || '08:50',
-      grade: selectedGrade,
-      classroom: selectedClassroom,
+      grade: configuredGrades.find(g => g.id === selectedGrade)?.name || selectedGrade,
+      classroom: availableClassrooms.find(c => c.id === selectedClassroom)?.name || selectedClassroom,
       teacherId: selectedTeacherId || (teachers[0]?.id || ''),
       subject: 'العلوم التقنية التخصصية (نظري)',
       room: selectedRoom,
@@ -374,12 +378,17 @@ export const TimetableWeeklyMatrixView: React.FC<TimetableWeeklyMatrixViewProps>
               <span className="font-bold text-slate-700">الصف الدراسي:</span>
               <select
                 value={selectedGrade}
-                onChange={e => setSelectedGrade(e.target.value)}
+                onChange={e => {
+                  const gradeId = e.target.value;
+                  setSelectedGrade(gradeId);
+                  const classroom = configuredClassrooms.find(c => c.gradeId === gradeId);
+                  setSelectedClassroom(String(classroom?.id || classroom?.displayName || classroom?.classroomNumber || ''));
+                }}
                 className="bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-sm font-medium focus:ring-2 focus:ring-[#008e8b]/30"
               >
-                <option value="الصف الأول الثانوي">الصف الأول الثانوي</option>
-                <option value="الصف الثاني الثانوي">الصف الثاني الثانوي</option>
-                <option value="الصف الثالث الثانوي">الصف الثالث الثانوي</option>
+                {configuredGrades.map(g => (
+                  <option key={g.id} value={g.id}>{g.name}</option>
+                ))}
               </select>
             </div>
             <div className="flex items-center gap-2">
@@ -390,8 +399,8 @@ export const TimetableWeeklyMatrixView: React.FC<TimetableWeeklyMatrixViewProps>
                 className="bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-sm font-medium focus:ring-2 focus:ring-[#008e8b]/30"
               >
                 {availableClassrooms.map(c => (
-                  <option key={c} value={c}>
-                    فصل {c}
+                  <option key={c.id} value={c.id}>
+                    {c.name}
                   </option>
                 ))}
               </select>
