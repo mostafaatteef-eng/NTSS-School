@@ -25,6 +25,7 @@ import { Employee, EmployeePermissionRecord, LeaveRecord, LeaveStatus, LeaveType
 import { storageService } from '../../services/storageService';
 import { ExportService } from '../../services/exportService';
 import { MasterDataService } from '../../services/masterDataService';
+import { masterDataAuthoritativeService } from '../../services/masterDataAuthoritativeService';
 import { hasPermission } from '../../utils/permissions';
 import { ErrorState, LoadingState, PageHeader } from '../common/UiStates';
 import { StatCard } from '../common/UiMetrics';
@@ -78,14 +79,22 @@ export const LeavesView: React.FC<LeavesViewProps> = ({
   const canDelete = hasPermission(currentUser, 'leaves.delete');
   const canManageActions = canApprove || canReject || canDelete;
 
-  // Dynamic Leave Types from Master Data & Settings
-  const dynamicLeaveTypes = useMemo(() => {
-    const mdItems = MasterDataService.getMasterData('HR', 'LEAVE_TYPES');
-    if (mdItems.length > 0) {
-      return mdItems.map(m => m.nameAr);
-    }
-    return ['سنوية', 'مرضية', 'عارضة', 'بدون راتب', 'أخرى'];
-  }, []);
+  const [dynamicLeaveTypes, setDynamicLeaveTypes] = useState<string[]>(() => {
+    const local = MasterDataService.getMasterData('HR', 'LEAVE_TYPES').filter(item => item.isActive !== false).map(item => item.nameAr);
+    return local.length ? local : ['سنوية', 'مرضية', 'عارضة', 'بدون راتب', 'أخرى'];
+  });
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      const capability = await masterDataAuthoritativeService.capability(currentUser);
+      if (!active || !capability.success || !capability.available) return;
+      const result = await masterDataAuthoritativeService.list(currentUser);
+      const names = (result.data || []).filter(item => item.category === 'HR' && item.typeKey === 'LEAVE_TYPES' && item.isActive !== false).map(item => item.nameAr);
+      if (active && names.length) setDynamicLeaveTypes(names);
+    })();
+    return () => { active = false; };
+  }, [currentUser?.sessionToken, currentUser?.activeSchoolId, currentUser?.schoolId]);
 
   const permissionTypes = ['إذن خروج مؤقت', 'إذن تأخير صباحي', 'مهمة عمل رسمية', 'إذن انصراف مبكر'];
 
