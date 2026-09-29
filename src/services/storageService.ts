@@ -4670,11 +4670,18 @@ class StorageService {
     return { success: true };
   }
 
+  private filterSamatRowsByActiveSchool<T extends { schoolId?: string; studentId: string }>(rows: T[]): T[] {
+    const activeSchoolId = this.getActiveSchoolId().trim();
+    if (!activeSchoolId) return [];
+    const activeStudentIds = new Set(this.getStudents().map(student => student.id));
+    return rows.filter(row => row.schoolId === activeSchoolId || (!row.schoolId && activeStudentIds.has(row.studentId)));
+  }
+
   public getSamatDisciplineRecords(studentId?: string): SamatDisciplineRecord[] {
     const raw = localStorage.getItem(STORAGE_KEYS.SAMAT_DISCIPLINE_RECORDS);
     if (!raw) return [];
     try {
-      const rows: SamatDisciplineRecord[] = JSON.parse(raw);
+      const rows: SamatDisciplineRecord[] = this.filterSamatRowsByActiveSchool(JSON.parse(raw));
       return studentId ? rows.filter(row => row.studentId === studentId) : rows;
     } catch { return []; }
   }
@@ -4682,7 +4689,7 @@ class StorageService {
   public saveSamatDisciplineRecord(record: SamatDisciplineRecord): { success: boolean } {
     if (!record.studentId || !record.item || !Number.isFinite(Number(record.points))) return { success: false };
     const rows = this.getSamatDisciplineRecords();
-    const prepared = { ...record, id: record.id || `SAMAT-DISC-${Date.now()}` };
+    const prepared = { ...record, schoolId: record.schoolId || this.getActiveSchoolId(), id: record.id || `SAMAT-DISC-${Date.now()}` };
     rows.unshift(prepared);
     localStorage.setItem(STORAGE_KEYS.SAMAT_DISCIPLINE_RECORDS, JSON.stringify(rows));
     this.logAudit('CREATE', 'BEHAVIOR', `تسجيل عدم انضباط: ${prepared.studentName || prepared.studentId} - ${prepared.item}`);
@@ -4695,7 +4702,7 @@ class StorageService {
     const raw = localStorage.getItem(STORAGE_KEYS.SAMAT_EXCELLENCE_RECORDS);
     if (!raw) return [];
     try {
-      const rows: SamatExcellenceRecord[] = JSON.parse(raw);
+      const rows: SamatExcellenceRecord[] = this.filterSamatRowsByActiveSchool(JSON.parse(raw));
       return studentId ? rows.filter(row => row.studentId === studentId) : rows;
     } catch { return []; }
   }
@@ -4703,7 +4710,7 @@ class StorageService {
   public saveSamatExcellenceRecord(record: SamatExcellenceRecord): { success: boolean } {
     if (!record.studentId || !record.excellenceItem || !Number.isFinite(Number(record.points))) return { success: false };
     const rows = this.getSamatExcellenceRecords();
-    const prepared = { ...record, id: record.id || `SAMAT-EXC-${Date.now()}` };
+    const prepared = { ...record, schoolId: record.schoolId || this.getActiveSchoolId(), id: record.id || `SAMAT-EXC-${Date.now()}` };
     rows.unshift(prepared);
     localStorage.setItem(STORAGE_KEYS.SAMAT_EXCELLENCE_RECORDS, JSON.stringify(rows));
     this.logAudit('CREATE', 'BEHAVIOR', `تسجيل تميز وبونص: ${prepared.studentName || prepared.studentId} - ${prepared.excellenceItem}`);
@@ -4716,7 +4723,7 @@ class StorageService {
     const raw = localStorage.getItem(STORAGE_KEYS.SAMAT_SKILL_ASSESSMENTS);
     if (!raw) return [];
     try {
-      const rows: SamatSkillAssessment[] = JSON.parse(raw);
+      const rows: SamatSkillAssessment[] = this.filterSamatRowsByActiveSchool(JSON.parse(raw));
       return studentId ? rows.filter(row => row.studentId === studentId) : rows;
     } catch { return []; }
   }
@@ -4725,7 +4732,7 @@ class StorageService {
     const allowed = [0, 2, 4, 6, 8, 10];
     if (!allowed.includes(Number(assessment.score))) return { success: false };
     const rows = this.getSamatSkillAssessments();
-    const prepared = { ...assessment, id: assessment.id || `SAMAT-SKILL-${Date.now()}`, recordedBy: assessment.recordedBy || this.getCurrentUser()?.fullName };
+    const prepared = { ...assessment, schoolId: assessment.schoolId || this.getActiveSchoolId(), id: assessment.id || `SAMAT-SKILL-${Date.now()}`, recordedBy: assessment.recordedBy || this.getCurrentUser()?.fullName };
     rows.unshift(prepared);
     localStorage.setItem(STORAGE_KEYS.SAMAT_SKILL_ASSESSMENTS, JSON.stringify(rows));
     this.logAudit('CREATE', 'BEHAVIOR', `تقييم مهارة سمات: ${prepared.studentName || prepared.studentId} - ${prepared.skillName} = ${prepared.score}`);
