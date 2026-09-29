@@ -37,6 +37,10 @@ export const ReserveManagementView: React.FC = () => {
   const [selectedPeriod, setSelectedPeriod] = useState<number>(1);
   const [selectedAbsentTeacherId, setSelectedAbsentTeacherId] = useState<string>('');
   const [selectedClassroom, setSelectedClassroom] = useState<string>('1/1');
+  const classroomOptions = storageService.getClassrooms().map(c => ({
+    id: String((c as any).id || (c as any).name || (c as any).displayName || ''),
+    name: String((c as any).name || (c as any).displayName || (c as any).id || ''),
+  })).filter(c => c.id);
   const [selectedSubject, setSelectedSubject] = useState<string>('العلوم التقنية التخصصية');
   const [absenceReason, setAbsenceReason] = useState<string>('غياب بعذر');
 
@@ -236,11 +240,9 @@ export const ReserveManagementView: React.FC = () => {
                   onChange={e => setSelectedClassroom(e.target.value)}
                   className="w-full border border-slate-300 rounded-lg p-2 text-xs font-medium"
                 >
-                  <option value="1/1">فصل 1/1</option>
-                  <option value="1/2">فصل 1/2</option>
-                  <option value="2/1">فصل 2/1</option>
-                  <option value="2/2">فصل 2/2</option>
-                  <option value="3/1">فصل 3/1</option>
+                  {(classroomOptions.length ? classroomOptions : [{ id: '1/1', name: '1/1' }]).map(c => (
+                    <option key={c.id} value={c.id}>فصل {c.name}</option>
+                  ))}
                 </select>
               </div>
               <div>
