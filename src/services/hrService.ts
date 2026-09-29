@@ -7,6 +7,7 @@ import {
 } from '../types';
 import { storageService } from './storageService';
 import { getCairoCurrentDate, getCairoNowISO } from '../utils/egyptianTime';
+import { isPostgresBackendEnabled } from './backend/postgresRuntime';
 
 const STORAGE_KEYS_EXTRA = {
   MONTHLY_CLOSINGS: 'ntss_monthly_closings_v3',
@@ -239,6 +240,7 @@ export class HRService {
     notes?: string,
     currentUser?: User | null
   ): { success: boolean; closing: MonthlyAttendanceClosing; message: string } {
+    if (isPostgresBackendEnabled()) throw new Error('LEGACY_LOCAL_MONTH_CLOSING_DISABLED');
     const user = currentUser || storageService.getCurrentUser();
     const employees = storageService.getEmployees().filter(e => e.status === 'Active');
     const attendance = storageService.getAttendance();
@@ -300,6 +302,7 @@ export class HRService {
     reason: string,
     currentUser?: User | null
   ): { success: boolean; message: string } {
+    if (isPostgresBackendEnabled()) throw new Error('LEGACY_LOCAL_MONTH_REOPEN_DISABLED');
     const user = currentUser || storageService.getCurrentUser();
     this.requireAdmin(user);
 
@@ -350,6 +353,7 @@ export class HRService {
     reason: string,
     currentUser?: User | null
   ): { success: boolean; entry: SalaryHistoryEntry } {
+    if (isPostgresBackendEnabled()) throw new Error('LEGACY_LOCAL_SALARY_MUTATION_DISABLED');
     const user = currentUser || storageService.getCurrentUser();
     this.requireAdmin(user);
 
