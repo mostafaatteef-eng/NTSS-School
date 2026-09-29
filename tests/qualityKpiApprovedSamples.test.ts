@@ -14,6 +14,7 @@ describe('Quality KPI approved-sample integrity', () => {
     expect(metrics.averageDailyScore).toBeNull();
     expect(metrics.averageTeacherVisitScore).toBeNull();
     expect(metrics.averageComprehensiveScore).toBeNull();
+    expect(metrics.overallQualityKpi).toEqual({ value: null, sampleSize: 0, period: null, status: 'N/A' });
   });
 
   it('calculates KPI from approved samples only', () => {
@@ -29,5 +30,6 @@ describe('Quality KPI approved-sample integrity', () => {
     });
     expect(metrics.averageDailyScore).toBe(80);
     expect(metrics.overallQualityScore).toBe(80);
+    expect(metrics.overallQualityKpi).toEqual({ value: 80, sampleSize: 1, period: null, status: 'AVAILABLE' });
   });
 });
