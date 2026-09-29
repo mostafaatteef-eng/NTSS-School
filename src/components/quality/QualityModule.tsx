@@ -95,13 +95,12 @@ export const QualityModule: React.FC<QualityModuleProps> = ({ currentUser }) => 
       setMetrics(null);
       return;
     }
-    let stds = storageService.getQualityStandards(schoolId);
-    let daily = storageService.getDailyQualityReports(schoolId);
-    let visits = storageService.getTeacherVisitReports(schoolId);
-    let evals = storageService.getComprehensiveEvaluations(schoolId);
-    let acts = storageService.getCorrectiveActions(schoolId);
+    let stds: QualityStandard[] = [];
+    let daily: DailyQualityReport[] = [];
+    let visits: TeacherVisitReport[] = [];
+    let evals: ComprehensiveEvaluation[] = [];
+    let acts: CorrectiveAction[] = [];
     try {
-      await storageService.migrateLocalQualityToBackend(schoolId);
       const [serverStds,serverDaily,serverVisits,serverEvals,serverActs]=await Promise.all([
         storageService.getAuthoritativeQualityRecords('QUALITY_STANDARD',schoolId),
         storageService.getAuthoritativeQualityRecords('DAILY_REPORT',schoolId),
@@ -113,6 +112,8 @@ export const QualityModule: React.FC<QualityModuleProps> = ({ currentUser }) => 
       evals=serverEvals as ComprehensiveEvaluation[]; acts=serverActs as CorrectiveAction[];
     } catch (error) {
       console.error('Authoritative quality load failed',error);
+      // Fail closed: never present stale browser records as authoritative Production data.
+      stds=[]; daily=[]; visits=[]; evals=[]; acts=[];
     }
     const met = storageService.getQualityMetricOverview(schoolId);
 
