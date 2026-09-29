@@ -52,6 +52,8 @@ import {
   StandardScore,
   TeacherVisitReport,
   SamatSkillAssessment,
+  SamatDisciplineRecord,
+  SamatExcellenceRecord,
   ScheduleConfig,
   ScheduleItem,
   SchedulePeriodItem,
@@ -148,6 +150,8 @@ const STORAGE_KEYS = {
   BEHAVIOR_LEDGER: 'ntss_behavior_ledger_v3',
   BEHAVIOR_CASES: 'ntss_behavior_cases_v3',
   SAMAT_SKILL_ASSESSMENTS: 'ntss_samat_skill_assessments_v1',
+  SAMAT_DISCIPLINE_RECORDS: 'ntss_samat_discipline_records_v1',
+  SAMAT_EXCELLENCE_RECORDS: 'ntss_samat_excellence_records_v1',
   SCHEDULE: 'ntss_schedule_v3',
   SCHEDULE_SUBSTITUTIONS: 'ntss_schedule_substitutions_v3',
   LESSON_INSTANCES: 'ntss_lesson_instances_v3',
@@ -4667,6 +4671,48 @@ class StorageService {
     this.logAudit('UPDATE', 'BEHAVIOR', `إغلاق الحالة السلوكية (${target.caseNumber}) بنجاح: ${resolutionSummary}`);
     this.notifyChange();
     this.pushPost('saveBehaviorCase', target).catch(() => {});
+    return { success: true };
+  }
+
+  public getSamatDisciplineRecords(studentId?: string): SamatDisciplineRecord[] {
+    const raw = localStorage.getItem(STORAGE_KEYS.SAMAT_DISCIPLINE_RECORDS);
+    if (!raw) return [];
+    try {
+      const rows: SamatDisciplineRecord[] = JSON.parse(raw);
+      return studentId ? rows.filter(row => row.studentId === studentId) : rows;
+    } catch { return []; }
+  }
+
+  public saveSamatDisciplineRecord(record: SamatDisciplineRecord): { success: boolean } {
+    if (!record.studentId || !record.item || !Number.isFinite(Number(record.points))) return { success: false };
+    const rows = this.getSamatDisciplineRecords();
+    const prepared = { ...record, id: record.id || `SAMAT-DISC-${Date.now()}` };
+    rows.unshift(prepared);
+    localStorage.setItem(STORAGE_KEYS.SAMAT_DISCIPLINE_RECORDS, JSON.stringify(rows));
+    this.logAudit('CREATE', 'BEHAVIOR', `تسجيل عدم انضباط: ${prepared.studentName || prepared.studentId} - ${prepared.item}`);
+    this.notifyChange();
+    this.pushPost('saveSamatDisciplineRecord', prepared).catch(() => {});
+    return { success: true };
+  }
+
+  public getSamatExcellenceRecords(studentId?: string): SamatExcellenceRecord[] {
+    const raw = localStorage.getItem(STORAGE_KEYS.SAMAT_EXCELLENCE_RECORDS);
+    if (!raw) return [];
+    try {
+      const rows: SamatExcellenceRecord[] = JSON.parse(raw);
+      return studentId ? rows.filter(row => row.studentId === studentId) : rows;
+    } catch { return []; }
+  }
+
+  public saveSamatExcellenceRecord(record: SamatExcellenceRecord): { success: boolean } {
+    if (!record.studentId || !record.excellenceItem || !Number.isFinite(Number(record.points))) return { success: false };
+    const rows = this.getSamatExcellenceRecords();
+    const prepared = { ...record, id: record.id || `SAMAT-EXC-${Date.now()}` };
+    rows.unshift(prepared);
+    localStorage.setItem(STORAGE_KEYS.SAMAT_EXCELLENCE_RECORDS, JSON.stringify(rows));
+    this.logAudit('CREATE', 'BEHAVIOR', `تسجيل تميز وبونص: ${prepared.studentName || prepared.studentId} - ${prepared.excellenceItem}`);
+    this.notifyChange();
+    this.pushPost('saveSamatExcellenceRecord', prepared).catch(() => {});
     return { success: true };
   }
 
