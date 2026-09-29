@@ -23,6 +23,14 @@ const uatEnd = operations.indexOf('public static getUatTestCases', uatStart);
 const uatBlock = operations.slice(uatStart, uatEnd);
 if (!uatBlock.includes('isPostgresBackendEnabled()')) throw new Error('Operations UAT must explicitly guard PostgreSQL production before local mutations.');
 
+for (const getter of ['getUatTestCases','getUatRoleSignoffs','getPilotMetrics','getPilotIssues','getDailyChecklist','getGoLiveChecklist','getIncidents','getPostGoLiveBacklog']) {
+  const start = operations.indexOf('public static ' + getter);
+  if (start < 0) throw new Error('Missing operations getter: ' + getter);
+  const next = operations.indexOf('public static ', start + 14);
+  const block = operations.slice(start, next < 0 ? operations.length : next);
+  if (!block.includes('isPostgresBackendEnabled()')) throw new Error(getter + ' must suppress local seeded operational data in PostgreSQL mode.');
+}
+
 console.log('Canonical data authority guard passed.');
 
 const app = fs.readFileSync('src/App.tsx','utf8');
