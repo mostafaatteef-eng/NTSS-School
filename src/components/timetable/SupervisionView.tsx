@@ -99,9 +99,10 @@ export const SupervisionView: React.FC = () => {
       return;
     }
 
+    const currentYear = storageService.getAcademicYears().find(y => y.isCurrent || y.isActive || y.status === 'ACTIVE');
     const assignment: SupervisionAssignment = {
       id: `SUP-${Date.now()}`,
-      academicYear: '2024/2025',
+      academicYear: currentYear?.name || '2026/2027',
       date: selectedDate,
       dayOfWeek: dayName,
       locationId: loc.id,
