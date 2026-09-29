@@ -23,6 +23,8 @@ export const ExamScheduleView: React.FC = () => {
   const [exams, setExams] = useState<ExamSchedule[]>([]);
   const [selectedGrade, setSelectedGrade] = useState<string>('ALL');
   const [teachers, setTeachers] = useState<Employee[]>([]);
+  const configuredGrades = storageService.getGrades();
+  const configuredClassrooms = storageService.getClassrooms();
 
   // Modal
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -51,16 +53,18 @@ export const ExamScheduleView: React.FC = () => {
 
   const handleOpenAdd = () => {
     const currentYear = getCurrentAcademicYear();
+    const firstGrade = configuredGrades[0];
+    const firstClassroom = configuredClassrooms.find(c => !firstGrade?.id || c.gradeId === firstGrade.id) || configuredClassrooms[0];
     setEditingExam({
       academicYearId: currentYear?.id,
       academicYear: currentYear?.name || '2026/2027',
       term: 'FIRST',
       examType: 'MIDTERM',
       subjectName: '',
-      gradeId: 'G1',
-      gradeName: 'الصف الأول الثانوي',
-      classroomId: '1/1',
-      classroomName: '1/1',
+      gradeId: firstGrade?.id || firstClassroom?.gradeId || '',
+      gradeName: firstGrade?.name || firstClassroom?.gradeName || '',
+      classroomId: firstClassroom?.id,
+      classroomName: firstClassroom?.displayName || firstClassroom?.classroomNumber || firstClassroom?.id,
       examDate: new Date().toISOString().split('T')[0],
       startTime: '09:00',
       durationMinutes: 90,
@@ -188,9 +192,9 @@ export const ExamScheduleView: React.FC = () => {
           className="bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-medium focus:ring-2 focus:ring-[#008e8b]/30"
         >
           <option value="ALL">جميع الصفوف الدراسية</option>
-          <option value="الصف الأول الثانوي">الصف الأول الثانوي</option>
-          <option value="الصف الثاني الثانوي">الصف الثاني الثانوي</option>
-          <option value="الصف الثالث الثانوي">الصف الثالث الثانوي</option>
+          {configuredGrades.map(g => (
+            <option key={g.id} value={g.id}>{g.name}</option>
+          ))}
         </select>
       </div>
 
@@ -345,19 +349,23 @@ export const ExamScheduleView: React.FC = () => {
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">الصف الدراسي</label>
                   <select
-                    value={editingExam.gradeName}
-                    onChange={e =>
+                    value={editingExam.gradeId || ''}
+                    onChange={e => {
+                      const grade = configuredGrades.find(g => g.id === e.target.value);
+                      const classroom = configuredClassrooms.find(c => c.gradeId === e.target.value);
                       setEditingExam({
                         ...editingExam,
-                        gradeName: e.target.value,
-                        gradeId: e.target.value.includes('الأول') ? 'G1' : e.target.value.includes('الثاني') ? 'G2' : 'G3',
-                      })
-                    }
+                        gradeId: e.target.value,
+                        gradeName: grade?.name || '',
+                        classroomId: classroom?.id,
+                        classroomName: classroom?.displayName || classroom?.classroomNumber || classroom?.id,
+                      });
+                    }}
                     className="w-full border border-slate-300 rounded-lg p-2 text-xs"
                   >
-                    <option value="الصف الأول الثانوي">الصف الأول الثانوي</option>
-                    <option value="الصف الثاني الثانوي">الصف الثاني الثانوي</option>
-                    <option value="الصف الثالث الثانوي">الصف الثالث الثانوي</option>
+                    {configuredGrades.map(g => (
+                      <option key={g.id} value={g.id}>{g.name}</option>
+                    ))}
                   </select>
                 </div>
               </div>
