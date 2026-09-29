@@ -40,3 +40,8 @@ for (const guard of ['LEGACY_LOCAL_MONTH_CLOSING_DISABLED','LEGACY_LOCAL_MONTH_R
 if (!storage.includes("'/audit/manage'")) throw new Error('Client audit events must be mirrored to authoritative PostgreSQL.');
 if (!storage.includes('getAuthoritativeAuditLogs')) throw new Error('Authoritative audit reader is missing.');
 if (!app.includes('getAuthoritativeAuditLogs(300)')) throw new Error('Displayed audit trail must refresh from PostgreSQL authority.');
+
+for (const fakeQuality of ['overallQualityScore: overall || 85','averagePercentage: evalCount > 0 ? Math.round(sumPct / evalCount) : 85',"{ domain: 'البيئة المدرسية والسلامة', averagePercentage: 90"]) {
+  if (storage.includes(fakeQuality)) throw new Error(`Fabricated quality KPI detected: ${fakeQuality}`);
+}
+if (!app.includes('getQualityMetricOverview(schoolId,{ daily,visits,evals,actions:acts,standards:stds })')) throw new Error('Quality dashboard metrics must use authoritative loaded records.');
