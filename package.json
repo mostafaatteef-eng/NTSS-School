@@ -16,7 +16,8 @@
     "api:start": "node server/postgres-api.js",
     "api:start:canonical": "node --import tsx server/canonical-api.ts",
     "db:import": "node scripts/importSheetsExportToPostgres.js",
-    "db:migrate": "node scripts/runPostgresSchema.js"
+    "db:migrate": "node scripts/runPostgresSchema.js",
+    "api:check": "node --import tsx -e \"import('./api/index.ts').then(m=>{if(!m.ntssHandler?.fetch)process.exit(1);console.log('Canonical API handler OK')})\""
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
