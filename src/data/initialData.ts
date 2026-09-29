@@ -663,11 +663,11 @@ export const SAMAT_TRAITS = [
 ] as const;
 
 export const SAMAT_STUDENT_LEVELS = [
-  { min: 0, max: 59, name: 'أبني سماتي' },
-  { min: 60, max: 74, name: 'أنمّي سماتي' },
-  { min: 75, max: 84, name: 'أُظهر سماتي' },
-  { min: 85, max: 94, name: 'أتميز بسماتي' },
-  { min: 95, max: 100, name: 'قدوة بسماتي' },
+  { min: 0, max: 49, name: 'قيد التأسيس' },
+  { min: 50, max: 65, name: 'مبتدئ' },
+  { min: 66, max: 80, name: 'متمكن' },
+  { min: 81, max: 90, name: 'قدوة حسنة' },
+  { min: 91, max: 100, name: 'المحترف' },
 ] as const;
 
 export const DEFAULT_BEHAVIOR_TYPES: BehaviorType[] = [
