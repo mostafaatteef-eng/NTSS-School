@@ -200,3 +200,35 @@ CREATE TABLE IF NOT EXISTS master_data_items (
 );
 CREATE INDEX IF NOT EXISTS master_data_items_school_lookup_idx
   ON master_data_items(school_id,category,type_key,is_active,sort_order);
+
+
+-- Authoritative school notifications and per-recipient read state.
+CREATE TABLE IF NOT EXISTS notifications (
+  id text PRIMARY KEY,
+  school_id text NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+  type text NOT NULL,
+  category text NOT NULL,
+  title text NOT NULL,
+  message text NOT NULL,
+  target_user_id text,
+  target_role text,
+  target_student_id text,
+  related_entity text,
+  related_entity_id text,
+  priority text NOT NULL DEFAULT 'NORMAL',
+  action_url text,
+  created_by_system boolean NOT NULL DEFAULT true,
+  deduplication_key text,
+  expires_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS notifications_school_dedupe_idx
+  ON notifications(school_id,deduplication_key) WHERE deduplication_key IS NOT NULL;
+CREATE INDEX IF NOT EXISTS notifications_school_created_idx
+  ON notifications(school_id,created_at DESC);
+CREATE TABLE IF NOT EXISTS notification_reads (
+  notification_id text NOT NULL REFERENCES notifications(id) ON DELETE CASCADE,
+  user_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  read_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(notification_id,user_id)
+);
