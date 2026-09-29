@@ -47,3 +47,7 @@ for (const fakeQuality of ['overallQualityScore: overall || 85','averagePercenta
 const qualityModule = fs.readFileSync('src/components/quality/QualityModule.tsx','utf8');
 if (!qualityModule.includes('getQualityMetricOverview(schoolId,{ daily,visits,evals,actions:acts,standards:stds })')) throw new Error('Quality dashboard metrics must use authoritative loaded records.');
 if (!storage.includes('const overall=availableScores.length ? availableScores.reduce((a,b)=>a+b,0)/availableScores.length : null;')) throw new Error('Missing quality samples must remain null, not fabricated percentages.');
+
+const qualityDashboard = fs.readFileSync('src/components/quality/QualityDashboardSection.tsx','utf8');
+if (qualityDashboard.includes('إجمالي المعايير المقيمة: {da.count}')) throw new Error('Quality dashboard must not label configured standards as evaluated.');
+if (!qualityDashboard.includes('لم يتم تقييم هذا المجال بعد')) throw new Error('Quality dashboard needs an explicit no-evaluation state.');
