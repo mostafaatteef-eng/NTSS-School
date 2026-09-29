@@ -273,6 +273,7 @@ export class OperationsService {
    * UAT Comprehensive Test Cases
    */
   public static getUatTestCases(): UatTestCase[] {
+    if (isPostgresBackendEnabled()) return [];
     const raw = localStorage.getItem(STORAGE_KEYS.UAT_TEST_CASES);
     if (raw) {
       try {
@@ -439,6 +440,7 @@ export class OperationsService {
    * UAT Role Sign-offs
    */
   public static getUatRoleSignoffs(): UatRoleSignoff[] {
+    if (isPostgresBackendEnabled()) return [];
     const raw = localStorage.getItem(STORAGE_KEYS.UAT_SIGNOFFS);
     if (raw) {
       try {
@@ -511,6 +513,7 @@ export class OperationsService {
    * Controlled Pilot Tracking & Metrics
    */
   public static getPilotMetrics(): PilotMetricsData {
+    if (isPostgresBackendEnabled()) return { pilotActiveUsers: 0, loginSuccessRate: 0, attendanceSaveSuccessRate: 0, avgClassroomAttendanceSec: 0, avgStudentAffairsReviewSec: 0, syncFailuresCount: 0, apiFailuresCount: 0, activeTeachersCount: 0, lessonsRecordedCount: 0, activeParentsCount: 0, attendanceCompletionRate: 0 };
     const raw = localStorage.getItem(STORAGE_KEYS.PILOT_METRICS);
     if (raw) {
       try {
@@ -537,6 +540,7 @@ export class OperationsService {
   }
 
   public static getPilotIssues(): PilotIssueItem[] {
+    if (isPostgresBackendEnabled()) return [];
     const raw = localStorage.getItem(STORAGE_KEYS.PILOT_ISSUES);
     if (raw) {
       try {
@@ -589,6 +593,7 @@ export class OperationsService {
     duringDay: ChecklistItem[];
     endOfDay: ChecklistItem[];
   } {
+    if (isPostgresBackendEnabled()) return { startOfDay: [], duringDay: [], endOfDay: [] };
     const raw = localStorage.getItem(STORAGE_KEYS.DAILY_CHECKLIST);
     if (raw) {
       try {
@@ -633,6 +638,7 @@ export class OperationsService {
    * Mandatory Go-Live Checklist (Security, Data, Configuration, Operations, QA)
    */
   public static getGoLiveChecklist(): ChecklistItem[] {
+    if (isPostgresBackendEnabled()) return [];
     const raw = localStorage.getItem(STORAGE_KEYS.GOLIVE_CHECKLIST);
     if (raw) {
       try {
@@ -681,6 +687,7 @@ export class OperationsService {
    * Incident Management (SEV-1 to SEV-4)
    */
   public static getIncidents(): IncidentRecord[] {
+    if (isPostgresBackendEnabled()) return [];
     const raw = localStorage.getItem(STORAGE_KEYS.INCIDENTS);
     if (raw) {
       try {
@@ -726,6 +733,7 @@ export class OperationsService {
    * Post-Go-Live Backlog
    */
   public static getPostGoLiveBacklog(): BacklogItem[] {
+    if (isPostgresBackendEnabled()) return [];
     const raw = localStorage.getItem(STORAGE_KEYS.POST_GOLIVE_BACKLOG);
     if (raw) {
       try {
