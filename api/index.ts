@@ -1093,7 +1093,7 @@ export const ntssHandler = {
         const table=isLeave?'leaves':'permissions'; const id=String(data.id||'').trim() || (isLeave?'LEV-':'PER-')+crypto.randomBytes(8).toString('hex').toUpperCase();
         if (action==='deleteLeave'||action==='deletePermission') {
           const d=await pool.query(`DELETE FROM ${table} WHERE school_id=$1 AND id=$2 RETURNING id`,[schoolId,id]);
-          return d.rowCount?json({status:'success'},200,corsOrigin):json({status:'error',code:'NOT_FOUND'},404,corsOrigin);
+          return d.rowCount?json({status:'success'},200,corsOrigin):respond({status:'error',code:'NOT_FOUND'},404,corsOrigin);
         }
         if (action.startsWith('approve')||action.startsWith('reject')) {
           const status=action.startsWith('approve')?'مقبولة':'مرفوضة';
