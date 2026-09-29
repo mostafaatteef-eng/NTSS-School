@@ -3759,6 +3759,28 @@ class StorageService {
     logs.unshift(entry);
     if (logs.length > 500) logs.pop();
     localStorage.setItem(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify(logs));
+
+    // PostgreSQL is authoritative. Keep the browser list only as a transient UI cache;
+    // append the authenticated event to the server audit trail without blocking the caller.
+    if (isPostgresBackendEnabled() && user?.sessionToken) {
+      const schoolId = String(user.activeSchoolId || user.schoolId || this.getActiveSchoolId() || '').trim();
+      if (schoolId) {
+        void postgresApiRequest<any>('/audit/manage', user.sessionToken, {
+          method: 'POST',
+          body: JSON.stringify({ action: 'append', schoolId, data: { action, entity, targetId, details } }),
+        }).catch(error => console.error('Authoritative audit append failed', error));
+      }
+    }
+  }
+
+  public async getAuthoritativeAuditLogs(limit=200): Promise<AuditLogEntry[]> {
+    const user=this.getCurrentUser();
+    if(!isPostgresBackendEnabled() || !user?.sessionToken) return this.getAuditLogs();
+    const schoolId=String(user.activeSchoolId || user.schoolId || this.getActiveSchoolId() || '').trim();
+    if(!schoolId) return [];
+    const pg=await postgresApiRequest<any>('/audit/manage',user.sessionToken,{method:'POST',body:JSON.stringify({action:'list',schoolId,limit})});
+    if(!pg.ok||pg.body?.status!=='success'||!Array.isArray(pg.body?.data)) throw new Error(pg.body?.code||'AUDIT_LOAD_FAILED');
+    return pg.body.data as AuditLogEntry[];
   }
 
   // ---------------- Cloud Sync (Google Sheets & Apps Script) ----------------
