@@ -8695,89 +8695,63 @@ class StorageService {
     return { success: true, message: 'تم اعتماد التقييم الشامل بنجاح' };
   }
 
-  public getQualityMetricOverview(schoolId?: string): QualityMetricOverview {
+  public getQualityMetricOverview(
+    schoolId?: string,
+    source?: {
+      daily: DailyQualityReport[];
+      visits: TeacherVisitReport[];
+      evals: ComprehensiveEvaluation[];
+      actions: CorrectiveAction[];
+      standards: QualityStandard[];
+    }
+  ): QualityMetricOverview {
     const activeSchoolId = (schoolId || this.getActiveSchoolId()).trim();
-    const daily = this.getDailyQualityReports(activeSchoolId);
-    const visits = this.getTeacherVisitReports(activeSchoolId);
-    const evals = this.getComprehensiveEvaluations(activeSchoolId);
-    const actions = this.getCorrectiveActions(activeSchoolId);
-    const standards = this.getQualityStandards(activeSchoolId);
+    const daily = source?.daily ?? this.getDailyQualityReports(activeSchoolId);
+    const visits = source?.visits ?? this.getTeacherVisitReports(activeSchoolId);
+    const evals = source?.evals ?? this.getComprehensiveEvaluations(activeSchoolId);
+    const actions = source?.actions ?? this.getCorrectiveActions(activeSchoolId);
+    const standards = source?.standards ?? this.getQualityStandards(activeSchoolId);
 
     const avgDaily = daily.length > 0
       ? daily.reduce((acc, d) => acc + (d.percentage || (d.evaluations?.length ? this.calculateWeightedScore(d.evaluations, standards).percentage : 0)), 0) / daily.length
-      : 0;
-
+      : null;
     const avgVisits = visits.length > 0
       ? visits.reduce((acc, v) => acc + (v.percentage || v.overallScore || 0), 0) / visits.length
-      : 0;
-
+      : null;
     const avgEvals = evals.length > 0
       ? evals.reduce((acc, e) => acc + (e.percentage || e.weightedScore || 0), 0) / evals.length
-      : 0;
+      : null;
 
-    const totalCount = [daily.length, visits.length, evals.length].filter((c) => c > 0).length;
-    const overall = totalCount > 0
-      ? (avgDaily * (daily.length > 0 ? 1 : 0) +
-         avgVisits * (visits.length > 0 ? 1 : 0) +
-         avgEvals * (evals.length > 0 ? 1 : 0)) / totalCount
-      : 0;
+    const availableScores=[avgDaily,avgVisits,avgEvals].filter((v):v is number=>v!==null);
+    const overall=availableScores.length ? availableScores.reduce((a,b)=>a+b,0)/availableScores.length : null;
+    const resolvedActions=actions.filter(a=>a.status==='Closed'||a.status===('RESOLVED' as any)).length;
+    const resRate=actions.length ? (resolvedActions/actions.length)*100 : null;
 
-    const resolvedActions = actions.filter((a) => a.status === 'Closed' || a.status === ('RESOLVED' as any)).length;
-    const resRate = actions.length > 0 ? (resolvedActions / actions.length) * 100 : 100;
-
-    // Domain breakdown from standards
-    const domainMap: Record<string, { totalPct: number; count: number }> = {};
-    standards.forEach((std) => {
-      if (!domainMap[std.domain]) {
-        domainMap[std.domain] = { totalPct: 0, count: 0 };
-      }
-      domainMap[std.domain].count += 1;
-    });
-
-    // Compute estimated performance per domain based on all evaluations
-    const domainAverages = Object.entries(domainMap).map(([domain, data]) => {
-      // Find evaluations referencing standards in this domain
-      const stdIdsInDomain = new Set(standards.filter((s) => s.domain === domain).map((s) => s.id));
-      let sumPct = 0;
-      let evalCount = 0;
-
-      [...daily, ...visits, ...evals].forEach((report: any) => {
-        const scores = report.standardScores || report.evaluations || [];
-        scores.forEach((sc: any) => {
-          if (stdIdsInDomain.has(sc.standardId)) {
-            const std = standards.find((s) => s.id === sc.standardId);
-            const scale = std?.evaluationScale || sc.maxScore || 4;
-            const pct = Math.min(100, Math.max(0, (sc.score / scale) * 100));
-            sumPct += pct;
-            evalCount += 1;
-          }
+    const domainMap: Record<string,{count:number}>={};
+    standards.forEach(std=>{ if(!domainMap[std.domain]) domainMap[std.domain]={count:0}; domainMap[std.domain].count+=1; });
+    const domainAverages=Object.entries(domainMap).map(([domain,data])=>{
+      const ids=new Set(standards.filter(s=>s.domain===domain).map(s=>s.id));
+      let sum=0,evaluated=0;
+      [...daily,...visits,...evals].forEach((report:any)=>{
+        const scores=report.standardScores||report.evaluations||[];
+        scores.forEach((sc:any)=>{
+          if(!ids.has(sc.standardId)) return;
+          const std=standards.find(s=>s.id===sc.standardId);
+          const scale=std?.evaluationScale||sc.maxScore||4;
+          if(!Number.isFinite(Number(sc.score))||!Number.isFinite(Number(scale))||Number(scale)<=0)return;
+          sum+=Math.min(100,Math.max(0,(Number(sc.score)/Number(scale))*100)); evaluated+=1;
         });
       });
-
-      return {
-        domain,
-        count: data.count,
-        averagePercentage: evalCount > 0 ? Math.round(sumPct / evalCount) : 85,
-      };
+      return {domain,count:evaluated,averagePercentage:evaluated?Math.round((sum/evaluated)*10)/10:null};
     });
 
     return {
-      overallQualityScore: overall || 85,
-      totalDailyReports: daily.length,
-      averageDailyScore: avgDaily || 0,
-      totalTeacherVisits: visits.length,
-      averageTeacherVisitScore: avgVisits || 0,
-      totalComprehensiveEvaluations: evals.length,
-      averageComprehensiveScore: avgEvals || 0,
-      totalActionsCount: actions.length,
-      resolvedActionsCount: resolvedActions,
-      actionsResolutionRate: resRate,
-      domainAverages: domainAverages.length > 0 ? domainAverages : [
-        { domain: 'البيئة المدرسية والسلامة', averagePercentage: 90, count: 4 },
-        { domain: 'التعليم والتعلم والتدريس', averagePercentage: 86, count: 6 },
-        { domain: 'القيادة والإدارة المدرسية', averagePercentage: 88, count: 5 },
-        { domain: 'نواتج التعلم والتحصيل', averagePercentage: 82, count: 3 },
-      ],
+      overallQualityScore:overall,
+      totalDailyReports:daily.length, averageDailyScore:avgDaily,
+      totalTeacherVisits:visits.length, averageTeacherVisitScore:avgVisits,
+      totalComprehensiveEvaluations:evals.length, averageComprehensiveScore:avgEvals,
+      totalActionsCount:actions.length,resolvedActionsCount:resolvedActions,actionsResolutionRate:resRate,
+      domainAverages,
     };
   }
 
