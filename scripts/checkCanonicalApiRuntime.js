@@ -36,8 +36,8 @@ const canonicalApi = fs.readFileSync(new URL('../api/index.ts', import.meta.url)
 const handlerStart = canonicalApi.indexOf('export const ntssHandler = {');
 const handlerEnd = canonicalApi.indexOf('export default async function vercelHandler', handlerStart);
 const handlerBody = canonicalApi.slice(handlerStart, handlerEnd);
-if (/return json\(\{\s*status\s*:\s*['"]error['"]/.test(handlerBody)) {
-  throw new Error('Canonical handler errors must use respond() so the request trace ID is preserved.');
+if (/json\(\{\s*status\s*:\s*['"]error['"]/.test(handlerBody)) {
+  throw new Error('Canonical handler errors must use respond() so the request trace ID is preserved, including ternaries.');
 }
 
 console.log('Canonical API runtime guard passed.');
