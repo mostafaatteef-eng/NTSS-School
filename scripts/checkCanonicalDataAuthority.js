@@ -11,6 +11,11 @@ for (const seed of ['NOTIF-01','NOTIF-02','homework-seed-math-01','attendance-se
 if (!notifications.includes('isPostgresBackendEnabled()')) throw new Error('Notification legacy mutations must explicitly guard PostgreSQL authority.');
 if (!notifications.includes('LEGACY_LOCAL_NOTIFICATION_WRITE_DISABLED')) throw new Error('Notification local mutation fail-closed guard is missing.');
 
+const backupExport = fs.readFileSync('src/components/backup/BackupExportView.tsx','utf8');
+if (!backupExport.includes('isPostgresBackendEnabled')) throw new Error('Backup export view must detect PostgreSQL authority.');
+if (!backupExport.includes('if (postgresMode) return')) throw new Error('Browser backup export must fail closed in PostgreSQL mode.');
+if (backupExport.includes('كافة جداول وقواعد بيانات المدرسة')) throw new Error('Browser export must not claim to be a full production database backup.');
+
 console.log('Canonical data authority guard passed.');
 
 const app = fs.readFileSync('src/App.tsx','utf8');
