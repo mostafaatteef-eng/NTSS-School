@@ -8,14 +8,14 @@ describe('Samat scoring',()=>{
       {id:'2',studentId:'S1',type:'POSITIVE',sourceType:'positive_behavior',points:10,date:'2026-09-02',reason:'y'},
       {id:'3',studentId:'S1',type:'RESTORE',sourceType:'adjustment',points:5,date:'2026-09-03',reason:'z'},
     ]);
-    expect(summary).toMatchObject({score:85,credits:15,debits:30,level:'أتميز بسماتي'});
+    expect(summary).toMatchObject({score:85,credits:15,debits:30,level:'قدوة حسنة'});
   });
   it('maps the five Samat student levels',()=>{
-    expect(getSamatStudentLevel(50)).toBe('أبني سماتي');
-    expect(getSamatStudentLevel(70)).toBe('أنمّي سماتي');
-    expect(getSamatStudentLevel(80)).toBe('أُظهر سماتي');
-    expect(getSamatStudentLevel(90)).toBe('أتميز بسماتي');
-    expect(getSamatStudentLevel(100)).toBe('قدوة بسماتي');
+    expect(getSamatStudentLevel(49)).toBe('قيد التأسيس');
+    expect(getSamatStudentLevel(50)).toBe('مبتدئ');
+    expect(getSamatStudentLevel(66)).toBe('متمكن');
+    expect(getSamatStudentLevel(81)).toBe('قدوة حسنة');
+    expect(getSamatStudentLevel(91)).toBe('المحترف');
   });
   it('preserves an explicit zero initial score', () => {
     const result = calculateSamatScore(0, []);
