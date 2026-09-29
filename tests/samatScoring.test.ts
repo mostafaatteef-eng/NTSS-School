@@ -17,4 +17,8 @@ describe('Samat scoring',()=>{
     expect(getSamatStudentLevel(90)).toBe('أتميز بسماتي');
     expect(getSamatStudentLevel(100)).toBe('قدوة بسماتي');
   });
+  it('preserves an explicit zero initial score', () => {
+    const result = calculateSamatScore(0, []);
+    expect(result.score).toBe(0);
+  });
 });
