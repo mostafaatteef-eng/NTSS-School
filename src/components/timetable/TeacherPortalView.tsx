@@ -65,14 +65,14 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ onBackToLo
   const [isHwModalOpen, setIsHwModalOpen] = useState(false);
   const [newHwTitle, setNewHwTitle] = useState('');
   const [newHwSubject, setNewHwSubject] = useState('');
-  const [newHwClassroom, setNewHwClassroom] = useState('1/1');
+  const [newHwClassroom, setNewHwClassroom] = useState('');
   const [newHwDueDate, setNewHwDueDate] = useState('');
   const [newHwDesc, setNewHwDesc] = useState('');
 
   // Add Resource Modal
   const [isResModalOpen, setIsResModalOpen] = useState(false);
   const [resSubject, setResSubject] = useState('');
-  const [resClassroom, setResClassroom] = useState('1/1');
+  const [resClassroom, setResClassroom] = useState('');
   const [resTopic, setResTopic] = useState('');
   const [resPrepUrl, setResPrepUrl] = useState('');
   const [resPresUrl, setResPresUrl] = useState('');
@@ -93,6 +93,16 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ onBackToLo
         })
     ).values()
   );
+
+  useEffect(() => {
+    if (!portalClassrooms.length) {
+      setNewHwClassroom('');
+      setResClassroom('');
+      return;
+    }
+    setNewHwClassroom(current => portalClassrooms.some(c => c.id === current) ? current : portalClassrooms[0].id);
+    setResClassroom(current => portalClassrooms.some(c => c.id === current) ? current : portalClassrooms[0].id);
+  }, [weeklySchedule]);
 
   // Teacher portal access is session-authoritative. Stored session metadata is
   // never sufficient by itself; the token is revalidated by the backend.
@@ -303,7 +313,7 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ onBackToLo
 
   // Homework submission
   const handleSaveHomework = async () => {
-    if (!activeTeacher || !newHwTitle.trim() || contentSaving) return;
+    if (!activeTeacher || !newHwTitle.trim() || !newHwClassroom || !portalClassrooms.some(c => c.id === newHwClassroom) || contentSaving) return;
 
     setContentSaving('homework');
     setHomeworkSaveError('');
@@ -347,7 +357,7 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ onBackToLo
 
   // Resource submission
   const handleSaveResource = async () => {
-    if (!activeTeacher || !resTopic.trim() || contentSaving) return;
+    if (!activeTeacher || !resTopic.trim() || !resClassroom || !portalClassrooms.some(c => c.id === resClassroom) || contentSaving) return;
 
     setContentSaving('resource');
     setResourceSaveError('');
