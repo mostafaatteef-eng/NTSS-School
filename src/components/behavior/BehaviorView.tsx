@@ -63,6 +63,13 @@ export const BehaviorView: React.FC = () => {
   const [skillId, setSkillId] = useState('');
   const [skillScore, setSkillScore] = useState(0);
   const [skillEvidence, setSkillEvidence] = useState('');
+  const [disciplineItem, setDisciplineItem] = useState('');
+  const [disciplinePoints, setDisciplinePoints] = useState(0);
+  const [disciplineNotes, setDisciplineNotes] = useState('');
+  const [excellenceItem, setExcellenceItem] = useState('');
+  const [excellencePoints, setExcellencePoints] = useState(0);
+  const [excellenceBonus, setExcellenceBonus] = useState(0);
+  const [excellenceNomination, setExcellenceNomination] = useState('');
 
   const [activeSubTab, setActiveSubTab] = useState<'violations' | 'positive' | 'types_manager' | 'at_risk'>('violations');
 
@@ -162,6 +169,8 @@ export const BehaviorView: React.FC = () => {
   const profilePlans = useMemo(() => profileStudentId ? allImprovementPlans.filter(x => x.studentId === profileStudentId) : [], [profileStudentId, allImprovementPlans]);
   const profileSkillAssessments = useMemo(() => profileStudentId ? storageService.getSamatSkillAssessments(profileStudentId) : [], [profileStudentId, skillId, skillScore, skillEvidence]);
   const profileSkillAverage = useMemo(() => profileSkillAssessments.length ? profileSkillAssessments.reduce((sum,row)=>sum+Number(row.score),0)/profileSkillAssessments.length : null, [profileSkillAssessments]);
+  const profileDisciplineRecords = useMemo(() => profileStudentId ? storageService.getSamatDisciplineRecords(profileStudentId) : [], [profileStudentId, disciplineItem, disciplinePoints, disciplineNotes]);
+  const profileExcellenceRecords = useMemo(() => profileStudentId ? storageService.getSamatExcellenceRecords(profileStudentId) : [], [profileStudentId, excellenceItem, excellencePoints, excellenceBonus, excellenceNomination]);
   const profileTimeline = useMemo(() => {
     if (!profileStudentId) return [];
     const negative = violations.filter(v => v.studentId === profileStudentId).map(v => ({
@@ -375,6 +384,31 @@ export const BehaviorView: React.FC = () => {
     storageService.closeBehaviorCase(closePlanId, summary);
     setClosePlanId(null); setClosePlanResult('');
     alert('تم إغلاق خطة تحسين سمات وتوثيق نتيجة الإغلاق.');
+  };
+
+  const handleSaveDisciplineRecord = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!profileStudent || !disciplineItem.trim()) return;
+    storageService.saveSamatDisciplineRecord({
+      id: `SAMAT-DISC-${Date.now()}`, studentId: profileStudent.id, studentName: profileStudent.name,
+      grade: profileStudent.grade, classroom: profileStudent.classroom, item: disciplineItem.trim(),
+      points: Number(disciplinePoints) || 0, date: getCairoCurrentDate(), notes: disciplineNotes.trim() || undefined,
+    });
+    setDisciplineItem(''); setDisciplinePoints(0); setDisciplineNotes('');
+  };
+
+  const handleSaveExcellenceRecord = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!profileStudent || !excellenceItem.trim()) return;
+    const score = storageService.calculateStudentBehaviorScore(profileStudent.id).currentScore;
+    storageService.saveSamatExcellenceRecord({
+      id: `SAMAT-EXC-${Date.now()}`, studentId: profileStudent.id, studentName: profileStudent.name,
+      grade: profileStudent.grade, classroom: profileStudent.classroom, excellenceItem: excellenceItem.trim(),
+      points: Number(excellencePoints) || 0, additionalBonus: Number(excellenceBonus) || 0,
+      level: getSamatStudentLevel(score), date: getCairoCurrentDate(),
+      nominationSourceAndReason: excellenceNomination.trim() || undefined,
+    });
+    setExcellenceItem(''); setExcellencePoints(0); setExcellenceBonus(0); setExcellenceNomination('');
   };
 
   const handleSaveSkillAssessment = (e: React.FormEvent) => {
@@ -968,6 +1002,25 @@ export const BehaviorView: React.FC = () => {
                 <div className="rounded-xl bg-slate-50 border border-slate-100 p-4"><div className="text-[11px] text-slate-500">المواقف المسجلة</div><div className="text-2xl font-black text-slate-900">{profileTimeline.length}</div></div>
               </div>
             ); })()}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <form onSubmit={handleSaveDisciplineRecord} className="rounded-2xl border border-amber-200 bg-amber-50/40 p-4 space-y-2">
+                <h4 className="text-sm font-extrabold text-slate-900">تسجيل عدم الانضباط</h4>
+                <p className="text-[11px] text-slate-500">سجل مستقل مطابق لتنظيم ملف المصدر، ولا يُدمج تلقائيًا مع المخالفات.</p>
+                <input required value={disciplineItem} onChange={e=>setDisciplineItem(e.target.value)} placeholder="حالة عدم الانضباط" className="w-full text-xs bg-white border border-slate-200 rounded-xl px-3 py-2"/>
+                <div className="grid grid-cols-3 gap-2"><input type="number" value={disciplinePoints} onChange={e=>setDisciplinePoints(Number(e.target.value))} placeholder="النقاط" className="text-xs bg-white border border-slate-200 rounded-xl px-3 py-2"/><input value={disciplineNotes} onChange={e=>setDisciplineNotes(e.target.value)} placeholder="ملاحظات" className="col-span-2 text-xs bg-white border border-slate-200 rounded-xl px-3 py-2"/></div>
+                <button className="w-full bg-amber-600 text-white rounded-xl text-xs font-bold px-3 py-2">حفظ عدم الانضباط</button>
+                {profileDisciplineRecords.slice(0,4).map(row=><div key={row.id} className="text-[10px] text-slate-600">{row.date} — {row.item} ({row.points})</div>)}
+              </form>
+              <form onSubmit={handleSaveExcellenceRecord} className="rounded-2xl border border-emerald-200 bg-emerald-50/40 p-4 space-y-2">
+                <h4 className="text-sm font-extrabold text-slate-900">سجل التميز والبونص</h4>
+                <input required value={excellenceItem} onChange={e=>setExcellenceItem(e.target.value)} placeholder="التميز / البونص" className="w-full text-xs bg-white border border-slate-200 rounded-xl px-3 py-2"/>
+                <div className="grid grid-cols-2 gap-2"><input type="number" value={excellencePoints} onChange={e=>setExcellencePoints(Number(e.target.value))} placeholder="النقاط" className="text-xs bg-white border border-slate-200 rounded-xl px-3 py-2"/><input type="number" value={excellenceBonus} onChange={e=>setExcellenceBonus(Number(e.target.value))} placeholder="البونص الإضافي" className="text-xs bg-white border border-slate-200 rounded-xl px-3 py-2"/></div>
+                <input value={excellenceNomination} onChange={e=>setExcellenceNomination(e.target.value)} placeholder="جهة الترشيح وسبب المنح" className="w-full text-xs bg-white border border-slate-200 rounded-xl px-3 py-2"/>
+                <button className="w-full bg-emerald-600 text-white rounded-xl text-xs font-bold px-3 py-2">حفظ التميز والبونص</button>
+                {profileExcellenceRecords.slice(0,4).map(row=><div key={row.id} className="text-[10px] text-slate-600">{row.date} — {row.excellenceItem} (+{row.points}{row.additionalBonus ? ` + بونص ${row.additionalBonus}` : ''})</div>)}
+              </form>
+            </div>
+
             <div className="rounded-2xl border border-slate-200 p-4">
               <div className="flex items-center justify-between gap-3 mb-3"><div><h4 className="text-sm font-extrabold text-slate-900">تقييم المهارات الحياتية</h4><p className="text-[11px] text-slate-500 mt-0.5">المقياس المعتمد في ملف المصدر: 0 / 2 / 4 / 6 / 8 / 10</p></div>{profileSkillAverage !== null && <div className="text-center"><div className="text-[10px] text-slate-500">المتوسط</div><div className="text-xl font-black text-teal-700">{profileSkillAverage.toFixed(1)}/10</div></div>}</div>
               <form onSubmit={handleSaveSkillAssessment} className="grid grid-cols-1 md:grid-cols-4 gap-2">
