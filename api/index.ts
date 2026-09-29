@@ -860,6 +860,7 @@ const ntssHandler = {
           if(!existing.rowCount)return json({status:'error',code:'NOT_FOUND'},404,corsOrigin);
           if(reportTypes.has(String(existing.rows[0].record_type)) && String(existing.rows[0].status).toUpperCase()!=='DRAFT')return json({status:'error',code:'FINALIZED_RECORD_LOCKED'},409,corsOrigin);
           await pool.query('DELETE FROM quality_records WHERE school_id=$1 AND id=$2',[schoolId,id]);
+          await pool.query('INSERT INTO audit_logs(school_id,user_id,username,role,action,entity,target_id,details) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[schoolId,user.user_id,user.email,user.role,'DELETE','QUALITY',id,JSON.stringify({recordType:existing.rows[0].record_type,status:existing.rows[0].status})]);
           return json({status:'success'},200,corsOrigin);
         }
         if(action==='approve'){
