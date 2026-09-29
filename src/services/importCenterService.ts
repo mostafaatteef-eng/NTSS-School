@@ -11,6 +11,7 @@ import {
 import { storageService } from './storageService';
 import { STORAGE_KEYS } from './masterDataDefaults';
 import { getCairoNowISO } from '../utils/egyptianTime';
+import { isPostgresBackendEnabled } from './backend/postgresRuntime';
 import * as XLSX from 'xlsx';
 
 export class ImportCenterService {
@@ -296,7 +297,37 @@ export class ImportCenterService {
         data: Partial<Student>;
       }> = [];
 
+      if ((entityType === 'EMPLOYEES' || entityType === 'TEACHERS') && isPostgresBackendEnabled()) {
+      const employeesToImport: Partial<Employee>[] = [];
       for (const diff of diffs) {
+        processed++;
+        if (diff.classification === 'ERROR' || diff.classification === 'CONFLICT') {
+          errorCount++;
+          failedRows.push({ rowNumber: diff.rowNumber, data: diff.incomingData, reason: (diff.issues || []).join('; ') || 'خطأ في التحقق من صحة السطر' });
+          continue;
+        }
+        if (diff.classification === 'NO_CHANGE') { skippedCount++; continue; }
+        const incoming: Record<string, any> = { ...diff.incomingData };
+        if (diff.classification === 'UPDATE' && diff.targetId) incoming.id = diff.targetId;
+        if (diff.classification === 'UPDATE' && allowedUpdateFields) {
+          for (const key of Object.keys(incoming)) if (key !== 'id' && !allowedUpdateFields.includes(key)) delete incoming[key];
+        }
+        if (entityType === 'TEACHERS' && !incoming.employeeType) incoming.employeeType = 'Teacher';
+        employeesToImport.push(incoming as Partial<Employee>);
+      }
+      if (employeesToImport.length > 0) {
+        const backendResult = await storageService.importManagedEmployeesAuthoritative(employeesToImport);
+        addedCount = backendResult.added;
+        updatedCount = backendResult.updated;
+        skippedCount += backendResult.skipped;
+        backendResult.errors.forEach(err => { errorCount++; failedRows.push({ rowNumber: err.row, data: {}, reason: err.message }); });
+        if (!backendResult.success && backendResult.errors.length === 0) {
+          errorCount++;
+          failedRows.push({ rowNumber: 0, data: {}, reason: backendResult.message || 'فشل استيراد العاملين في الخادم المعتمد' });
+        }
+      }
+    } else {
+    for (const diff of diffs) {
         processed++;
         if (onProgress && processed % 10 === 0) {
           onProgress(Math.round((processed / Math.max(totalValid, 1)) * 50));
@@ -367,7 +398,9 @@ export class ImportCenterService {
         });
       }
 
-      if (onProgress) onProgress(100);
+  
+    }
+    if (onProgress) onProgress(100);
 
       const batchRecord: ImportBatchRecord = {
         id: batchId,
@@ -521,6 +554,7 @@ export class ImportCenterService {
    * Rollback an Import Batch
    */
   public static rollbackBatch(batchId: string, currentUser: User | null): boolean {
+    if (isPostgresBackendEnabled()) return false;
     const batches = this.getBatchHistory();
     const batch = batches.find(b => b.id === batchId);
     if (!batch || !batch.rollbackPossible || batch.rolledBack) {
