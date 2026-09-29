@@ -1019,7 +1019,7 @@ export interface SamatTraitDefinition {
   description: string;
 }
 
-export type SamatStudentLevel = 'أبني سماتي' | 'أنمّي سماتي' | 'أُظهر سماتي' | 'أتميز بسماتي' | 'قدوة بسماتي';
+export type SamatStudentLevel = 'قيد التأسيس' | 'مبتدئ' | 'متمكن' | 'قدوة حسنة' | 'المحترف';
 
 export interface BehaviorType {
   id: string; // BEH001
