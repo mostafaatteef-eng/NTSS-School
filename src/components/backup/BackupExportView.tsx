@@ -14,10 +14,12 @@ import {
 import { storageService } from '../../services/storageService';
 import { MasterDataService } from '../../services/masterDataService';
 import { getCairoNowISO } from '../../utils/egyptianTime';
+import { isPostgresBackendEnabled } from '../../services/backend/postgresRuntime';
 
 export const BackupExportView: React.FC = () => {
   const [isExporting, setIsExporting] = useState(false);
   const [exportSuccess, setExportSuccess] = useState(false);
+  const postgresMode = isPostgresBackendEnabled();
 
   const students = storageService.getStudents();
   const employees = storageService.getEmployees();
@@ -27,6 +29,7 @@ export const BackupExportView: React.FC = () => {
   const masterData = MasterDataService.getMasterData();
 
   const handleCreateFullBackup = () => {
+    if (postgresMode) return;
     setIsExporting(true);
     setExportSuccess(false);
 
@@ -78,7 +81,7 @@ export const BackupExportView: React.FC = () => {
           <div>
             <h1 className="text-xl font-black text-slate-900">النسخ الاحتياطي وتصدير البيانات (Backup & Export)</h1>
             <p className="text-xs text-slate-500 mt-0.5">
-              تصدير نسخة احتياطية آمنة من كافة جداول وقواعد بيانات المدرسة (خاص بالإدارة)
+              تصدير بيانات محلية للبيئة القديمة فقط؛ قاعدة PostgreSQL Production لا يتم نسخها من المتصفح
             </p>
           </div>
         </div>
@@ -93,17 +96,17 @@ export const BackupExportView: React.FC = () => {
               <span>تصدير نسخة احتياطية متكاملة (Full System Snapshot)</span>
             </h3>
             <p className="text-xs text-slate-600 leading-relaxed max-w-xl">
-              تشمل نسخة آمنة من سجلات الطلاب، الدوام، السلوك، المعلمين، والقوائم المعتمدة. (لا يتم تضمين كلمات المرور لأسباب أمنية).
+              {postgresMode ? 'تم تعطيل النسخ المحلي لأن PostgreSQL هو مصدر البيانات الرسمي. النسخة المحلية لا تمثل قاعدة Production.' : 'تشمل نسخة من بيانات البيئة المحلية القديمة فقط، ولا تتضمن كلمات المرور.'}
             </p>
           </div>
 
           <button
             onClick={handleCreateFullBackup}
-            disabled={isExporting}
+            disabled={isExporting || postgresMode}
             className="inline-flex items-center gap-2 px-6 py-3 rounded-2xl bg-[#008e8b] hover:bg-[#007775] text-white font-bold text-xs transition-all cursor-pointer shadow-md disabled:opacity-50"
           >
             <Download className="w-4 h-4" />
-            <span>{isExporting ? 'جارٍ التجهيز والتصدير...' : 'تحميل النسخة الاحتياطية الآن'}</span>
+            <span>{postgresMode ? 'النسخ المحلي معطل في وضع PostgreSQL' : isExporting ? 'جارٍ التجهيز والتصدير...' : 'تصدير بيانات البيئة المحلية'}</span>
           </button>
         </div>
 
