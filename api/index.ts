@@ -124,8 +124,10 @@ type RequestContext = {
   accessScope: string;
   activeSchoolId: string;
   homeSchoolId: string;
+  allowedSchoolIds: string[];
   employeeId: string;
   studentId: string;
+  permissions: string[];
 };
 
 function buildRequestContext(user: any): RequestContext {
@@ -135,8 +137,10 @@ function buildRequestContext(user: any): RequestContext {
     accessScope: String(user?.access_scope || ''),
     activeSchoolId: String(user?.active_school_id || user?.school_id || '').trim(),
     homeSchoolId: String(user?.school_id || '').trim(),
+    allowedSchoolIds: Array.isArray(user?.allowedSchoolIds) ? user.allowedSchoolIds.map((id: unknown) => String(id)).filter(Boolean) : [],
     employeeId: String(user?.employee_id || ''),
     studentId: String(user?.student_id || ''),
+    permissions: Array.isArray(user?.permissions) ? user.permissions.map((permission: unknown) => String(permission)).filter(Boolean) : [],
   };
 }
 
