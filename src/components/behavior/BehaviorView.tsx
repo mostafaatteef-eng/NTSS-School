@@ -319,9 +319,11 @@ export const BehaviorView: React.FC = () => {
     }
     const user = storageService.getCurrentUser();
     const now = new Date().toISOString();
+    const planId = `SAMAT-PLAN-${Date.now()}`;
+    const baselineScore = storageService.calculateStudentBehaviorScore(student.id).currentScore;
     storageService.saveBehaviorCase({
-      id: `SAMAT-PLAN-${Date.now()}`,
-      caseCode: `SAMAT-${Date.now()}`,
+      id: planId,
+      caseCode: planId,
       studentId: student.id,
       studentName: student.name,
       grade: student.grade,
@@ -332,12 +334,13 @@ export const BehaviorView: React.FC = () => {
       assignedTo: user?.id || 'SOCIAL_SPECIALIST',
       assignedToName: user?.fullName || 'الأخصائي الاجتماعي',
       summary: planGoal.trim(),
+      baselineScore,
       violationIds: violations.filter(v => v.studentId === student.id).map(v => v.id),
       createdBy: user?.fullName || 'الأخصائي الاجتماعي',
       createdAt: now,
       followups: [{
         id: `FOL-${Date.now()}`,
-        caseId: `SAMAT-PLAN-${Date.now()}`,
+        caseId: planId,
         date: getCairoCurrentDate(),
         actionType: 'خطة تحسين سمات',
         summary: planAction.trim(),
@@ -1044,7 +1047,8 @@ export const BehaviorView: React.FC = () => {
               <div className="space-y-2 mb-5">{profilePlans.map(plan => {
                 const latest=plan.followups?.[plan.followups.length-1];
                 return <div key={plan.id} className="rounded-xl border border-teal-100 bg-teal-50/40 p-4">
-                  <div className="flex items-start justify-between gap-3"><div><div className="text-xs font-black text-slate-900">{plan.summary}</div><div className="text-[11px] text-slate-500 mt-1">{latest?.summary || 'لم تسجل متابعة بعد'}{latest?.followUpDate ? ` · المتابعة القادمة: ${latest.followUpDate}` : ''}</div></div><span className="text-[10px] font-bold text-teal-700">{plan.status}</span></div>
+                  <div className="flex items-start justify-between gap-3"><div><div className="text-xs font-black text-slate-900">{plan.summary}</div>
+                      {typeof plan.baselineScore === 'number' && <div className="mt-1 text-[10px] text-slate-500">الرصيد عند فتح الخطة: <b>{plan.baselineScore}</b>{typeof plan.closingScore === 'number' ? <> · عند الإغلاق: <b>{plan.closingScore}</b> · التحسن: <b>{(plan.improvementDelta ?? (plan.closingScore-plan.baselineScore)) >= 0 ? '+' : ''}{plan.improvementDelta ?? (plan.closingScore-plan.baselineScore)}</b></> : null}</div>}<div className="text-[11px] text-slate-500 mt-1">{latest?.summary || 'لم تسجل متابعة بعد'}{latest?.followUpDate ? ` · المتابعة القادمة: ${latest.followUpDate}` : ''}</div></div><span className="text-[10px] font-bold text-teal-700">{plan.status}</span></div>
                   {plan.status !== 'CLOSED' && plan.status !== 'Closed' && <div className="mt-3 flex gap-2"><button onClick={()=>setFollowupCaseId(plan.id)} className="px-3 py-1.5 rounded-lg bg-white border border-teal-200 text-teal-700 text-[11px] font-bold">تسجيل نتيجة متابعة</button><button onClick={()=>setClosePlanId(plan.id)} className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-[11px] font-bold">تحقق الهدف وإغلاق الخطة</button></div>}
                 </div>;
               })}</div>
