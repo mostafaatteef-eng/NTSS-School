@@ -290,145 +290,57 @@ export class ImportCenterService {
     let processed = 0;
 
     if (entityType === 'STUDENTS') {
-      const operations: Array<{
-        operation: 'NEW' | 'UPDATE';
-        targetId?: string;
-        rowNumber?: number;
-        data: Partial<Student>;
-      }> = [];
-
-      if ((entityType === 'EMPLOYEES' || entityType === 'TEACHERS') && isPostgresBackendEnabled()) {
-      const employeesToImport: Partial<Employee>[] = [];
+      const operations: Array<{ operation: 'NEW' | 'UPDATE'; targetId?: string; rowNumber?: number; data: Partial<Student> }> = [];
       for (const diff of diffs) {
         processed++;
+        if (onProgress && processed % 10 === 0) onProgress(Math.round((processed / Math.max(totalValid, 1)) * 50));
         if (diff.classification === 'ERROR' || diff.classification === 'CONFLICT') {
-          errorCount++;
-          failedRows.push({ rowNumber: diff.rowNumber, data: diff.incomingData, reason: (diff.issues || []).join('; ') || 'خطأ في التحقق من صحة السطر' });
-          continue;
+          errorCount++; failedRows.push({ rowNumber: diff.rowNumber, data: diff.incomingData, reason: (diff.issues || []).join('; ') || 'خطأ في التحقق من صحة السطر' }); continue;
         }
         if (diff.classification === 'NO_CHANGE') { skippedCount++; continue; }
-        const incoming: Record<string, any> = { ...diff.incomingData };
-        if (diff.classification === 'UPDATE' && diff.targetId) incoming.id = diff.targetId;
-        if (diff.classification === 'UPDATE' && allowedUpdateFields) {
-          for (const key of Object.keys(incoming)) if (key !== 'id' && !allowedUpdateFields.includes(key)) delete incoming[key];
-        }
-        if (entityType === 'TEACHERS' && !incoming.employeeType) incoming.employeeType = 'Teacher';
-        employeesToImport.push(incoming as Partial<Employee>);
-      }
-      if (employeesToImport.length > 0) {
-        const backendResult = await storageService.importManagedEmployeesAuthoritative(employeesToImport);
-        addedCount = backendResult.added;
-        updatedCount = backendResult.updated;
-        skippedCount += backendResult.skipped;
-        backendResult.errors.forEach(err => { errorCount++; failedRows.push({ rowNumber: err.row, data: {}, reason: err.message }); });
-        if (!backendResult.success && backendResult.errors.length === 0) {
-          errorCount++;
-          failedRows.push({ rowNumber: 0, data: {}, reason: backendResult.message || 'فشل استيراد العاملين في الخادم المعتمد' });
+        if (diff.classification === 'NEW') operations.push({ operation:'NEW', rowNumber:diff.rowNumber, data:{...diff.incomingData} });
+        else if (diff.classification === 'UPDATE' && diff.targetId) {
+          const data: Record<string,any> = {};
+          for (const [key,value] of Object.entries(diff.incomingData)) if (!allowedUpdateFields || allowedUpdateFields.includes(key)) data[key]=value;
+          operations.push({ operation:'UPDATE', targetId:diff.targetId, rowNumber:diff.rowNumber, data:data as Partial<Student> });
         }
       }
-    } else {
-    for (const diff of diffs) {
-        processed++;
-        if (onProgress && processed % 10 === 0) {
-          onProgress(Math.round((processed / Math.max(totalValid, 1)) * 50));
-        }
-
-        if (diff.classification === 'ERROR' || diff.classification === 'CONFLICT') {
-          errorCount++;
-          failedRows.push({
-            rowNumber: diff.rowNumber,
-            data: diff.incomingData,
-            reason: (diff.issues || []).join('; ') || 'خطأ في التحقق من صحة السطر',
-          });
-          continue;
-        }
-
-        if (diff.classification === 'NO_CHANGE') {
-          skippedCount++;
-          continue;
-        }
-
-        if (diff.classification === 'NEW') {
-          operations.push({
-            operation: 'NEW',
-            rowNumber: diff.rowNumber,
-            data: { ...diff.incomingData },
-          });
-          continue;
-        }
-
-        if (diff.classification === 'UPDATE' && diff.targetId) {
-          const updateData: Record<string, any> = {};
-          Object.entries(diff.incomingData).forEach(([key, value]) => {
-            if (!allowedUpdateFields || allowedUpdateFields.includes(key)) {
-              updateData[key] = value;
-            }
-          });
-          operations.push({
-            operation: 'UPDATE',
-            targetId: diff.targetId,
-            rowNumber: diff.rowNumber,
-            data: updateData as Partial<Student>,
-          });
-        }
+      if (operations.length) {
+        const r=await storageService.importManagedStudentsAuthoritative(operations);
+        addedCount=r.added; updatedCount=r.updated; skippedCount+=r.skipped;
+        r.errors.forEach(err=>{errorCount++;failedRows.push({rowNumber:err.row,data:{},reason:err.message});});
+        if(!r.success&&!r.errors.length){errorCount++;failedRows.push({rowNumber:0,data:{},reason:r.message||'فشل الاستيراد في الخادم المعتمد'});}
       }
-
-      if (operations.length > 0) {
-        const backendResult = await storageService.importManagedStudentsAuthoritative(operations);
-        addedCount = backendResult.added;
-        updatedCount = backendResult.updated;
-        skippedCount += backendResult.skipped;
-
-        if (!backendResult.success && backendResult.errors.length === 0) {
-          errorCount++;
-          failedRows.push({
-            rowNumber: 0,
-            data: {},
-            reason: backendResult.message || 'فشل الاستيراد في الخادم المعتمد',
-          });
-        }
-
-        backendResult.errors.forEach(err => {
-          errorCount++;
-          failedRows.push({
-            rowNumber: err.row,
-            data: {},
-            reason: err.message,
-          });
-        });
-      }
-
-  
-    }
-    if (onProgress) onProgress(100);
-
-      const batchRecord: ImportBatchRecord = {
-        id: batchId,
-        entityType,
-        fileName,
-        mode,
-        totalRows: diffs.length,
-        addedCount,
-        updatedCount,
-        skippedCount,
-        errorCount,
-        conflictCount: 0,
-        selectedUpdateFields: allowedUpdateFields,
-        affectedIds,
-        rollbackPossible: false,
-        createdBy: currentUser?.name || currentUser?.username || 'مدير النظام',
-        createdAt: getCairoNowISO(),
-        status: errorCount > 0 ? (addedCount > 0 || updatedCount > 0 ? 'PARTIAL_SUCCESS' : 'FAILED') : 'SUCCESS',
-        failedRows: failedRows.length > 0 ? failedRows : undefined,
-      };
-
+      if(onProgress)onProgress(100);
+      const batchRecord: ImportBatchRecord={id:batchId,entityType,fileName,mode,totalRows:diffs.length,addedCount,updatedCount,skippedCount,errorCount,conflictCount:0,selectedUpdateFields:allowedUpdateFields,affectedIds,rollbackPossible:false,createdBy:currentUser?.name||currentUser?.username||'مدير النظام',createdAt:getCairoNowISO(),status:errorCount>0?(addedCount>0||updatedCount>0?'PARTIAL_SUCCESS':'FAILED'):'SUCCESS',failedRows:failedRows.length?failedRows:undefined};
       this.saveBatchRecord(batchRecord);
-      storageService.logAudit(
-        'IMPORT',
-        'STUDENT',
-        `عملية استيراد طلاب معتمدة: ${fileName} - تم إضافة ${addedCount} وتحديث ${updatedCount}`
-      );
+      storageService.logAudit('IMPORT','STUDENT',`عملية استيراد طلاب معتمدة: ${fileName} - تم إضافة ${addedCount} وتحديث ${updatedCount}`);
       await storageService.getStudentManagementDataAuthoritative();
+      return batchRecord;
+    }
+
+    if ((entityType === 'EMPLOYEES' || entityType === 'TEACHERS') && isPostgresBackendEnabled()) {
+      const rows: Partial<Employee>[]=[];
+      for(const diff of diffs){
+        processed++;
+        if(diff.classification==='ERROR'||diff.classification==='CONFLICT'){errorCount++;failedRows.push({rowNumber:diff.rowNumber,data:diff.incomingData,reason:(diff.issues||[]).join('; ')||'خطأ في التحقق من صحة السطر'});continue;}
+        if(diff.classification==='NO_CHANGE'){skippedCount++;continue;}
+        const data:Record<string,any>={...diff.incomingData};
+        if(diff.classification==='UPDATE'&&diff.targetId)data.id=diff.targetId;
+        if(diff.classification==='UPDATE'&&allowedUpdateFields)for(const key of Object.keys(data))if(key!=='id'&&!allowedUpdateFields.includes(key))delete data[key];
+        if(entityType==='TEACHERS'&&!data.employeeType)data.employeeType='Teacher';
+        rows.push(data as Partial<Employee>);
+      }
+      if(rows.length){
+        const r=await storageService.importManagedEmployeesAuthoritative(rows);
+        addedCount=r.added;updatedCount=r.updated;skippedCount+=r.skipped;
+        r.errors.forEach(err=>{errorCount++;failedRows.push({rowNumber:err.row,data:{},reason:err.message});});
+        if(!r.success&&!r.errors.length){errorCount++;failedRows.push({rowNumber:0,data:{},reason:r.message||'فشل استيراد العاملين في الخادم المعتمد'});}
+      }
+      if(onProgress)onProgress(100);
+      const batchRecord:ImportBatchRecord={id:batchId,entityType,fileName,mode,totalRows:diffs.length,addedCount,updatedCount,skippedCount,errorCount,conflictCount:0,selectedUpdateFields:allowedUpdateFields,affectedIds,rollbackPossible:false,createdBy:currentUser?.name||currentUser?.username||'مدير النظام',createdAt:getCairoNowISO(),status:errorCount>0?(addedCount>0||updatedCount>0?'PARTIAL_SUCCESS':'FAILED'):'SUCCESS',failedRows:failedRows.length?failedRows:undefined};
+      this.saveBatchRecord(batchRecord);
+      storageService.logAudit('IMPORT','EMPLOYEE',`عملية استيراد عاملين معتمدة: ${fileName} - تم إضافة ${addedCount} وتحديث ${updatedCount}`);
       return batchRecord;
     }
 
