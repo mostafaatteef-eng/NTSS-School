@@ -1017,10 +1017,13 @@ export default {
         }
         const targetId = String(data.id || '').trim() || (isStudent ? 'STD-' : 'EMP-') + crypto.randomBytes(8).toString('hex').toUpperCase();
         if (action === deleteAction) {
-          const deleted = await pool.query(`DELETE FROM ${table} WHERE school_id=$1 AND id=$2 RETURNING id`, [schoolId, targetId]);
-          if (!deleted.rowCount) return json({ status: 'error', code: 'NOT_FOUND' }, 404, corsOrigin);
-          await pool.query('INSERT INTO audit_logs(school_id,user_id,username,role,action,entity,target_id,details) VALUES($1,$2,$3,$4,$5,$6,$7,$8)', [schoolId,user.user_id,user.email,user.role,'DELETE',entity,targetId,'Deleted through Neon API']);
-          return json({ status: 'success', data: { id: targetId } }, 200, corsOrigin);
+          // Destructive deletion is intentionally retired from normal management flows.
+          // Archive records instead so attendance, timetable and audit history remain referentially intact.
+          const archivedStatus = isStudent ? 'غير نشط' : 'Inactive';
+          const archived = await pool.query(`UPDATE ${table} SET status=$3,updated_at=now() WHERE school_id=$1 AND id=$2 RETURNING *`, [schoolId, targetId, archivedStatus]);
+          if (!archived.rowCount) return json({ status: 'error', code: 'NOT_FOUND' }, 404, corsOrigin);
+          await pool.query('INSERT INTO audit_logs(school_id,user_id,username,role,action,entity,target_id,details) VALUES($1,$2,$3,$4,$5,$6,$7,$8)', [schoolId,user.user_id,user.email,user.role,'ARCHIVE',entity,targetId,'Archived through Neon API; physical deletion retired']);
+          return json({ status: 'success', data: archived.rows[0], [isStudent ? 'student' : 'employee']: archived.rows[0], message: 'تمت الأرشفة مع الاحتفاظ بالسجل التاريخي.' }, 200, corsOrigin);
         }
         if (action === statusAction) {
           const status = String(data.status || '').trim();
