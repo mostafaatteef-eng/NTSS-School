@@ -10,3 +10,11 @@ for (const seed of ['NOTIF-01','NOTIF-02','homework-seed-math-01','attendance-se
 }
 
 console.log('Canonical data authority guard passed.');
+
+const app = fs.readFileSync('src/App.tsx','utf8');
+if (!app.includes("if (!isPostgresBackendEnabled())")) throw new Error('Legacy startup migrations must be isolated from PostgreSQL mode.');
+const guarded = app.slice(app.indexOf("if (!isPostgresBackendEnabled())"), app.indexOf("if (!isPostgresBackendEnabled())") + 900);
+for (const scope of ['008','009','010','011','013','014','015']) {
+  if (!guarded.includes(`runMigrationScope${scope}`)) throw new Error(`Migration scope ${scope} escaped the PostgreSQL legacy guard.`);
+}
+if (guarded.includes('runMigrationScope012RemoveLocalPasswords')) throw new Error('Security sanitation migration 012 should remain outside the legacy-only guard.');
