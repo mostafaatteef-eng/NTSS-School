@@ -973,10 +973,10 @@ class StorageService {
       if (!response.ok || result.status !== 'success' || !result.user) {
         return { success:false, code:result.code || 'INVALID_CREDENTIALS', message:result.message || 'كود الطالب أو كلمة المرور غير صحيحة.' };
       }
-      const userWithToken: User = { ...result.user, role:'Student', accessScope:'SELF', sessionExpiresAt:result.expiresAt };
+      const userWithToken: User = { ...result.user, role:'Student', accessScope:'SELF', sessionToken: result.sessionToken, sessionExpiresAt:result.expiresAt };
       this.setActiveSchoolId(userWithToken.schoolId || '');
       this.setCurrentUser(userWithToken);
-      this.sessionValidationCache['cookie-session'] = { result:true, timestamp:Date.now() };
+      this.sessionValidationCache[userWithToken.sessionToken || 'cookie-session'] = { result:true, timestamp:Date.now() };
       return { success:true, user:userWithToken };
     } catch {
       return { success:false, code:'AUTH_SERVICE_UNAVAILABLE', message:'تعذر الاتصال بخادم تسجيل دخول الطلاب.' };
@@ -1013,11 +1013,12 @@ class StorageService {
           ...result.user,
           email: cleanEmail,
           role: normalizeStaffRole(result.user.role),
+          sessionToken: result.sessionToken,
           sessionExpiresAt: result.expiresAt,
         };
         if (userWithToken.activeSchoolId) this.setActiveSchoolId(userWithToken.activeSchoolId);
         this.setCurrentUser(userWithToken);
-        this.sessionValidationCache['cookie-session'] = { result: true, timestamp: Date.now() };
+        this.sessionValidationCache[userWithToken.sessionToken || 'cookie-session'] = { result: true, timestamp: Date.now() };
         return { success: true, user: userWithToken };
       } catch (err: any) {
         return { success: false, code: 'AUTH_SERVICE_UNAVAILABLE', message: 'تعذر الاتصال بخادم PostgreSQL: ' + (err?.message || 'خطأ في الشبكة') };
