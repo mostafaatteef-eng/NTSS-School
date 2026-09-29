@@ -514,7 +514,7 @@ export const TeacherAccountsManager: React.FC<TeacherAccountsManagerProps> = ({ 
 const Summary: React.FC<{ label: string; value: number | null }> = ({ label, value }) => (
   <div className="rounded-2xl border border-slate-200 bg-white p-4 ">
     <div className="text-[11px] font-bold text-slate-500">{label}</div>
-    <div className="mt-2 text-2xl font-black text-slate-900">{value === null ? '' : value.toLocaleString('ar-EG')}</div>
+    <div className="mt-2 text-2xl font-black text-slate-900">{Number.isFinite(Number(value)) ? Number(value).toLocaleString('ar-EG') : '—'}</div>
   </div>
 );
 
