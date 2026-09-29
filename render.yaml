@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: ntss-school-api
+    runtime: node
+    plan: free
+    buildCommand: npm ci
+    startCommand: npm run api:start:canonical
+    healthCheckPath: /api/health
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: CORS_ORIGINS
+        value: https://mostafaatteef-eng.github.io,https://ntss-schools.edu.eg,https://www.ntss-schools.edu.eg
