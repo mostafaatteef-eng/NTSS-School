@@ -332,10 +332,10 @@ export const ReserveManagementView: React.FC = () => {
                               الطاقة المتبقية: <strong className="text-slate-800">{cand.remainingCapacity}</strong>
                             </span>
                             <span>
-                              احتياطي الأسبوع: <strong className="text-amber-700">{cand.reserveCountThisWeek}</strong>
+                              احتياطي الأسبوع: <strong className="text-amber-700">{cand.reserveThisWeek}</strong>
                             </span>
                             <span>
-                              الرصيد التراكمي: <strong className="text-purple-700">{cand.cumulativeReserveCount}</strong>
+                              الرصيد التراكمي: <strong className="text-purple-700">{cand.historicalReserveCount}</strong>
                             </span>
                           </div>
                         </div>
@@ -344,7 +344,7 @@ export const ReserveManagementView: React.FC = () => {
                       <div className="flex items-center gap-2 sm:self-center">
                         {!cand.isEligible ? (
                           <div className="text-[11px] text-rose-600 font-bold bg-rose-50 px-2.5 py-1 rounded-lg">
-                            {cand.conflictReason || 'غير مؤهل'}
+                            {cand.ineligibilityReason || 'غير مؤهل'}
                           </div>
                         ) : (
                           <button
