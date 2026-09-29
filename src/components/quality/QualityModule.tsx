@@ -84,7 +84,12 @@ export const QualityModule: React.FC<QualityModuleProps> = ({ currentUser }) => 
   const canViewDashboard =
     hasPermission(currentUser, 'quality.viewDashboard') ||
     hasPermission(currentUser, 'quality.view') ||
-    true;
+    currentUser?.role === 'SystemAdmin' ||
+    currentUser?.role === 'SchoolAdmin' ||
+    currentUser?.role === 'Admin' ||
+    currentUser?.role === 'SchoolDirector' ||
+    currentUser?.role === 'QualityOfficer' ||
+    currentUser?.role === 'Supervisor';
 
   // Load all Quality module data for current school
   const loadData = async () => {
