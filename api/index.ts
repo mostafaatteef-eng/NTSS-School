@@ -973,6 +973,7 @@ const ntssHandler = {
           if(password.length<8)return json({status:'error',code:'INVALID_PASSWORD'},400,corsOrigin);
           await pool.query('UPDATE users SET password_hash=$2,password_salt=NULL,password_iterations=NULL,updated_at=now() WHERE id=$1',[targetUserId,scryptPasswordHash(password)]);
           await pool.query("UPDATE sessions SET status='REVOKED',revoked_at=now() WHERE user_id=$1 AND status='ACTIVE'",[targetUserId]);
+          await pool.query('INSERT INTO audit_logs(school_id,user_id,username,role,action,entity,target_id,details) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[schoolId,user.user_id,user.email,user.role,'RESET_PASSWORD','TEACHER_ACCOUNT',targetUserId,employeeId]);
           return json({status:'success'},200,corsOrigin);
         }
         if(action==='setTeacherAccountStatus'){
@@ -980,6 +981,7 @@ const ntssHandler = {
           if(!['Active','Suspended','Inactive'].includes(status))return json({status:'error',code:'INVALID_STATUS'},400,corsOrigin);
           await pool.query('UPDATE users SET status=$2,is_active=$3,updated_at=now() WHERE id=$1',[targetUserId,status,status==='Active']);
           if(status!=='Active')await pool.query("UPDATE sessions SET status='REVOKED',revoked_at=now() WHERE user_id=$1 AND status='ACTIVE'",[targetUserId]);
+          await pool.query('INSERT INTO audit_logs(school_id,user_id,username,role,action,entity,target_id,details) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[schoolId,user.user_id,user.email,user.role,'STATUS_CHANGE','TEACHER_ACCOUNT',targetUserId,JSON.stringify({employeeId,status})]);
           return json({status:'success'},200,corsOrigin);
         }
         return json({status:'error',code:'ACTION_NOT_MIGRATED'},400,corsOrigin);
