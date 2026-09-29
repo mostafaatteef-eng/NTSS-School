@@ -11,7 +11,7 @@ export interface SamatScoreSummary {
 export function getSamatStudentLevel(score: number): SamatStudentLevel {
   const normalized=Math.max(0,Math.min(100,Number(score)||0));
   const level=SAMAT_STUDENT_LEVELS.find(item=>normalized>=item.min&&normalized<=item.max);
-  return (level?.name||'أبني سماتي') as SamatStudentLevel;
+  return (level?.name || 'قيد التأسيس') as SamatStudentLevel;
 }
 
 export function calculateSamatScore(
