@@ -274,7 +274,7 @@ export const BehaviorView: React.FC = () => {
 
     const ws = XLSX.utils.json_to_sheet(exportData);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'سجل المخالفات السلوكية');
+    XLSX.utils.book_append_sheet(wb, ws, 'سجل المواقف السلوكية');
     XLSX.writeFile(wb, `سجل_المخالفات_السلوكية_${getCairoCurrentDate()}.xlsx`);
   };
 
@@ -377,7 +377,7 @@ export const BehaviorView: React.FC = () => {
           }`}
         >
           <Shield className="w-4 h-4" />
-          <span>سجل المخالفات السلوكية ({violations.length})</span>
+          <span>سجل المواقف السلوكية ({violations.length})</span>
         </button>
 
         <button
@@ -389,7 +389,7 @@ export const BehaviorView: React.FC = () => {
           }`}
         >
           <Settings className="w-4 h-4" />
-          <span>إدارة بنود المخالفات وأوزانها ({behaviorTypes.length})</span>
+          <span>إدارة مواقف سمات وأوزانها ({behaviorTypes.length})</span>
         </button>
 
         <button
@@ -401,7 +401,7 @@ export const BehaviorView: React.FC = () => {
           }`}
         >
           <ShieldAlert className="w-4 h-4" />
-          <span>مؤشر السلوك والحالات الحرجة ({stats.atRiskCount})</span>
+          <span>ملف الطالب ومستوى سمات ({stats.atRiskCount})</span>
         </button>
       </div>
 
@@ -516,7 +516,7 @@ export const BehaviorView: React.FC = () => {
         <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-xs space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
-              <h2 className="font-bold text-slate-900 text-sm">بنود المخالفات وأوزان نقاط الحسم (لائحة الانضباط المدرسي)</h2>
+              <h2 className="font-bold text-slate-900 text-sm">مواقف سمات وأوزان الأثر</h2>
               <p className="text-xs text-slate-500 mt-0.5">
                 تحديد أنواع المخالفات، تصنيفاتها، خصم النقاط، إشعار ولي الأمر، وتفعيل/تعطيل البنود
               </p>
@@ -615,9 +615,9 @@ export const BehaviorView: React.FC = () => {
       {activeSubTab === 'at_risk' && (
         <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-xs space-y-4">
           <div>
-            <h2 className="font-bold text-slate-900 text-sm">مؤشر درجات السلوك للطلاب</h2>
+            <h2 className="font-bold text-slate-900 text-sm">ملف سمات للطلاب</h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              ترتيب الطلاب حسب درجة السلوك المتبقية (من أصل 100 درجة) لمتابعة الحالات التي تحتاج إرشاداً نفسياً وتربوياً
+              متابعة رصيد سمات ومستوى كل طالب لتحديد الاحتياج للتعزيز أو التدخل التربوي نفسياً وتربوياً
             </p>
           </div>
 
