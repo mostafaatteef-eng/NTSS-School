@@ -100,7 +100,11 @@ export const SupervisionView: React.FC = () => {
     }
 
     const currentYear = storageService.getAcademicYears().find(y => y.isCurrent || y.isActive || y.status === 'ACTIVE');
-    if (!currentYear?.id || !currentYear?.name) {\n      alert('لا يمكن حفظ الإشراف قبل تحديد العام الدراسي الحالي من الإعدادات.');\n      return;\n    }\n    const assignment: SupervisionAssignment = {
+    if (!currentYear?.id || !currentYear?.name) {
+      alert('لا يمكن حفظ الإشراف قبل تحديد العام الدراسي الحالي من الإعدادات.');
+      return;
+    }
+    const assignment: SupervisionAssignment = {
       id: `SUP-${Date.now()}`,
       academicYear: currentYear.name,
       date: selectedDate,
