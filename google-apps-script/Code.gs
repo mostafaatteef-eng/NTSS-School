@@ -2949,6 +2949,12 @@ function doPost(e) {
         employeeAttendance: getSheetData(schoolSs, SHEETS.ATTENDANCE),
         leaves: getSheetData(schoolSs, SHEETS.LEAVES),
         permissions: getSheetData(schoolSs, SHEETS.PERMISSIONS),
+        behaviorViolations: getSheetData(schoolSs, SHEETS.BEHAVIOR_VIOLATIONS),
+        behaviorCases: getSheetData(schoolSs, SHEETS.BEHAVIOR_CASES),
+        positiveBehaviorTypes: getSheetData(schoolSs, SHEETS.POSITIVE_BEHAVIOR_TYPES),
+        samatSkillAssessments: getSheetData(schoolSs, SHEETS.SAMAT_SKILL_ASSESSMENTS),
+        samatDisciplineRecords: getSheetData(schoolSs, SHEETS.SAMAT_DISCIPLINE_RECORDS),
+        samatExcellenceRecords: getSheetData(schoolSs, SHEETS.SAMAT_EXCELLENCE_RECORDS),
         settings: getSettingsDataClean(schoolSs)
       };
 
