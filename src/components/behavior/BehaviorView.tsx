@@ -172,7 +172,7 @@ export const BehaviorView: React.FC = () => {
     setSelectedStudentId('');
     setSelectedTypeId('');
     setNotes('');
-    alert(`تم تسجيل المخالفة بنجاح وخصم (${pointsDeducted}) نقاط من رصيد الطالب.`);
+    alert(`تم تسجيل الموقف السلوكي بنجاح واحتساب (${pointsDeducted}) نقاط من رصيد الطالب.`);
   };
 
   const handleDeleteViolation = (id: string) => {
@@ -622,15 +622,7 @@ export const BehaviorView: React.FC = () => {
                       </span>
                     </td>
                     <td className="p-3 text-center font-bold">
-                      {st.score >= 95 ? (
-                        <span className="text-emerald-600">ممتاز ★</span>
-                      ) : st.score >= 85 ? (
-                        <span className="text-teal-600">جيد جداً</span>
-                      ) : st.score >= 75 ? (
-                        <span className="text-amber-600">مقبول (إنذار أول)</span>
-                      ) : (
-                        <span className="text-rose-600 font-black">حرج (استدعاء ولي أمر)</span>
-                      )}
+                      <span className={st.score >= 85 ? 'text-emerald-600' : st.score >= 60 ? 'text-amber-600' : 'text-rose-600 font-black'}>{st.samatLevel}</span>
                     </td>
                   </tr>
                 ))}
@@ -647,7 +639,7 @@ export const BehaviorView: React.FC = () => {
             <div className="p-6 bg-amber-50 border-b border-amber-100 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Shield className="w-5 h-5 text-amber-600" />
-                <h3 className="text-base font-bold text-slate-900">تسجيل مخالفة سلوكية لطالب</h3>
+                <h3 className="text-base font-bold text-slate-900">تسجيل موقف سلوكي لطالب</h3>
               </div>
               <button onClick={() => setIsAddModalOpen(false)} className="text-slate-400 hover:text-slate-700 cursor-pointer">
                 ✕
@@ -676,7 +668,7 @@ export const BehaviorView: React.FC = () => {
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
-                  بند المخالفة وفق اللائحة <span className="text-rose-500">*</span>
+                  الموقف المرصود في منظومة سمات <span className="text-rose-500">*</span>
                 </label>
                 <select
                   required
@@ -689,7 +681,7 @@ export const BehaviorView: React.FC = () => {
                   }}
                   className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-slate-800 focus:outline-none focus:border-[#008e8b]"
                 >
-                  <option value="">— اختر بند المخالفة —</option>
+                  <option value="">— اختر الموقف السلوكي —</option>
                   {behaviorTypes.filter(t => t.isActive).map(t => (
                     <option key={t.id} value={t.id}>
                       {t.name} (خصم: {t.points || t.weight} نقاط — {t.severity})
