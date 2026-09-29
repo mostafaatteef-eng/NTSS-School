@@ -88,10 +88,10 @@ export const TimetableReportsView: React.FC = () => {
       wsData = teacherLoads.map(t => ({
         كود_المعلم: t.teacherCode,
         اسم_المعلم: t.teacherName,
-        النصاب_المسند: t.assignedLoad,
+        النصاب_المسند: t.assignedPeriods,
         المجدول_أساسي: t.scheduledBasePeriods,
         احتياطي_الأسبوع: t.reservePeriodsThisWeek,
-        إجمالي_المحتسب: t.totalCountedPeriods,
+        إجمالي_المحتسب: t.countedWeeklyPeriods,
         المتبقي: t.remainingCapacity,
         الحالة: t.loadStatus,
       }));
@@ -291,10 +291,10 @@ export const TimetableReportsView: React.FC = () => {
                     <tr key={t.teacherId} className="hover:bg-slate-50">
                       <td className="p-3 font-mono font-bold text-teal-800">{t.teacherCode}</td>
                       <td className="p-3 font-bold text-slate-900">{t.teacherName}</td>
-                      <td className="p-3 text-center">{t.assignedLoad}</td>
+                      <td className="p-3 text-center">{t.assignedPeriods}</td>
                       <td className="p-3 text-center font-bold">{t.scheduledBasePeriods}</td>
                       <td className="p-3 text-center text-amber-700 font-bold">{t.reservePeriodsThisWeek}</td>
-                      <td className="p-3 text-center font-mono font-bold">{t.totalCountedPeriods}</td>
+                      <td className="p-3 text-center font-mono font-bold">{t.countedWeeklyPeriods}</td>
                       <td className="p-3 text-center font-bold text-emerald-700">{t.remainingCapacity}</td>
                       <td className="p-3 text-center">
                         <span
