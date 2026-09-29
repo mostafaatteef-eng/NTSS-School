@@ -37,6 +37,9 @@ jobs:
       - name: Run Test Suite
         run: npm test
 
+      - name: Validate portable PostgreSQL API
+        run: npm run api:check
+
       - name: Build application
         env:
           VITE_POSTGRES_API_URL: ${{ vars.POSTGRES_API_URL || 'https://ntss-school.vercel.app' }}
