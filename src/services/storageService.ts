@@ -2373,19 +2373,19 @@ class StorageService {
 
     const currentScore = Math.max(rules.minScore, Math.min(rules.maxScore, rules.initialScore - totalDeductions - ledgerDebits + ledgerCredits));
 
-    let statusText = 'قدوة بسماتي';
+    let statusText = 'المحترف';
     let statusColor = 'text-emerald-700 bg-emerald-50 border-emerald-200';
-    if (currentScore < 60) {
-      statusText = 'أبني سماتي';
+    if (currentScore <= 49) {
+      statusText = 'قيد التأسيس';
       statusColor = 'text-rose-700 bg-rose-50 border-rose-200';
-    } else if (currentScore < 75) {
-      statusText = 'أنمّي سماتي';
+    } else if (currentScore <= 65) {
+      statusText = 'مبتدئ';
       statusColor = 'text-amber-700 bg-amber-50 border-amber-200';
-    } else if (currentScore < 85) {
-      statusText = 'أُظهر سماتي';
+    } else if (currentScore <= 80) {
+      statusText = 'متمكن';
       statusColor = 'text-blue-700 bg-blue-50 border-blue-200';
-    } else if (currentScore < 95) {
-      statusText = 'أتميز بسماتي';
+    } else if (currentScore <= 90) {
+      statusText = 'قدوة حسنة';
       statusColor = 'text-teal-700 bg-teal-50 border-teal-200';
     }
 
