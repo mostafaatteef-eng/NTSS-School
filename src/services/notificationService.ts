@@ -1,6 +1,7 @@
 import { AppNotification, NotificationType, NotificationCategory, UserRole } from '../types';
 import { STORAGE_KEYS } from './storageServiceConstants';
 import { getCairoNowISO, getCairoCurrentDate } from '../utils/egyptianTime';
+import { isPostgresBackendEnabled } from './backend/postgresRuntime';
 
 export class NotificationService {
   private static getStorageKey(): string {
@@ -49,6 +50,7 @@ export class NotificationService {
   }
 
   public static addNotification(notif: Partial<AppNotification>): AppNotification {
+    if (isPostgresBackendEnabled()) throw new Error('LEGACY_LOCAL_NOTIFICATION_WRITE_DISABLED');
     const raw = localStorage.getItem(this.getStorageKey());
     let list: AppNotification[] = [];
     if (raw) {
@@ -95,6 +97,7 @@ export class NotificationService {
   }
 
   public static markAsRead(id: string): void {
+    if (isPostgresBackendEnabled()) throw new Error('LEGACY_LOCAL_NOTIFICATION_WRITE_DISABLED');
     const raw = localStorage.getItem(this.getStorageKey());
     if (!raw) return;
     try {
@@ -109,6 +112,7 @@ export class NotificationService {
   }
 
   public static markAllAsRead(role?: UserRole, userId?: string, targetStudentId?: string): void {
+    if (isPostgresBackendEnabled()) throw new Error('LEGACY_LOCAL_NOTIFICATION_WRITE_DISABLED');
     const raw = localStorage.getItem(this.getStorageKey());
     if (!raw) return;
     try {
@@ -129,6 +133,7 @@ export class NotificationService {
   }
 
   public static deleteNotification(id: string): void {
+    if (isPostgresBackendEnabled()) throw new Error('LEGACY_LOCAL_NOTIFICATION_WRITE_DISABLED');
     const raw = localStorage.getItem(this.getStorageKey());
     if (!raw) return;
     try {
