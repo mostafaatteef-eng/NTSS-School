@@ -19,6 +19,7 @@ import { storageService } from './storageService';
 import { ExportService } from './exportService';
 import { BackupRestoreService } from './backupRestoreService';
 import { getCairoNowISO } from '../utils/egyptianTime';
+import { isPostgresBackendEnabled } from './backend/postgresRuntime';
 
 const STORAGE_KEYS = {
   UAT_TEST_CASES: 'ntss_uat_test_cases_v1',
@@ -67,6 +68,7 @@ export class OperationsService {
     passed: boolean;
     checks: Array<{ name: string; target: string; status: 'PASS' | 'FAIL'; message: string }>;
   } {
+    if (isPostgresBackendEnabled()) throw new Error('LEGACY_MUTATING_UAT_DISABLED_IN_POSTGRES_MODE');
     const checks: Array<{ name: string; target: string; status: 'PASS' | 'FAIL'; message: string }> = [];
 
     // 1. Administrative Security Isolation for Staff Roles
