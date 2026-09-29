@@ -124,19 +124,18 @@ export const BehaviorView: React.FC = () => {
     const level2 = violations.filter(v => v.severity === 'متوسطة').length;
     const level3 = violations.filter(v => v.severity?.includes('شديدة') || v.severity?.includes('خطيرة')).length;
 
-    // Students with behavior scores
-    const studentScoreMap = new Map<string, number>();
-    violations.forEach(v => {
-      studentScoreMap.set(v.studentId, (studentScoreMap.get(v.studentId) || 0) + (v.pointsDeducted || 0));
+    const levels = { foundation: 0, beginner: 0, proficient: 0, roleModel: 0, professional: 0 };
+    students.forEach(student => {
+      const score = storageService.calculateStudentBehaviorScore(student.id).currentScore;
+      const level = getSamatStudentLevel(score);
+      if (level === 'قيد التأسيس') levels.foundation++;
+      else if (level === 'مبتدئ') levels.beginner++;
+      else if (level === 'متمكن') levels.proficient++;
+      else if (level === 'قدوة حسنة') levels.roleModel++;
+      else if (level === 'المحترف') levels.professional++;
     });
-
-    let atRiskCount = 0;
-    students.forEach(s => {
-      const score = Math.max(0, (s.initialBehaviorScore || 100) - (studentScoreMap.get(s.id) || 0));
-      if (score < 85) atRiskCount++;
-    });
-
-    return { total, level1, level2, level3, atRiskCount };
+    const atRiskCount = levels.foundation + levels.beginner;
+    return { total, level1, level2, level3, atRiskCount, ...levels };
   }, [violations, students]);
 
   // Students list with computed behavior score
@@ -589,6 +588,14 @@ export const BehaviorView: React.FC = () => {
         <div className="bg-white rounded-2xl p-4 border border-emerald-100"><div className="text-[11px] text-emerald-600">خطط مكتملة</div><div className="text-2xl font-black text-emerald-700 mt-1">{planStats.closed}</div></div>
       </div>
 
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+        <div className="rounded-xl border border-rose-100 bg-white p-3"><div className="text-[10px] text-slate-500">قيد التأسيس</div><div className="text-xl font-black text-rose-700">{stats.foundation}</div></div>
+        <div className="rounded-xl border border-amber-100 bg-white p-3"><div className="text-[10px] text-slate-500">مبتدئ</div><div className="text-xl font-black text-amber-700">{stats.beginner}</div></div>
+        <div className="rounded-xl border border-blue-100 bg-white p-3"><div className="text-[10px] text-slate-500">متمكن</div><div className="text-xl font-black text-blue-700">{stats.proficient}</div></div>
+        <div className="rounded-xl border border-teal-100 bg-white p-3"><div className="text-[10px] text-slate-500">قدوة حسنة</div><div className="text-xl font-black text-teal-700">{stats.roleModel}</div></div>
+        <div className="rounded-xl border border-emerald-100 bg-white p-3"><div className="text-[10px] text-slate-500">المحترف</div><div className="text-xl font-black text-emerald-700">{stats.professional}</div></div>
+      </div>
+
       {/* Stats Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs">
@@ -600,19 +607,19 @@ export const BehaviorView: React.FC = () => {
         <div className="bg-white rounded-2xl p-4 border border-blue-100 shadow-xs">
           <div className="text-[11px] text-blue-700 font-bold">مخالفات بسيطة</div>
           <div className="text-xl font-black text-blue-600 mt-1">{stats.level1}</div>
-          <div className="text-[10px] text-blue-600 mt-1">خصم 2-3 نقاط</div>
+          <div className="text-[10px] text-blue-600 mt-1">وزن 5 نقاط</div>
         </div>
 
         <div className="bg-white rounded-2xl p-4 border border-amber-100 shadow-xs">
           <div className="text-[11px] text-amber-700 font-bold">مخالفات متوسطة</div>
           <div className="text-xl font-black text-amber-600 mt-1">{stats.level2}</div>
-          <div className="text-[10px] text-amber-600 mt-1">خصم 5 نقاط</div>
+          <div className="text-[10px] text-amber-600 mt-1">وزن 10 نقاط</div>
         </div>
 
         <div className="bg-white rounded-2xl p-4 border border-rose-100 shadow-xs">
           <div className="text-[11px] text-rose-700 font-bold">مخالفات جسيمة / خطيرة</div>
           <div className="text-xl font-black text-rose-600 mt-1">{stats.level3}</div>
-          <div className="text-[10px] text-rose-600 mt-1">خصم 10-30 نقطة</div>
+          <div className="text-[10px] text-rose-600 mt-1">وزن 15-30 نقطة</div>
         </div>
       </div>
 
