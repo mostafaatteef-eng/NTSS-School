@@ -758,7 +758,7 @@ class StorageService {
         const response = await this.postgresRequest('/api/validate-session', { method: 'POST', body: '{}' });
         const result = await response.json().catch(() => ({}));
         if (response.ok && result.status === 'success' && result.valid === true) {
-          if (result.user) this.setCurrentUser({ ...targetUser, ...result.user, sessionExpiresAt: result.expiresAt || targetUser.sessionExpiresAt });
+          if (result.user) this.setCurrentUser({ ...targetUser, ...result.user, sessionToken: targetUser.sessionToken, sessionExpiresAt: result.expiresAt || targetUser.sessionExpiresAt });
           this.sessionValidationCache[token] = { result: true, timestamp: now };
           return true;
         }
