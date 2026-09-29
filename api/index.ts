@@ -118,6 +118,28 @@ async function authenticate(request: Request) {
   return rows[0] || null;
 }
 
+type RequestContext = {
+  userId: string;
+  role: string;
+  accessScope: string;
+  activeSchoolId: string;
+  homeSchoolId: string;
+  employeeId: string;
+  studentId: string;
+};
+
+function buildRequestContext(user: any): RequestContext {
+  return {
+    userId: String(user?.user_id || ''),
+    role: String(user?.role || ''),
+    accessScope: String(user?.access_scope || ''),
+    activeSchoolId: String(user?.active_school_id || user?.school_id || '').trim(),
+    homeSchoolId: String(user?.school_id || '').trim(),
+    employeeId: String(user?.employee_id || ''),
+    studentId: String(user?.student_id || ''),
+  };
+}
+
 async function canAccessSchool(user: any, schoolId: string) {
   if (!schoolId) return false;
   if (user.access_scope === 'GLOBAL') {
@@ -839,7 +861,8 @@ export const ntssHandler = {
         const body:any=await request.json();
         const action=String(body.action||'');
         const data:any=body.data||{};
-        const schoolId=String(body.schoolId||user.active_school_id||user.school_id||'').trim();
+        const requestContext=buildRequestContext(user);
+        const schoolId=String(body.schoolId||requestContext.activeSchoolId).trim();
         if(!(await canAccessSchool(user,schoolId))) return respond({status: 'error',code:'FORBIDDEN'},403,corsOrigin);
         const canRead=new Set(['SystemAdmin','Admin','SchoolAdmin','SchoolDirector','QualityOfficer','Supervisor']);
         const canWrite=new Set(['SystemAdmin','Admin','SchoolAdmin','SchoolDirector','QualityOfficer','Supervisor']);
