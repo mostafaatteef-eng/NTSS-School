@@ -7,6 +7,7 @@ import {
   ComprehensiveEvaluation,
   CorrectiveAction,
   QualityMetricOverview,
+  Employee,
 } from '../../types';
 import { storageService } from '../../services/storageService';
 import { hasPermission } from '../../utils/permissions';
@@ -58,6 +59,7 @@ export const QualityModule: React.FC<QualityModuleProps> = ({ currentUser }) => 
   const [evaluations, setEvaluations] = useState<ComprehensiveEvaluation[]>([]);
   const [actions, setActions] = useState<CorrectiveAction[]>([]);
   const [metrics, setMetrics] = useState<QualityMetricOverview | null>(null);
+  const [teachers, setTeachers] = useState<Employee[]>([]);
 
   // Permissions check
   const canManageStandards =
@@ -93,6 +95,7 @@ export const QualityModule: React.FC<QualityModuleProps> = ({ currentUser }) => 
       setEvaluations([]);
       setActions([]);
       setMetrics(null);
+      setTeachers([]);
       return;
     }
     let stds: QualityStandard[] = [];
@@ -101,19 +104,22 @@ export const QualityModule: React.FC<QualityModuleProps> = ({ currentUser }) => 
     let evals: ComprehensiveEvaluation[] = [];
     let acts: CorrectiveAction[] = [];
     try {
-      const [serverStds,serverDaily,serverVisits,serverEvals,serverActs]=await Promise.all([
+      const [serverStds,serverDaily,serverVisits,serverEvals,serverActs,employeeResult]=await Promise.all([
         storageService.getAuthoritativeQualityRecords('QUALITY_STANDARD',schoolId),
         storageService.getAuthoritativeQualityRecords('DAILY_REPORT',schoolId),
         storageService.getAuthoritativeQualityRecords('TEACHER_VISIT',schoolId),
         storageService.getAuthoritativeQualityRecords('COMPREHENSIVE_EVALUATION',schoolId),
         storageService.getAuthoritativeQualityRecords('CORRECTIVE_ACTION',schoolId),
+        storageService.getEmployeeManagementDataAuthoritative(),
       ]);
       stds=serverStds as QualityStandard[]; daily=serverDaily as DailyQualityReport[]; visits=serverVisits as TeacherVisitReport[];
       evals=serverEvals as ComprehensiveEvaluation[]; acts=serverActs as CorrectiveAction[];
+      const employees=employeeResult.success && Array.isArray(employeeResult.employees) ? employeeResult.employees : [];
+      setTeachers(employees.filter((employee) => employee.employeeType === 'Teacher' && employee.status !== 'Inactive'));
     } catch (error) {
       console.error('Authoritative quality load failed',error);
       // Fail closed: never present stale browser records as authoritative Production data.
-      stds=[]; daily=[]; visits=[]; evals=[]; acts=[];
+      stds=[]; daily=[]; visits=[]; evals=[]; acts=[]; setTeachers([]);
     }
     const met = storageService.getQualityMetricOverview(schoolId,{ daily,visits,evals,actions:acts,standards:stds });
 
@@ -261,6 +267,7 @@ export const QualityModule: React.FC<QualityModuleProps> = ({ currentUser }) => 
           onRefresh={loadData}
           canCreate={canCreate}
           canApprove={canApprove}
+          teachers={teachers}
         />
       )}
 
