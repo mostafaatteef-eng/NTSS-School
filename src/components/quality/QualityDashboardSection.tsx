@@ -191,7 +191,7 @@ export const QualityDashboardSection: React.FC<Props> = ({
                 </div>
 
                 <div className="text-[11px] text-slate-500 flex justify-between">
-                  <span>إجمالي المعايير المقيمة: {da.count}</span>
+                  <span>{da.count > 0 ? `إجمالي القياسات الفعلية: ${da.count}` : 'لم يتم تقييم هذا المجال بعد'}</span>
                   <span>
                     {(da.averagePercentage ?? -1) >= 85
                       ? 'متميز'
