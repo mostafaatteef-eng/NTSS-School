@@ -665,7 +665,7 @@ export default {
           const slotConflicts=await client.query(
             `SELECT id,teacher_id,classroom,payload FROM schedule
              WHERE school_id=$1 AND id<>$2 AND weekday=$3 AND period_no=$4
-               AND (teacher_id=$5 OR classroom=$6 OR NULLIF(payload->>'room','')=NULLIF($7,''))
+               AND (teacher_id=$5 OR classroom=$6 OR NULLIF(COALESCE(payload->>'roomId',payload->>'room',payload->>'roomNumber'),'')=NULLIF($7,''))
              LIMIT 1 FOR UPDATE`,
             [schoolId,id,weekday,periodNo,teacherId,String(data.classroom||classroom),String(data.roomId||data.room||data.roomNumber||'')]
           );
