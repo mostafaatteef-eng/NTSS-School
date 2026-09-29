@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { TeacherLoadCalculation, TeacherTeachingAssignment, Employee } from '../../types';
 import { timetableService } from '../../services/timetableService';
+import { storageService } from '../../services/storageService';
 import * as XLSX from 'xlsx';
 import { PageHeader } from '../common/UiStates';
 import { StatCard } from '../common/UiMetrics';
@@ -49,6 +50,9 @@ export const TeacherLoadView: React.FC = () => {
   const handleAddAssignment = () => {
     if (!selectedTeacherForAssignments || !newSubject.trim()) return;
 
+    const currentYear = storageService.getAcademicYears().find(y => y.isCurrent || y.isActive || y.status === 'ACTIVE');
+    const currentTerm = currentYear?.terms?.find(term => (term as any).isCurrent || (term as any).isActive) || currentYear?.terms?.[0];
+
     const newAssign: TeacherTeachingAssignment = {
       id: `TTA-${Date.now()}`,
       teacherId: selectedTeacherForAssignments.teacherId,
@@ -61,8 +65,8 @@ export const TeacherLoadView: React.FC = () => {
       classroomId: newClassroom,
       classroomName: newClassroom,
       requiredPeriodsPerWeek: Number(newPeriods) || 1,
-      academicYearId: '2024/2025',
-      termId: 'FIRST',
+      academicYearId: currentYear?.id || currentYear?.name || '2026/2027',
+      termId: currentTerm?.id || 'FIRST',
       isActive: true,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
