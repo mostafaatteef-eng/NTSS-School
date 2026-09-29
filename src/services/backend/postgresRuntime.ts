@@ -23,10 +23,6 @@ export async function postgresApiRequest<T>(
   // Bearer is the primary cross-origin browser credential. HttpOnly cookie remains a secondary
   // defense-in-depth path for same-site/compatible browsers.
   if (sessionToken) headers.set('Authorization', `Bearer ${sessionToken}`);
-  // Authoritative session-bound data must never be satisfied from browser/proxy cache.
-  headers.set('Cache-Control', 'no-cache');
-  headers.set('Pragma', 'no-cache');
-
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 15000);
   const externalSignal = init.signal;
