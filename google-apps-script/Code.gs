@@ -62,6 +62,9 @@ var SHEETS = {
   BEHAVIOR_VIOLATIONS: 'Behavior_Violations',
   BEHAVIOR_CASES: 'Behavior_Cases',
   POSITIVE_BEHAVIOR_TYPES: 'Positive_Behavior_Types',
+  SAMAT_SKILL_ASSESSMENTS: 'Samat_Skill_Assessments',
+  SAMAT_DISCIPLINE_RECORDS: 'Samat_Discipline_Records',
+  SAMAT_EXCELLENCE_RECORDS: 'Samat_Excellence_Records',
   ACADEMIC_YEARS: 'Academic_Years',
   STUDENT_ENROLLMENTS: 'Student_Enrollments',
   STUDENT_TRANSFERS: 'Student_Transfers',
@@ -2404,6 +2407,9 @@ function doPost(e) {
       output.violations = getSheetData(schoolSs, SHEETS.BEHAVIOR_VIOLATIONS);
       output.cases = getSheetData(schoolSs, SHEETS.BEHAVIOR_CASES);
       output.positiveTypes = getSheetData(schoolSs, SHEETS.POSITIVE_BEHAVIOR_TYPES);
+      output.samatSkillAssessments = getSheetData(schoolSs, SHEETS.SAMAT_SKILL_ASSESSMENTS);
+      output.samatDisciplineRecords = getSheetData(schoolSs, SHEETS.SAMAT_DISCIPLINE_RECORDS);
+      output.samatExcellenceRecords = getSheetData(schoolSs, SHEETS.SAMAT_EXCELLENCE_RECORDS);
       return createJsonResponse(output, 200);
     }
 
@@ -2418,6 +2424,27 @@ function doPost(e) {
       payload.schoolId = effectiveSchoolId;
       upsertRecord(schoolSs, SHEETS.BEHAVIOR_CASES, 'id', payload);
       output.message = 'تم حفظ دراسة الحالة بنجاح';
+      return createJsonResponse(output, 200);
+    }
+
+    if (action === 'saveSamatSkillAssessment' && payload) {
+      payload.schoolId = effectiveSchoolId;
+      upsertRecord(schoolSs, SHEETS.SAMAT_SKILL_ASSESSMENTS, 'id', payload);
+      output.message = 'تم حفظ تقييم مهارة سمات بنجاح';
+      return createJsonResponse(output, 200);
+    }
+
+    if (action === 'saveSamatDisciplineRecord' && payload) {
+      payload.schoolId = effectiveSchoolId;
+      upsertRecord(schoolSs, SHEETS.SAMAT_DISCIPLINE_RECORDS, 'id', payload);
+      output.message = 'تم حفظ سجل عدم الانضباط بنجاح';
+      return createJsonResponse(output, 200);
+    }
+
+    if (action === 'saveSamatExcellenceRecord' && payload) {
+      payload.schoolId = effectiveSchoolId;
+      upsertRecord(schoolSs, SHEETS.SAMAT_EXCELLENCE_RECORDS, 'id', payload);
+      output.message = 'تم حفظ سجل التميز والبونص بنجاح';
       return createJsonResponse(output, 200);
     }
 
@@ -6931,6 +6958,9 @@ function ensureProductionStaffSheetsExist(ss) {
     Behavior_Violations: ['id', 'studentId', 'studentName', 'grade', 'classroom', 'violationType', 'level', 'actionTaken', 'pointsDeducted', 'date', 'recordedBy', 'notes'],
     Behavior_Cases: ['id', 'studentId', 'studentName', 'grade', 'classroom', 'caseType', 'status', 'socialSpecialistNotes', 'actionPlan', 'openedDate', 'closedDate'],
     Positive_Behavior_Types: ['id', 'title', 'category', 'points', 'description'],
+    Samat_Skill_Assessments: ['id', 'schoolId', 'studentId', 'studentName', 'grade', 'classroom', 'skillId', 'skillName', 'score', 'evidence', 'date', 'recordedBy'],
+    Samat_Discipline_Records: ['id', 'schoolId', 'studentId', 'studentName', 'grade', 'classroom', 'item', 'points', 'date', 'month', 'notes'],
+    Samat_Excellence_Records: ['id', 'schoolId', 'studentId', 'studentName', 'grade', 'classroom', 'excellenceItem', 'points', 'level', 'additionalBonus', 'date', 'month', 'nominationSourceAndReason', 'notes'],
     Academic_Years: ['id', 'name', 'startDate', 'endDate', 'isActive', 'status'],
     Student_Enrollments: ['id', 'studentId', 'academicYearId', 'grade', 'classroom', 'status', 'enrollmentDate'],
     Student_Transfers: ['id', 'studentId', 'studentCode', 'studentName', 'academicYearId', 'fromGrade', 'fromClassroom', 'toGrade', 'toClassroom', 'transferType', 'reason', 'transferDate', 'performedBy', 'approvedBy', 'notes', 'createdAt'],
