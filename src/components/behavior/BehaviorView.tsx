@@ -43,6 +43,10 @@ export const BehaviorView: React.FC = () => {
   const [positiveStudentId, setPositiveStudentId] = useState('');
   const [positiveTypeId, setPositiveTypeId] = useState('');
   const [positiveNotes, setPositiveNotes] = useState('');
+  const [restoreStudentId, setRestoreStudentId] = useState('');
+  const [restorePoints, setRestorePoints] = useState(5);
+  const [restoreReason, setRestoreReason] = useState('');
+  const [isRestoreModalOpen, setIsRestoreModalOpen] = useState(false);
 
   const [activeSubTab, setActiveSubTab] = useState<'violations' | 'positive' | 'types_manager' | 'at_risk'>('violations');
 
@@ -221,6 +225,36 @@ export const BehaviorView: React.FC = () => {
     setPositiveNotes('');
     reloadData();
     alert(`تم تسجيل التميز وإضافة ${type.points} نقاط. الرصيد الحالي: ${result.newScore}`);
+  };
+
+  const handleRestorePoints = (e: React.FormEvent) => {
+    e.preventDefault();
+    const student = students.find(s => s.id === restoreStudentId);
+    const points = Math.max(1, Math.min(30, Number(restorePoints) || 0));
+    if (!student || !restoreReason.trim()) {
+      alert('اختر الطالب واكتب سبب استعادة النقاط بعد المتابعة.');
+      return;
+    }
+    const before = storageService.calculateStudentBehaviorScore(student.id).currentScore;
+    const result = storageService.addBehaviorScoreTransaction({
+      id: `SAMAT-RESTORE-${Date.now()}`,
+      studentId: student.id,
+      studentName: student.name,
+      type: 'RESTORE',
+      sourceType: 'adjustment',
+      points,
+      pointsAwarded: points,
+      grade: student.grade,
+      classroom: student.classroom,
+      date: getCairoCurrentDate(),
+      reason: restoreReason.trim(),
+    });
+    setIsRestoreModalOpen(false);
+    setRestoreStudentId('');
+    setRestorePoints(5);
+    setRestoreReason('');
+    reloadData();
+    alert(`تم توثيق استعادة النقاط بعد المتابعة: ${before} ← ${result.newScore}`);
   };
 
   const handleDeleteViolation = (id: string) => {
@@ -445,6 +479,9 @@ export const BehaviorView: React.FC = () => {
         >
           <ShieldAlert className="w-4 h-4" />
           <span>ملف الطالب ومستوى سمات ({stats.atRiskCount})</span>
+        </button>
+        <button onClick={() => setIsRestoreModalOpen(true)} className="px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 text-slate-600 hover:bg-slate-100">
+          <RotateCcw className="w-4 h-4" /><span>استعادة نقاط بعد المتابعة</span>
         </button>
       </div>
 
@@ -749,6 +786,19 @@ export const BehaviorView: React.FC = () => {
             </select>
             <textarea value={positiveNotes} onChange={e=>setPositiveNotes(e.target.value)} placeholder="ملاحظات أو وصف التميز" className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 min-h-24" />
             <button type="submit" className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold">حفظ التعزيز وإضافة النقاط</button>
+          </form>
+        </div>
+      )}
+
+      {isRestoreModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs">
+          <form onSubmit={handleRestorePoints} className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-lg p-6 space-y-4">
+            <div className="flex items-center justify-between"><h3 className="text-base font-bold text-slate-900">استعادة نقاط بعد المتابعة التربوية</h3><button type="button" onClick={()=>setIsRestoreModalOpen(false)} className="text-slate-400">✕</button></div>
+            <p className="text-xs text-slate-500">يستخدم هذا الإجراء بعد تحقق تحسن موثق. يجب تسجيل سبب الاستعادة، ولا يمكن إضافة أكثر من 30 نقطة في العملية الواحدة.</p>
+            <select required value={restoreStudentId} onChange={e=>setRestoreStudentId(e.target.value)} className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5"><option value="">— اختر الطالب —</option>{students.map(s=><option key={s.id} value={s.id}>{s.name} ({s.grade} - {s.classroom})</option>)}</select>
+            <input type="number" min="1" max="30" value={restorePoints} onChange={e=>setRestorePoints(Number(e.target.value))} className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5" />
+            <textarea required value={restoreReason} onChange={e=>setRestoreReason(e.target.value)} placeholder="سبب الاستعادة والتحسن الذي تم التحقق منه" className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 min-h-24" />
+            <button type="submit" className="w-full py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-bold">توثيق الاستعادة وتحديث الرصيد</button>
           </form>
         </div>
       )}
