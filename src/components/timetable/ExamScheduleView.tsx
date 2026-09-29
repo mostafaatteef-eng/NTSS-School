@@ -48,17 +48,17 @@ export const ExamScheduleView: React.FC = () => {
 
   const getCurrentAcademicYear = () => {
     const year = storageService.getAcademicYears().find(y => y.isCurrent || y.isActive || y.status === 'ACTIVE');
-    return year || storageService.getAcademicYears()[0];
+    return year;
   };
 
   const handleOpenAdd = () => {
     const currentYear = getCurrentAcademicYear();
-    const firstGrade = configuredGrades[0];
+    if (!currentYear?.id || !currentYear?.name) {\n      alert('لا يمكن إضافة امتحان قبل تحديد العام الدراسي الحالي من الإعدادات.');\n      return;\n    }\n    const currentTerm = currentYear.terms?.find(term => (term as any).isCurrent || (term as any).isActive);\n    if (!currentTerm?.id) {\n      alert('لا يمكن إضافة امتحان قبل تحديد الفصل الدراسي الحالي من إعدادات العام الدراسي.');\n      return;\n    }\n    const firstGrade = configuredGrades[0];
     const firstClassroom = configuredClassrooms.find(c => !firstGrade?.id || c.gradeId === firstGrade.id) || configuredClassrooms[0];
     setEditingExam({
       academicYearId: currentYear?.id,
-      academicYear: currentYear?.name || '2026/2027',
-      term: 'FIRST',
+      academicYear: currentYear.name,
+      term: currentTerm.id,\n      termId: currentTerm.id,
       examType: 'MIDTERM',
       subjectName: '',
       gradeId: firstGrade?.id || firstClassroom?.gradeId || '',
@@ -84,12 +84,12 @@ export const ExamScheduleView: React.FC = () => {
     if (!editingExam || !editingExam.subjectName?.trim()) return;
 
     const currentYear = getCurrentAcademicYear();
-    const examToSave: ExamSchedule = {
+    const currentTerm = currentYear?.terms?.find(term => (term as any).isCurrent || (term as any).isActive);\n    if (!currentYear?.id || !currentYear?.name || !currentTerm?.id) {\n      alert('تعذر الحفظ: يجب تحديد العام والفصل الدراسي الحاليين من الإعدادات.');\n      return;\n    }\n    const examToSave: ExamSchedule = {
       id: editingExam.id || `EXM-${Date.now()}`,
-      academicYearId: editingExam.academicYearId || currentYear?.id || currentYear?.name || '2026/2027',
-      academicYear: editingExam.academicYear || currentYear?.name || '2026/2027',
-      term: editingExam.term || 'FIRST',
-      termId: editingExam.termId || 'FIRST',
+      academicYearId: editingExam.academicYearId || currentYear.id,
+      academicYear: editingExam.academicYear || currentYear.name,
+      term: editingExam.term || currentTerm.id,
+      termId: editingExam.termId || currentTerm.id,
       examType: editingExam.examType || 'MIDTERM',
       subjectId: editingExam.subjectId || `SUB-${Date.now()}`,
       subjectName: editingExam.subjectName.trim(),
