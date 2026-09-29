@@ -8,6 +8,8 @@ const notifications = fs.readFileSync('src/services/notificationService.ts','utf
 for (const seed of ['NOTIF-01','NOTIF-02','homework-seed-math-01','attendance-seed-abs-02']) {
   if (notifications.includes(seed)) throw new Error(`Fabricated production notification seed remains: ${seed}`);
 }
+if (!notifications.includes('isPostgresBackendEnabled()')) throw new Error('Notification legacy mutations must explicitly guard PostgreSQL authority.');
+if (!notifications.includes('LEGACY_LOCAL_NOTIFICATION_WRITE_DISABLED')) throw new Error('Notification local mutation fail-closed guard is missing.');
 
 console.log('Canonical data authority guard passed.');
 
