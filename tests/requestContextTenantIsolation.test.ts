@@ -19,7 +19,7 @@ describe('Resolved request tenant scope', () => {
 
   it('rejects cross-school quality access from the resolved context',()=>{
     const start=source.indexOf("path === '/quality/manage'");
-    const end=source.indexOf("path === '/schedule/manage'",start);
+    const end=source.indexOf("path === '/audit/manage'",start);
     const route=source.slice(start,end);
     expect(route).toContain('const requestContext=await resolveRequestContext(user);');
     expect(route).toContain('!requestContext.allowedSchoolIds.includes(schoolId)');
