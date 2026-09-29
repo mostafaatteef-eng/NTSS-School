@@ -785,10 +785,10 @@ export const ntssHandler = {
             if(occupied.rowCount)return respond({status: 'error',code:'CURRICULUM_SLOT_OCCUPIED',message:'هذه الحصة مرتبطة بالفعل بموضوع آخر في نفس أسبوع المنهج.'},409,corsOrigin);
           }
           const id=String(data.id||('DIST-'+crypto.randomBytes(8).toString('hex').toUpperCase()));
-          const distributionLockKey=\`curriculum:\${schoolId}:\${scheduleItemId||id}:week:\${curriculumWeek}\`;
+          const distributionLockKey=`curriculum:${schoolId}:${scheduleItemId||id}:week:${curriculumWeek}`;
           await pool.query('SELECT pg_advisory_xact_lock(hashtext($1))',[distributionLockKey]);
           if(scheduleItemId&&!isCancellation){
-            const occupiedAfterLock=await pool.query(\`SELECT d.id FROM curriculum_distributions d JOIN curriculum_plan_items pi ON pi.id=d.plan_item_id AND pi.plan_id=d.plan_id WHERE d.school_id=$1 AND d.schedule_item_id=$2 AND d.status<>'Cancelled' AND pi.week=$3 AND d.id<>$4 LIMIT 1\`,[schoolId,scheduleItemId,curriculumWeek,String(data.id||'')]);
+            const occupiedAfterLock=await pool.query(`SELECT d.id FROM curriculum_distributions d JOIN curriculum_plan_items pi ON pi.id=d.plan_item_id AND pi.plan_id=d.plan_id WHERE d.school_id=$1 AND d.schedule_item_id=$2 AND d.status<>'Cancelled' AND pi.week=$3 AND d.id<>$4 LIMIT 1`,[schoolId,scheduleItemId,curriculumWeek,String(data.id||'')]);
             if(occupiedAfterLock.rowCount)return respond({status: 'error',code:'CURRICULUM_SLOT_OCCUPIED',message:'هذه الحصة مرتبطة بالفعل بموضوع آخر في نفس أسبوع المنهج.'},409,corsOrigin);
           }
           const q=await pool.query(`INSERT INTO curriculum_distributions(id,school_id,plan_id,plan_item_id,schedule_item_id,teacher_id,teacher_name,grade,classroom,subject,day_of_week,period_number,target_date,status,notes)
