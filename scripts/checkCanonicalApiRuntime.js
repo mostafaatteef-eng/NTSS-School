@@ -33,6 +33,13 @@ for (const forbiddenAdapterLogic of ['new Pool', 'pool.query', 'CREATE TABLE', "
 }
 
 const canonicalApi = fs.readFileSync(new URL('../api/index.ts', import.meta.url), 'utf8');
+const schemaSql = fs.readFileSync(new URL('../database/schema.sql', import.meta.url), 'utf8');
+if (/CREATE TABLE IF NOT EXISTS login_rate_limits/i.test(canonicalApi) || canonicalApi.includes('ensureLoginRateLimitStorage')) {
+  throw new Error('Login request path must never create rate-limit schema at runtime.');
+}
+if (!/CREATE TABLE IF NOT EXISTS login_rate_limits/i.test(schemaSql)) {
+  throw new Error('Versioned database schema must define login_rate_limits.');
+}
 const vercelHandlerCount = canonicalApi.split('export default async function vercelHandler').length - 1;
 if (vercelHandlerCount !== 1) throw new Error(`Canonical API must contain exactly one Vercel adapter; found ${vercelHandlerCount}.`);
 const handlerStart = canonicalApi.indexOf('export const ntssHandler = {');
