@@ -159,3 +159,19 @@ CREATE TABLE IF NOT EXISTS login_rate_limits (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS login_rate_limits_updated_idx ON login_rate_limits(updated_at);
+
+
+-- Authoritative HR attendance period closing. Browser storage must never be the lock authority.
+CREATE TABLE IF NOT EXISTS attendance_month_closings (
+  school_id text NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+  year integer NOT NULL CHECK (year BETWEEN 2000 AND 2200),
+  month integer NOT NULL CHECK (month BETWEEN 1 AND 12),
+  status text NOT NULL CHECK (status IN ('OPEN','CLOSED','LOCKED')),
+  payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+  closed_by text REFERENCES users(id) ON DELETE SET NULL,
+  closed_at timestamptz,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (school_id,year,month)
+);
+CREATE INDEX IF NOT EXISTS attendance_month_closings_school_period_idx
+  ON attendance_month_closings(school_id,year DESC,month DESC);
