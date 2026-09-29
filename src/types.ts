@@ -2752,8 +2752,16 @@ export interface ComprehensiveEvaluation {
   updatedAt: string;
 }
 
+export interface QualityKpiContract {
+  value: number | null;
+  sampleSize: number;
+  period: string | null;
+  status: 'AVAILABLE' | 'N/A';
+}
+
 export interface QualityMetricOverview {
   overallQualityScore: number | null;
+  overallQualityKpi: QualityKpiContract;
   totalDailyReports: number;
   averageDailyScore: number | null;
   totalTeacherVisits: number;
