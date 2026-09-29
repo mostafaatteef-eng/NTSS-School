@@ -24,3 +24,10 @@ if (qualityView.includes('migrateLocalQualityToBackend(')) throw new Error('Qual
 for (const legacyRead of ['getQualityStandards(schoolId)','getDailyQualityReports(schoolId)','getTeacherVisitReports(schoolId)','getComprehensiveEvaluations(schoolId)','getCorrectiveActions(schoolId)']) {
   if (qualityView.includes(legacyRead)) throw new Error(`Quality UI still treats browser data as Production authority: ${legacyRead}`);
 }
+
+const storage = fs.readFileSync('src/services/storageService.ts','utf8');
+const qualityMigrationStart = storage.indexOf('public async migrateLocalQualityToBackend');
+const qualityMigrationEnd = storage.indexOf('// --- Corrective Actions ---', qualityMigrationStart);
+const qualityMigration = storage.slice(qualityMigrationStart, qualityMigrationEnd);
+if (!qualityMigration.includes('QUALITY_BROWSER_MIGRATION_DISABLED')) throw new Error('Legacy quality browser migration must fail closed in PostgreSQL mode.');
+if (qualityMigration.includes('saveAuthoritativeQualityRecord(')) throw new Error('Legacy quality browser migration still promotes local records to PostgreSQL.');
