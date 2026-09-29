@@ -19,6 +19,6 @@ if(!/\bclassroom\s+text\s+NOT\s+NULL\b/i.test(curriculumPlanBlock)) throw new Er
 if(/FOREIGN KEY\s*\(school_id\s*,\s*employee_id\)[\s\S]{0,160}?ON DELETE SET NULL/i.test(sql)) throw new Error('Composite employee FK must not null required school_id');
 
 for(const indexName of ['schedule_teacher_slot_unique_idx','schedule_class_slot_unique_idx']) {
-  if(!new RegExp('CREATE UNIQUE INDEX IF NOT EXISTS\\\\s+'+indexName+'\\\\b','i').test(sql)) throw new Error('Missing timetable concurrency index: '+indexName);
+  if(!new RegExp('CREATE UNIQUE INDEX IF NOT EXISTS\\s+'+indexName+'\\b','i').test(sql)) throw new Error('Missing timetable concurrency index: '+indexName);
 }
 if(!/schedule_teacher_school_fkey/i.test(sql)) throw new Error('Missing school-scoped teacher FK for schedule');
