@@ -8712,14 +8712,20 @@ class StorageService {
     const actions = source?.actions ?? this.getCorrectiveActions(activeSchoolId);
     const standards = source?.standards ?? this.getQualityStandards(activeSchoolId);
 
-    const avgDaily = daily.length > 0
-      ? daily.reduce((acc, d) => acc + (d.percentage || (d.evaluations?.length ? this.calculateWeightedScore(d.evaluations, standards).percentage : 0)), 0) / daily.length
+    // KPI samples are approved records only. Draft/pending/rejected records must never
+    // fabricate or influence the quality indicator.
+    const approvedDaily = daily.filter(d => String(d.status || '').toUpperCase() === 'APPROVED');
+    const approvedVisits = visits.filter(v => String(v.status || '').toUpperCase() === 'APPROVED');
+    const approvedEvals = evals.filter(e => String(e.status || '').toUpperCase() === 'APPROVED');
+
+    const avgDaily = approvedDaily.length > 0
+      ? approvedDaily.reduce((acc, d) => acc + (d.percentage || (d.evaluations?.length ? this.calculateWeightedScore(d.evaluations, standards).percentage : 0)), 0) / approvedDaily.length
       : null;
-    const avgVisits = visits.length > 0
-      ? visits.reduce((acc, v) => acc + (v.percentage || v.overallScore || 0), 0) / visits.length
+    const avgVisits = approvedVisits.length > 0
+      ? approvedVisits.reduce((acc, v) => acc + (v.percentage || v.overallScore || 0), 0) / approvedVisits.length
       : null;
-    const avgEvals = evals.length > 0
-      ? evals.reduce((acc, e) => acc + (e.percentage || e.weightedScore || 0), 0) / evals.length
+    const avgEvals = approvedEvals.length > 0
+      ? approvedEvals.reduce((acc, e) => acc + (e.percentage || e.weightedScore || 0), 0) / approvedEvals.length
       : null;
 
     const availableScores=[avgDaily,avgVisits,avgEvals].filter((v):v is number=>v!==null);
