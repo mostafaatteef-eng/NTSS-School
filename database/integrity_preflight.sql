@@ -33,6 +33,18 @@ LEFT JOIN schedule s ON s.id=d.schedule_item_id
 WHERE d.schedule_item_id IS NOT NULL AND d.schedule_item_id <> '' AND s.id IS NULL
 ORDER BY d.school_id, d.id;
 
+-- Active curriculum distributions that compete for the same timetable slot and curriculum week.
+-- These must be reconciled before a database-level uniqueness constraint is introduced.
+SELECT d.school_id, d.schedule_item_id, i.week, COUNT(*) AS duplicate_count,
+       array_agg(d.id ORDER BY d.id) AS distribution_ids
+FROM curriculum_distributions d
+JOIN curriculum_plan_items i ON i.id=d.plan_item_id AND i.plan_id=d.plan_id
+WHERE d.schedule_item_id IS NOT NULL AND d.schedule_item_id <> ''
+  AND d.status <> 'Cancelled'
+GROUP BY d.school_id, d.schedule_item_id, i.week
+HAVING COUNT(*) > 1
+ORDER BY duplicate_count DESC, d.school_id, d.schedule_item_id, i.week;
+
 -- Existing constraint/index state
 SELECT conname, convalidated
 FROM pg_constraint
