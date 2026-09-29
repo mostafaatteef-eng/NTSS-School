@@ -53,12 +53,22 @@ export const ExamScheduleView: React.FC = () => {
 
   const handleOpenAdd = () => {
     const currentYear = getCurrentAcademicYear();
-    if (!currentYear?.id || !currentYear?.name) {\n      alert('لا يمكن إضافة امتحان قبل تحديد العام الدراسي الحالي من الإعدادات.');\n      return;\n    }\n    const currentTerm = currentYear.terms?.find(term => (term as any).isCurrent || (term as any).isActive);\n    if (!currentTerm?.id) {\n      alert('لا يمكن إضافة امتحان قبل تحديد الفصل الدراسي الحالي من إعدادات العام الدراسي.');\n      return;\n    }\n    const firstGrade = configuredGrades[0];
+    if (!currentYear?.id || !currentYear?.name) {
+      alert('لا يمكن إضافة امتحان قبل تحديد العام الدراسي الحالي من الإعدادات.');
+      return;
+    }
+    const currentTerm = currentYear.terms?.find(term => (term as any).isCurrent || (term as any).isActive);
+    if (!currentTerm?.id) {
+      alert('لا يمكن إضافة امتحان قبل تحديد الفصل الدراسي الحالي من إعدادات العام الدراسي.');
+      return;
+    }
+    const firstGrade = configuredGrades[0];
     const firstClassroom = configuredClassrooms.find(c => !firstGrade?.id || c.gradeId === firstGrade.id) || configuredClassrooms[0];
     setEditingExam({
       academicYearId: currentYear?.id,
       academicYear: currentYear.name,
-      term: currentTerm.id,\n      termId: currentTerm.id,
+      term: currentTerm.id,
+      termId: currentTerm.id,
       examType: 'MIDTERM',
       subjectName: '',
       gradeId: firstGrade?.id || firstClassroom?.gradeId || '',
@@ -84,7 +94,12 @@ export const ExamScheduleView: React.FC = () => {
     if (!editingExam || !editingExam.subjectName?.trim()) return;
 
     const currentYear = getCurrentAcademicYear();
-    const currentTerm = currentYear?.terms?.find(term => (term as any).isCurrent || (term as any).isActive);\n    if (!currentYear?.id || !currentYear?.name || !currentTerm?.id) {\n      alert('تعذر الحفظ: يجب تحديد العام والفصل الدراسي الحاليين من الإعدادات.');\n      return;\n    }\n    const examToSave: ExamSchedule = {
+    const currentTerm = currentYear?.terms?.find(term => (term as any).isCurrent || (term as any).isActive);
+    if (!currentYear?.id || !currentYear?.name || !currentTerm?.id) {
+      alert('تعذر الحفظ: يجب تحديد العام والفصل الدراسي الحاليين من الإعدادات.');
+      return;
+    }
+    const examToSave: ExamSchedule = {
       id: editingExam.id || `EXM-${Date.now()}`,
       academicYearId: editingExam.academicYearId || currentYear.id,
       academicYear: editingExam.academicYear || currentYear.name,
