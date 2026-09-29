@@ -376,11 +376,10 @@ export const ntssHandler = {
                   COALESCE(sc.count,0)::int AS "studentsCount",
                   COALESCE(ec.count,0)::int AS "employeesCount"
            FROM schools s
-           JOIN user_school_access usa ON usa.school_id=s.id AND usa.user_id=$1
            LEFT JOIN student_counts sc ON sc.school_id=s.id
            LEFT JOIN employee_counts ec ON ec.school_id=s.id
-           ORDER BY s.name`,
-          [user.user_id]
+           ORDER BY s.name`
+        
         );
         const schools = result.rows.map((s: any) => ({
           ...s,
