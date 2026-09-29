@@ -636,10 +636,12 @@ const ntssHandler = {
         }
         const id=String(data.id||'').trim() || ('SCH-'+schoolId+'-'+crypto.randomBytes(8).toString('hex').toUpperCase());
         if (action === 'deleteScheduleEntry') {
+          const linked=await pool.query("SELECT 1 FROM curriculum_distributions WHERE school_id=$1 AND schedule_item_id=$2 AND status<>'Cancelled' LIMIT 1",[schoolId,id]);
+          if(linked.rowCount)return json({status:'error',code:'SCHEDULE_LINKED_TO_CURRICULUM',message:'لا يمكن حذف الحصة لأنها مرتبطة بتوزيع منهج نشط. ألغِ توزيع المنهج المرتبط أولاً.'},409,corsOrigin);
           const d=await pool.query('DELETE FROM schedule WHERE school_id=$1 AND id=$2 RETURNING id',[schoolId,id]);
           if(!d.rowCount)return json({status:'error',code:'NOT_FOUND'},404,corsOrigin);
-          await pool.query('INSERT INTO audit_logs(school_id,user_id,username,role,action,entity,target_id,details) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[schoolId,user.user_id,user.email,user.role,'DELETE','SCHEDULE',id,'Deleted through Neon API']);
-          return json({status:'success',message:'تم حذف الحصة من الجدول'},200,corsOrigin);
+          await pool.query('INSERT INTO audit_logs(school_id,user_id,username,role,action,entity,target_id,details) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[schoolId,user.user_id,user.email,user.role,'DELETE','SCHEDULE',id,'Deleted unlinked schedule slot through Neon API']);
+          return json({status:'success',message:'تم حذف الحصة غير المرتبطة بخطة منهج'},200,corsOrigin);
         }
         if (action !== 'saveScheduleEntry') return json({status:'error',code:'ACTION_NOT_MIGRATED'},400,corsOrigin);
         const collision=await pool.query('SELECT school_id FROM schedule WHERE id=$1 AND school_id<>$2',[id,schoolId]);
