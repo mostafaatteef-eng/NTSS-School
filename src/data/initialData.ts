@@ -662,6 +662,24 @@ export const SAMAT_TRAITS = [
   { key: 'LEARNING', name: 'أتعلم بفاعلية', description: 'الاستعداد للتعلم واحترام وقت الحصة ومتطلباتها.' },
 ] as const;
 
+export const SAMAT_SKILLS = [
+  { id: 'SKILL01', name: 'التفكير الابداعى والابتكارى', sortOrder: 1 },
+  { id: 'SKILL02', name: 'التفكير الناقد', sortOrder: 2 },
+  { id: 'SKILL03', name: 'حل المشكلات', sortOrder: 3 },
+  { id: 'SKILL04', name: 'التعاون والعمل الجماعى', sortOrder: 4 },
+  { id: 'SKILL05', name: 'التفاوض', sortOrder: 5 },
+  { id: 'SKILL06', name: 'صنع القرار واتخاذ القرار', sortOrder: 6 },
+  { id: 'SKILL07', name: 'التكيف', sortOrder: 7 },
+  { id: 'SKILL08', name: 'الانضباط والتقييم الذاتي', sortOrder: 8 },
+  { id: 'SKILL09', name: 'التواصل وبناء العلاقات الاحترافية', sortOrder: 9 },
+  { id: 'SKILL10', name: 'قبول التنوع', sortOrder: 10 },
+  { id: 'SKILL11', name: 'التعاطف', sortOrder: 11 },
+  { id: 'SKILL12', name: 'المشاركة', sortOrder: 12 },
+] as const;
+
+export const SAMAT_SKILL_SCORE_SCALE = [0, 2, 4, 6, 8, 10] as const;
+export const SAMAT_BONUS_MONTHS = ['Sep','Oct','Nov','Dec','Jan','Feb','Mar','Apr','May'] as const;
+
 export const SAMAT_STUDENT_LEVELS = [
   { min: 0, max: 49, name: 'قيد التأسيس' },
   { min: 50, max: 65, name: 'مبتدئ' },
