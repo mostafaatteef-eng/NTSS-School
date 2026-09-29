@@ -57,6 +57,8 @@ export const BehaviorView: React.FC = () => {
   const [followupResult, setFollowupResult] = useState('');
   const [followupNextAction, setFollowupNextAction] = useState('');
   const [followupNextDate, setFollowupNextDate] = useState('');
+  const [closePlanId, setClosePlanId] = useState<string | null>(null);
+  const [closePlanResult, setClosePlanResult] = useState('');
 
   const [activeSubTab, setActiveSubTab] = useState<'violations' | 'positive' | 'types_manager' | 'at_risk'>('violations');
 
@@ -141,7 +143,19 @@ export const BehaviorView: React.FC = () => {
   }, [violations, behaviorTypes]);
 
   const profileStudent = useMemo(() => students.find(s => s.id === profileStudentId) || null, [students, profileStudentId]);
-  const profilePlans = useMemo(() => profileStudentId ? storageService.getBehaviorCases({ studentId: profileStudentId }).filter(x => x.severity === 'خطة تحسين') : [], [profileStudentId]);
+  const allImprovementPlans = useMemo(() => storageService.getBehaviorCases().filter(x => x.severity === 'خطة تحسين'), [violations, students, isPlanModalOpen, followupCaseId, closePlanId]);
+  const planStats = useMemo(() => {
+    const today = getCairoCurrentDate();
+    const closed = allImprovementPlans.filter(p => p.status === 'CLOSED' || p.status === 'Closed').length;
+    const open = allImprovementPlans.length - closed;
+    const overdue = allImprovementPlans.filter(p => {
+      if (p.status === 'CLOSED' || p.status === 'Closed') return false;
+      const latest = p.followups?.[p.followups.length - 1];
+      return Boolean(latest?.followUpDate && latest.followUpDate < today);
+    }).length;
+    return { open, overdue, closed };
+  }, [allImprovementPlans]);
+  const profilePlans = useMemo(() => profileStudentId ? allImprovementPlans.filter(x => x.studentId === profileStudentId) : [], [profileStudentId, allImprovementPlans]);
   const profileTimeline = useMemo(() => {
     if (!profileStudentId) return [];
     const negative = violations.filter(v => v.studentId === profileStudentId).map(v => ({
@@ -346,6 +360,17 @@ export const BehaviorView: React.FC = () => {
     alert('تم تسجيل نتيجة متابعة خطة سمات.');
   };
 
+  const handleCloseImprovementPlan = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!closePlanId || !closePlanResult.trim()) return;
+    const plan = allImprovementPlans.find(p => p.id === closePlanId);
+    const score = plan ? storageService.calculateStudentBehaviorScore(plan.studentId).currentScore : undefined;
+    const summary = `${closePlanResult.trim()}${score !== undefined ? ` | رصيد سمات عند الإغلاق: ${score}` : ''}`;
+    storageService.closeBehaviorCase(closePlanId, summary);
+    setClosePlanId(null); setClosePlanResult('');
+    alert('تم إغلاق خطة تحسين سمات وتوثيق نتيجة الإغلاق.');
+  };
+
   const handleDeleteViolation = (id: string) => {
     if (window.confirm('هل أنت متأكد من رغبتك في حذف هذا السجل؟ سيتم إعادة النقاط لرصيد الطالب.')) {
       storageService.deleteBehaviorViolation(id);
@@ -496,6 +521,12 @@ export const BehaviorView: React.FC = () => {
           </div>
         </div>
       )}
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="bg-white rounded-2xl p-4 border border-slate-200"><div className="text-[11px] text-slate-500">خطط تحسين مفتوحة</div><div className="text-2xl font-black text-slate-900 mt-1">{planStats.open}</div></div>
+        <div className="bg-white rounded-2xl p-4 border border-rose-100"><div className="text-[11px] text-rose-600">متابعات متأخرة</div><div className="text-2xl font-black text-rose-700 mt-1">{planStats.overdue}</div></div>
+        <div className="bg-white rounded-2xl p-4 border border-emerald-100"><div className="text-[11px] text-emerald-600">خطط مكتملة</div><div className="text-2xl font-black text-emerald-700 mt-1">{planStats.closed}</div></div>
+      </div>
 
       {/* Stats Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -860,6 +891,17 @@ export const BehaviorView: React.FC = () => {
         </div>
       )}
 
+      {closePlanId && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs">
+          <form onSubmit={handleCloseImprovementPlan} className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-lg p-6 space-y-4">
+            <div className="flex items-center justify-between"><h3 className="text-base font-bold text-slate-900">إغلاق خطة تحسين سمات</h3><button type="button" onClick={()=>setClosePlanId(null)} className="text-slate-400">✕</button></div>
+            <p className="text-xs text-slate-500">وثّق دليل تحقق الهدف أو نتيجة التحسن قبل إغلاق الخطة. سيتم حفظ رصيد سمات الحالي ضمن نتيجة الإغلاق.</p>
+            <textarea required value={closePlanResult} onChange={e=>setClosePlanResult(e.target.value)} placeholder="نتيجة التحسن ودليل تحقق الهدف" className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 min-h-28"/>
+            <button type="submit" className="w-full py-2.5 bg-emerald-600 text-white rounded-xl text-xs font-bold">تأكيد تحقق الهدف وإغلاق الخطة</button>
+          </form>
+        </div>
+      )}
+
       {followupCaseId && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs">
           <form onSubmit={handlePlanFollowup} className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-lg p-6 space-y-4">
@@ -905,7 +947,7 @@ export const BehaviorView: React.FC = () => {
                 const latest=plan.followups?.[plan.followups.length-1];
                 return <div key={plan.id} className="rounded-xl border border-teal-100 bg-teal-50/40 p-4">
                   <div className="flex items-start justify-between gap-3"><div><div className="text-xs font-black text-slate-900">{plan.summary}</div><div className="text-[11px] text-slate-500 mt-1">{latest?.summary || 'لم تسجل متابعة بعد'}{latest?.followUpDate ? ` · المتابعة القادمة: ${latest.followUpDate}` : ''}</div></div><span className="text-[10px] font-bold text-teal-700">{plan.status}</span></div>
-                  {plan.status !== 'CLOSED' && plan.status !== 'Closed' && <button onClick={()=>setFollowupCaseId(plan.id)} className="mt-3 px-3 py-1.5 rounded-lg bg-white border border-teal-200 text-teal-700 text-[11px] font-bold">تسجيل نتيجة متابعة</button>}
+                  {plan.status !== 'CLOSED' && plan.status !== 'Closed' && <div className="mt-3 flex gap-2"><button onClick={()=>setFollowupCaseId(plan.id)} className="px-3 py-1.5 rounded-lg bg-white border border-teal-200 text-teal-700 text-[11px] font-bold">تسجيل نتيجة متابعة</button><button onClick={()=>setClosePlanId(plan.id)} className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-[11px] font-bold">تحقق الهدف وإغلاق الخطة</button></div>}
                 </div>;
               })}</div>
             </div>}
