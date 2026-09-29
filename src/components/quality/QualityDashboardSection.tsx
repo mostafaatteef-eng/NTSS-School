@@ -66,10 +66,10 @@ export const QualityDashboardSection: React.FC<Props> = ({
           <div className="bg-white/10 backdrop-blur-md p-4 rounded-xl border border-white/15 text-center min-w-[160px]">
             <span className="text-xs font-medium text-indigo-200 block">معدل التقييم العام</span>
             <div className="text-3xl font-black text-amber-300 mt-0.5">
-              {metrics.overallQualityScore === null ? '—' : `${metrics.overallQualityScore.toFixed(1)}%`}
+              {metrics.overallQualityKpi.status === 'N/A' ? 'N/A' : `${Number(metrics.overallQualityKpi.value ?? 0).toFixed(1)}%`}
             </div>
             <span className="text-[11px] text-indigo-200 block mt-1">
-              محسوب وفق أوزان إتقان
+              {metrics.overallQualityKpi.status === 'N/A' ? 'لا توجد تقارير معتمدة بعد' : `محسوب من ${metrics.overallQualityKpi.sampleSize} سجل معتمد`}
             </span>
           </div>
         </div>
@@ -238,12 +238,12 @@ export const QualityDashboardSection: React.FC<Props> = ({
                     className={`px-2.5 py-1 text-xs font-bold rounded-full ${
                       tv.percentage >= 85
                         ? 'bg-emerald-100 text-emerald-800'
-                        : tv.percentage >= 70
+                        : Number(tv.percentage ?? 0) >= 70
                         ? 'bg-amber-100 text-amber-800'
                         : 'bg-rose-100 text-rose-800'
                     }`}
                   >
-                    {tv.percentage.toFixed(1)}%
+                    {Number(tv.percentage ?? 0).toFixed(1)}%
                   </span>
                   <span className="block text-[10px] text-slate-400 mt-1">
                     {tv.status === 'APPROVED' ? 'معتمد' : 'بانتظار الاعتماد'}
