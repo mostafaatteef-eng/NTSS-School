@@ -23,6 +23,7 @@ import { User } from '../../types';
 import { BackupType, RestoreValidationReport, SystemBackupMetadata, SystemBackupPackage } from '../../types_extended';
 import { BackupRestoreService } from '../../services/backupRestoreService';
 import { formatEgyptianDate, getCairoCurrentDate } from '../../utils/egyptianTime';
+import { isPostgresBackendEnabled } from '../../services/backend/postgresRuntime';
 
 interface BackupRestoreViewProps {
   currentUser: User | null;
@@ -30,6 +31,7 @@ interface BackupRestoreViewProps {
 
 export const BackupRestoreView: React.FC<BackupRestoreViewProps> = ({ currentUser }) => {
   const isAdmin = currentUser?.role === 'Admin';
+  const postgresMode = isPostgresBackendEnabled();
   const [activeTab, setActiveTab] = useState<'BACKUP' | 'RESTORE' | 'HISTORY'>('BACKUP');
 
   // Backup state
@@ -65,6 +67,7 @@ export const BackupRestoreView: React.FC<BackupRestoreViewProps> = ({ currentUse
 
   // Handle Backup Creation
   const handleCreateBackup = () => {
+    if (postgresMode) { alert('النسخ المحلي غير متاح لأن PostgreSQL هو مصدر الحقيقة. يلزم استخدام نسخة احتياطية Server-side معتمدة.'); return; }
     setIsBackingUp(true);
     try {
       const { backupPackage, jsonString } = BackupRestoreService.createBackup(
@@ -113,6 +116,7 @@ export const BackupRestoreView: React.FC<BackupRestoreViewProps> = ({ currentUse
 
   // Handle Restore Execution
   const handleExecuteRestore = () => {
+    if (postgresMode) { setRestoreError('الاستعادة المحلية معطلة لحماية بيانات PostgreSQL من الاستبدال الوهمي داخل المتصفح.'); return; }
     if (!uploadedPackage) return;
     setIsRestoring(true);
     setRestoreError(null);
@@ -179,6 +183,16 @@ export const BackupRestoreView: React.FC<BackupRestoreViewProps> = ({ currentUse
         </div>
       </div>
 
+      {postgresMode && (
+        <div className="bg-amber-50 border border-amber-200 rounded-3xl p-5 text-amber-900 flex items-start gap-3">
+          <ShieldAlert className="w-5 h-5 mt-0.5 shrink-0" />
+          <div>
+            <div className="text-sm font-bold">وضع PostgreSQL: النسخ والاستعادة المحلية معطلة للحماية</div>
+            <p className="text-xs mt-1">هذه الشاشة القديمة كانت تتعامل مع بيانات المتصفح فقط ولا تمثل قاعدة Production. تم منع استخدامها حتى يتوفر Backup/Restore Server-side معتمد.</p>
+          </div>
+        </div>
+      )}
+
       {/* 1. BACKUP TAB */}
       {activeTab === 'BACKUP' && (
         <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-6 max-w-3xl mx-auto">
@@ -201,7 +215,7 @@ export const BackupRestoreView: React.FC<BackupRestoreViewProps> = ({ currentUse
               return (
                 <div
                   key={item.type}
-                  onClick={() => setSelectedType(item.type)}
+                  onClick={() => !postgresMode && setSelectedType(item.type)}
                   className={`p-4 rounded-2xl border-2 cursor-pointer transition-all ${
                     isSelected
                       ? 'border-indigo-600 bg-indigo-50/40 shadow-xs'
