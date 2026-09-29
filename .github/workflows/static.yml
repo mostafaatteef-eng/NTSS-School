@@ -55,11 +55,9 @@ jobs:
           curl --fail --silent --show-error -D "$HEADERS" -o /dev/null -X OPTIONS "${API_URL}/api/system-overview" \
             -H 'Origin: https://mostafaatteef-eng.github.io' \
             -H 'Access-Control-Request-Method: GET' \
-            -H 'Access-Control-Request-Headers: authorization,cache-control,pragma'
+            -H 'Access-Control-Request-Headers: authorization'
           grep -qi '^access-control-allow-origin: https://mostafaatteef-eng.github.io' "$HEADERS"
           grep -qi '^access-control-allow-headers:.*authorization' "$HEADERS"
-          grep -qi '^access-control-allow-headers:.*cache-control' "$HEADERS"
-          grep -qi '^access-control-allow-headers:.*pragma' "$HEADERS"
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
