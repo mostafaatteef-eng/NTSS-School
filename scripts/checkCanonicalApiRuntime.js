@@ -33,6 +33,8 @@ for (const forbiddenAdapterLogic of ['new Pool', 'pool.query', 'CREATE TABLE', "
 }
 
 const canonicalApi = fs.readFileSync(new URL('../api/index.ts', import.meta.url), 'utf8');
+const vercelHandlerCount = canonicalApi.split('export default async function vercelHandler').length - 1;
+if (vercelHandlerCount !== 1) throw new Error(`Canonical API must contain exactly one Vercel adapter; found ${vercelHandlerCount}.`);
 const handlerStart = canonicalApi.indexOf('export const ntssHandler = {');
 const handlerEnd = canonicalApi.indexOf('export default async function vercelHandler', handlerStart);
 const handlerBody = canonicalApi.slice(handlerStart, handlerEnd);
