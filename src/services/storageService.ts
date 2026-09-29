@@ -6589,7 +6589,7 @@ class StorageService {
     stats?: { added: number; updated: number; skipped: number; errors: Array<{ row: number; code: string; message: string }> };
   }> {
     const user = this.getCurrentUser();
-    if (!user?.sessionToken) {
+    if (!user || (!isPostgresBackendEnabled() && !user.sessionToken) || !this.isAuthenticated(user)) {
       return { success: false, code: 'AUTH_REQUIRED', message: 'يجب تسجيل الدخول بجلسة عمل معتمدة.' };
     }
 
@@ -6747,7 +6747,7 @@ class StorageService {
     data?: Record<string, unknown>
   ): Promise<{ success: boolean; code?: string; message?: string; data?: any; leave?: LeaveRecord; permission?: EmployeePermissionRecord }> {
     const user = this.getCurrentUser();
-    if (!user?.sessionToken) {
+    if (!user || (!isPostgresBackendEnabled() && !user.sessionToken) || !this.isAuthenticated(user)) {
       return { success: false, code: 'AUTH_REQUIRED', message: 'يجب تسجيل الدخول بجلسة عمل معتمدة.' };
     }
 
@@ -6904,7 +6904,7 @@ class StorageService {
     permissions?: EmployeePermissionRecord[];
   }> {
     const user = this.getCurrentUser();
-    if (!user?.sessionToken) {
+    if (!user || (!isPostgresBackendEnabled() && !user.sessionToken) || !this.isAuthenticated(user)) {
       return { success: false, code: 'AUTH_REQUIRED', message: 'يجب تسجيل الدخول بجلسة عمل معتمدة.' };
     }
     if (!user.employeeId) {
