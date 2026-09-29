@@ -27,6 +27,7 @@ import {
 import * as XLSX from 'xlsx';
 import { BehaviorType, BehaviorViolation, Student } from '../../types';
 import { storageService } from '../../services/storageService';
+import { getSamatStudentLevel } from '../../services/behavior/samatScoring';
 import {
   formatEgyptianDate,
   getCairoCurrentDate,
@@ -124,6 +125,7 @@ export const BehaviorView: React.FC = () => {
         return {
           ...s,
           score,
+          samatLevel: getSamatStudentLevel(score),
           deducted: d.total,
           violationCount: d.count,
         };
