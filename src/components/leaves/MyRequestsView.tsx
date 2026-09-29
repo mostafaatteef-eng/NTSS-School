@@ -19,6 +19,7 @@ import { User, LeaveRecord, LeaveType } from '../../types';
 import { EmployeePermissionRecord } from '../../types_extended';
 import { storageService } from '../../services/storageService';
 import { MasterDataService } from '../../services/masterDataService';
+import { masterDataAuthoritativeService } from '../../services/masterDataAuthoritativeService';
 import { getCairoCurrentDate } from '../../utils/egyptianTime';
 
 interface MyRequestsViewProps {
@@ -99,14 +100,22 @@ export const MyRequestsView: React.FC<MyRequestsViewProps> = ({ currentUser, aut
     void loadData();
   }, [currentUser, authMode]);
 
-  // Dynamic leave types
-  const dynamicLeaveTypes = useMemo(() => {
-    const mdItems = MasterDataService.getMasterData('HR', 'LEAVE_TYPES');
-    if (mdItems.length > 0) {
-      return mdItems.map(m => m.nameAr);
-    }
-    return ['سنوية', 'مرضية', 'عارضة', 'بدون راتب', 'أمومة/أبوة', 'أخرى'];
-  }, []);
+  const [dynamicLeaveTypes, setDynamicLeaveTypes] = useState<string[]>(() => {
+    const local = MasterDataService.getMasterData('HR', 'LEAVE_TYPES').filter(item => item.isActive !== false).map(item => item.nameAr);
+    return local.length ? local : ['سنوية', 'مرضية', 'عارضة', 'بدون راتب', 'أمومة/أبوة', 'أخرى'];
+  });
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      const capability = await masterDataAuthoritativeService.capability(currentUser);
+      if (!active || !capability.success || !capability.available) return;
+      const result = await masterDataAuthoritativeService.list(currentUser);
+      const names = (result.data || []).filter(item => item.category === 'HR' && item.typeKey === 'LEAVE_TYPES' && item.isActive !== false).map(item => item.nameAr);
+      if (active && names.length) setDynamicLeaveTypes(names);
+    })();
+    return () => { active = false; };
+  }, [currentUser?.sessionToken, currentUser?.activeSchoolId, currentUser?.schoolId]);
 
   const permissionTypes = [
     'إذن خروج مؤقت',
