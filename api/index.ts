@@ -892,6 +892,20 @@ export const ntssHandler = {
         const reportTypes=new Set(['TEACHER_VISIT','DAILY_REPORT','COMPREHENSIVE_EVALUATION']);
         const allowedTypes=new Set([...reportTypes,'CORRECTIVE_ACTION','QUALITY_STANDARD']);
         const recordType=String(data.recordType||body.recordType||'').toUpperCase();
+        if(action==='metrics'){
+          const q=await pool.query(\`SELECT record_type,payload,approved_at,updated_at FROM quality_records WHERE school_id=$1 AND upper(status)='APPROVED' AND record_type=ANY($2::text[]) ORDER BY updated_at DESC\`,[schoolId,Array.from(reportTypes)]);
+          const scoreOf=(row:any):number|null=>{
+            const payload=row?.payload||{};
+            const candidates=[payload.percentage,payload.overallScore,payload.averageScore,payload.score];
+            for(const candidate of candidates){const n=Number(candidate);if(Number.isFinite(n)&&n>=0&&n<=100)return n;}
+            return null;
+          };
+          const scores=q.rows.map(scoreOf).filter((value:number|null):value is number=>value!==null);
+          const value=scores.length?Number((scores.reduce((sum:number,n:number)=>sum+n,0)/scores.length).toFixed(2)):null;
+          const dates=q.rows.map((row:any)=>row.approved_at||row.updated_at).filter(Boolean).map((value:any)=>new Date(value)).filter((value:Date)=>!Number.isNaN(value.getTime())).sort((a:Date,b:Date)=>a.getTime()-b.getTime());
+          const period=dates.length?{from:dates[0].toISOString(),to:dates[dates.length-1].toISOString()}:null;
+          return json({status:'success',data:{value,sampleSize:scores.length,period,status:scores.length?'AVAILABLE':'N/A'}},200,corsOrigin);
+        }
         if(action==='list'){
           const params:any[]=[schoolId]; let sql='SELECT * FROM quality_records WHERE school_id=$1';
           if(recordType){if(!allowedTypes.has(recordType))return respond({status: 'error',code:'INVALID_RECORD_TYPE'},400,corsOrigin);params.push(recordType);sql+=' AND record_type=$2';}
