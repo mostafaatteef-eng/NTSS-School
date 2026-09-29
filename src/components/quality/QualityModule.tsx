@@ -45,7 +45,11 @@ export const QualityModule: React.FC<QualityModuleProps> = ({ currentUser }) => 
 
   // School isolation
   const activeSchool = storageService.getActiveSchool();
-  const schoolId = activeSchool?.schoolId || currentUser?.schoolId || 'SCH-01';
+  // Quality is school-scoped. Never fall back to a fabricated/default tenant:
+  // SystemAdmin must explicitly select a school and school users must carry one.
+  const schoolId = currentUser?.role === 'SystemAdmin'
+    ? (currentUser?.activeSchoolId || activeSchool?.schoolId || '')
+    : (currentUser?.schoolId || activeSchool?.schoolId || '');
 
   // State data
   const [standards, setStandards] = useState<QualityStandard[]>([]);
@@ -82,6 +86,15 @@ export const QualityModule: React.FC<QualityModuleProps> = ({ currentUser }) => 
 
   // Load all Quality module data for current school
   const loadData = async () => {
+    if (!schoolId) {
+      setStandards([]);
+      setDailyReports([]);
+      setTeacherVisits([]);
+      setEvaluations([]);
+      setActions([]);
+      setMetrics(null);
+      return;
+    }
     let stds = storageService.getQualityStandards(schoolId);
     let daily = storageService.getDailyQualityReports(schoolId);
     let visits = storageService.getTeacherVisitReports(schoolId);
@@ -123,6 +136,12 @@ export const QualityModule: React.FC<QualityModuleProps> = ({ currentUser }) => 
         icon={<span className="rounded-xl bg-teal-50 p-2 text-[#008e8b]"><Award className="h-5 w-5" /></span>}
         actions={<button onClick={loadData} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50" title="تحديث البيانات"><RefreshCw className="h-4 w-4" />تحديث</button>}
       />
+
+      {!schoolId && currentUser?.role === 'SystemAdmin' && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-800">
+          اختر مدرسة من مبدّل المدارس أولاً لعرض بيانات الجودة وزيارات المعلمين.
+        </div>
+      )}
 
       {/* Sub-Tabs Navigation */}
       <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 pb-2">
