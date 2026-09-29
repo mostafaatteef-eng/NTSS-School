@@ -630,6 +630,50 @@ export const ntssHandler = {
         return json({status:'success',message:'تم تحديث الحساب.',user:await project(u.rows[0])},200,corsOrigin);
       }
 
+      if (request.method === 'POST' && path === '/samat/manage') {
+        const body: any = await request.json();
+        const action = String(body.action || '');
+        const data: any = body.data || {};
+        const schoolId = String(body.schoolId || buildRequestContext(user).activeSchoolId).trim();
+        if (!(await canAccessSchool(user, schoolId))) return respond({ status:'error', code:'FORBIDDEN' },403,corsOrigin);
+        const allowedRoles = new Set(['SystemAdmin','Admin','SchoolAdmin','SchoolDirector','StudentAffairs','SocialSpecialist','TrainingOfficer','QualityOfficer']);
+        if (!allowedRoles.has(String(user.role || ''))) return respond({ status:'error', code:'FORBIDDEN' },403,corsOrigin);
+        const actionTypes: Record<string,string> = {
+          saveSamatSkillAssessment: 'SKILL_ASSESSMENT',
+          saveSamatDisciplineRecord: 'DISCIPLINE',
+          saveSamatExcellenceRecord: 'EXCELLENCE',
+        };
+        if (action === 'getSamatRecords') {
+          const rows = await pool.query('SELECT id,school_id,student_id,record_type,record_date,payload FROM samat_records WHERE school_id=$1 ORDER BY record_date DESC NULLS LAST,updated_at DESC',[schoolId]);
+          const grouped: any = { samatSkillAssessments:[], samatDisciplineRecords:[], samatExcellenceRecords:[] };
+          for (const row of rows.rows) {
+            const item = { ...(row.payload || {}), id:row.id, schoolId:row.school_id, studentId:row.student_id, date:row.record_date ? String(row.record_date).slice(0,10) : (row.payload?.date || '') };
+            if (row.record_type === 'SKILL_ASSESSMENT') grouped.samatSkillAssessments.push(item);
+            else if (row.record_type === 'DISCIPLINE') grouped.samatDisciplineRecords.push(item);
+            else if (row.record_type === 'EXCELLENCE') grouped.samatExcellenceRecords.push(item);
+          }
+          return json({ status:'success', data:grouped },200,corsOrigin);
+        }
+        const recordType = actionTypes[action];
+        if (!recordType) return respond({ status:'error', code:'ACTION_NOT_MIGRATED' },400,corsOrigin);
+        const id = String(data.id || '').trim();
+        const studentId = String(data.studentId || '').trim();
+        if (!id || !studentId) return respond({ status:'error', code:'INVALID_SAMAT_RECORD' },400,corsOrigin);
+        const student = await pool.query('SELECT 1 FROM students WHERE school_id=$1 AND id=$2 LIMIT 1',[schoolId,studentId]);
+        if (!student.rowCount) return respond({ status:'error', code:'STUDENT_NOT_FOUND' },404,corsOrigin);
+        const recordDate = String(data.date || '').slice(0,10);
+        const payload = JSON.stringify({ ...data, schoolId });
+        const saved = await pool.query(
+          `INSERT INTO samat_records(id,school_id,student_id,record_type,record_date,payload,created_by)
+           VALUES($1,$2,$3,$4,NULLIF($5,'')::date,$6::jsonb,$7)
+           ON CONFLICT(school_id,id) DO UPDATE SET student_id=EXCLUDED.student_id,record_type=EXCLUDED.record_type,record_date=EXCLUDED.record_date,payload=EXCLUDED.payload,updated_at=now()
+           RETURNING id`,
+          [id,schoolId,studentId,recordType,recordDate,payload,user.user_id]
+        );
+        await pool.query('INSERT INTO audit_logs(school_id,user_id,username,role,action,entity,target_id,details) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[schoolId,user.user_id,user.email,user.role,'UPSERT','SAMAT_'+recordType,id,'Saved through Neon API']);
+        return saved.rowCount ? json({ status:'success', message:'تم حفظ سجل سمات في PostgreSQL.' },200,corsOrigin) : respond({ status:'error', code:'SAMAT_WRITE_REJECTED' },409,corsOrigin);
+      }
+
       if (request.method === 'POST' && path === '/settings/manage') {
         const body: any=await request.json(); const action=String(body.action||''); const data:any=body.data||{};
         const schoolId=String(body.schoolId||buildRequestContext(user).activeSchoolId).trim();
