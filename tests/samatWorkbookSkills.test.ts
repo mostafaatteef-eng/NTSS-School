@@ -1,0 +1,4 @@
+import fs from'node:fs';import{describe,expect,it}from'vitest';
+describe('Samat workbook skill model',()=>{const d=fs.readFileSync('src/data/initialData.ts','utf8');const t=fs.readFileSync('src/types.ts','utf8');
+it('preserves the twelve workbook skills and score scale',()=>{for(const x of ['التفكير الابداعى والابتكارى','التفكير الناقد','حل المشكلات','التعاون والعمل الجماعى','التفاوض','صنع القرار واتخاذ القرار','التكيف','الانضباط والتقييم الذاتي','التواصل وبناء العلاقات الاحترافية','قبول التنوع','التعاطف','المشاركة'])expect(d).toContain(x);expect(d).toContain('[0, 2, 4, 6, 8, 10]');});
+it('keeps discipline excellence and monthly bonus as distinct source models',()=>{for(const x of ['SamatDisciplineRecord','SamatExcellenceRecord','nominationSourceAndReason'])expect(t).toContain(x);for(const m of ['Sep','Oct','Nov','Dec','Jan','Feb','Mar','Apr','May'])expect(d).toContain(m);});});
