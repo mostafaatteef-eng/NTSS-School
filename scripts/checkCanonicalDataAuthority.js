@@ -31,6 +31,14 @@ for (const getter of ['getUatTestCases','getUatRoleSignoffs','getPilotMetrics','
   if (!block.includes('isPostgresBackendEnabled()')) throw new Error(getter + ' must suppress local seeded operational data in PostgreSQL mode.');
 }
 
+const rollbackStart = operations.indexOf('public static executeRollbackSafetySnapshot');
+const rollbackEnd = operations.indexOf('public static evaluateGoLiveDecision', rollbackStart);
+const rollbackBlock = operations.slice(rollbackStart, rollbackEnd);
+if (!rollbackBlock.includes('LEGACY_LOCAL_ROLLBACK_SNAPSHOT_DISABLED')) throw new Error('Local rollback snapshots must be disabled under PostgreSQL authority.');
+const readinessStart = operations.indexOf('public static evaluateGoLiveDecision');
+const readinessBlock = operations.slice(readinessStart);
+if (!readinessBlock.includes('PRODUCTION_READINESS_EVIDENCE_UNAVAILABLE')) throw new Error('Production readiness must fail closed without authoritative evidence.');
+
 console.log('Canonical data authority guard passed.');
 
 const app = fs.readFileSync('src/App.tsx','utf8');
