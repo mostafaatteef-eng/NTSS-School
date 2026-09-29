@@ -909,34 +909,6 @@ export const ntssHandler = {
         const schoolId=String(body.schoolId||user.active_school_id||user.school_id||'').trim();
         if(!(await canAccessSchool(user,schoolId))) return respond({status: 'error',code:'FORBIDDEN'},403,corsOrigin);
         const role=String(user.role||'');
-        if(action==='create') {
-          const canCreate=new Set(['SystemAdmin','Admin','SchoolAdmin','SchoolDirector','StudentAffairs','TeacherAffairs']);
-          if(!canCreate.has(role)) return respond({status:'error',code:'FORBIDDEN'},403,corsOrigin);
-          const data:any=body.data||{};
-          const type=String(data.type||'SYSTEM_ALERT').trim(), category=String(data.category||'System').trim();
-          const title=String(data.title||'').trim(), message=String(data.message||'').trim();
-          if(!title||!message) return respond({status:'error',code:'NOTIFICATION_CONTENT_REQUIRED'},400,corsOrigin);
-          const targetUserId=String(data.targetUserId||'').trim()||null;
-          const targetRole=String(data.targetRole||'ALL').trim()||'ALL';
-          const targetStudentId=String(data.targetStudentId||'').trim()||null;
-          if(targetUserId) {
-            const target=await pool.query('SELECT 1 FROM users WHERE id=$1 AND (school_id=$2 OR $3=$1) LIMIT 1',[targetUserId,schoolId,userId]);
-            if(!target.rowCount) return respond({status:'error',code:'INVALID_NOTIFICATION_TARGET'},409,corsOrigin);
-          }
-          const id=String(data.id||'').trim()||'NOTIF-'+crypto.randomBytes(8).toString('hex').toUpperCase();
-          const dedup=String(data.deduplicationKey||'').trim()||null;
-          const q=await pool.query(`INSERT INTO notifications(id,school_id,type,category,title,message,target_user_id,target_role,target_student_id,related_entity,related_entity_id,priority,action_url,created_by_system,deduplication_key,expires_at)
-            VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,false,$14,NULLIF($15,'')::timestamptz)
-            ON CONFLICT(school_id,deduplication_key) WHERE deduplication_key IS NOT NULL DO NOTHING RETURNING *`,
-            [id,schoolId,type,category,title,message,targetUserId,targetRole,targetStudentId,String(data.relatedEntity||'')||null,String(data.relatedEntityId||'')||null,String(data.priority||'NORMAL'),String(data.actionUrl||'')||null,dedup,String(data.expiresAt||'')]);
-          if(!q.rowCount && dedup) {
-            const existing=await pool.query('SELECT id FROM notifications WHERE school_id=$1 AND deduplication_key=$2 LIMIT 1',[schoolId,dedup]);
-            return json({status:'success',data:{id:existing.rows[0]?.id},deduplicated:true},200,corsOrigin);
-          }
-          if(!q.rowCount) return respond({status:'error',code:'NOTIFICATION_WRITE_REJECTED'},409,corsOrigin);
-          await pool.query('INSERT INTO audit_logs(school_id,user_id,username,role,action,entity,target_id,details) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[schoolId,user.user_id,user.email,user.role,'CREATE','NOTIFICATION',q.rows[0].id,title]);
-          return json({status:'success',data:{id:q.rows[0].id},deduplicated:false},200,corsOrigin);
-        }
         if(action==='list') {
           if(!['SystemAdmin','Admin','SchoolAdmin','SchoolDirector','HR','TeacherAffairs'].includes(role)) return respond({status: 'error',code:'FORBIDDEN'},403,corsOrigin);
           const limit=Math.min(500,Math.max(1,Number(body.limit)||200));
@@ -967,6 +939,34 @@ export const ntssHandler = {
         }
         const userId=String(user.user_id||'');
         const role=String(user.role||'');
+        if(action==='create') {
+          const canCreate=new Set(['SystemAdmin','Admin','SchoolAdmin','SchoolDirector','StudentAffairs','TeacherAffairs']);
+          if(!canCreate.has(role)) return respond({status:'error',code:'FORBIDDEN'},403,corsOrigin);
+          const data:any=body.data||{};
+          const type=String(data.type||'SYSTEM_ALERT').trim(), category=String(data.category||'System').trim();
+          const title=String(data.title||'').trim(), message=String(data.message||'').trim();
+          if(!title||!message) return respond({status:'error',code:'NOTIFICATION_CONTENT_REQUIRED'},400,corsOrigin);
+          const targetUserId=String(data.targetUserId||'').trim()||null;
+          const targetRole=String(data.targetRole||'ALL').trim()||'ALL';
+          const targetStudentId=String(data.targetStudentId||'').trim()||null;
+          if(targetUserId) {
+            const target=await pool.query('SELECT 1 FROM users WHERE id=$1 AND (school_id=$2 OR id=$3) LIMIT 1',[targetUserId,schoolId,userId]);
+            if(!target.rowCount) return respond({status:'error',code:'INVALID_NOTIFICATION_TARGET'},409,corsOrigin);
+          }
+          const id=String(data.id||'').trim()||'NOTIF-'+crypto.randomBytes(8).toString('hex').toUpperCase();
+          const dedup=String(data.deduplicationKey||'').trim()||null;
+          const q=await pool.query(`INSERT INTO notifications(id,school_id,type,category,title,message,target_user_id,target_role,target_student_id,related_entity,related_entity_id,priority,action_url,created_by_system,deduplication_key,expires_at)
+            VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,false,$14,NULLIF($15,'')::timestamptz)
+            ON CONFLICT(school_id,deduplication_key) WHERE deduplication_key IS NOT NULL DO NOTHING RETURNING id`,
+            [id,schoolId,type,category,title,message,targetUserId,targetRole,targetStudentId,String(data.relatedEntity||'')||null,String(data.relatedEntityId||'')||null,String(data.priority||'NORMAL'),String(data.actionUrl||'')||null,dedup,String(data.expiresAt||'')]);
+          if(!q.rowCount && dedup) {
+            const existing=await pool.query('SELECT id FROM notifications WHERE school_id=$1 AND deduplication_key=$2 LIMIT 1',[schoolId,dedup]);
+            return json({status:'success',data:{id:existing.rows[0]?.id},deduplicated:true},200,corsOrigin);
+          }
+          if(!q.rowCount) return respond({status:'error',code:'NOTIFICATION_WRITE_REJECTED'},409,corsOrigin);
+          await pool.query('INSERT INTO audit_logs(school_id,user_id,username,role,action,entity,target_id,details) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[schoolId,user.user_id,user.email,user.role,'CREATE','NOTIFICATION',q.rows[0].id,title]);
+          return json({status:'success',data:{id:q.rows[0].id},deduplicated:false},200,corsOrigin);
+        }
         if(action==='list') {
           const q=await pool.query(`SELECT n.*, (nr.user_id IS NOT NULL) AS is_read, nr.read_at
             FROM notifications n
