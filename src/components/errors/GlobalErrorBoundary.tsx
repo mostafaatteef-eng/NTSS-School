@@ -1,4 +1,4 @@
-import React, { Component, type ErrorInfo, type ReactNode } from 'react';
+import React, { type ErrorInfo, type ReactNode } from 'react';
 
 interface GlobalErrorBoundaryProps {
   children: ReactNode;
@@ -12,7 +12,7 @@ interface GlobalErrorBoundaryState {
 const createRequestId = () =>
   `ui-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
-export class GlobalErrorBoundary extends Component<
+export class GlobalErrorBoundary extends React.Component<
   GlobalErrorBoundaryProps,
   GlobalErrorBoundaryState
 > {
