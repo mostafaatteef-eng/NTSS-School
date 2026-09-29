@@ -58,6 +58,17 @@ describe('Portable API CORS contract', () => {
     }));
     expect(response.status).toBe(403);
   });
+  it('preserves a caller request id on rejected requests for log correlation', async () => {
+    const { ntssHandler } = await import('../api/index');
+    const response = await ntssHandler.fetch(new Request('https://api.example.test/api/schools', {
+      headers: { Origin: 'https://evil.example', 'x-request-id': 'trace-quality-001' },
+    }));
+    expect(response.status).toBe(403);
+    expect(response.headers.get('x-request-id')).toBe('trace-quality-001');
+    const body=await response.json() as any;
+    expect(body.requestId).toBe('trace-quality-001');
+  });
+
   it('adds a traceable request id to API errors without breaking existing error fields', async () => {
     const { ntssHandler } = await import('../api/index');
     const response = await ntssHandler.fetch(new Request('https://api.example.test/api/schools', {
