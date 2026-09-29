@@ -36,11 +36,15 @@ export const ReserveManagementView: React.FC = () => {
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [selectedPeriod, setSelectedPeriod] = useState<number>(1);
   const [selectedAbsentTeacherId, setSelectedAbsentTeacherId] = useState<string>('');
-  const [selectedClassroom, setSelectedClassroom] = useState<string>('1/1');
-  const classroomOptions = storageService.getClassrooms().map(c => ({
-    id: String((c as any).id || (c as any).name || (c as any).displayName || ''),
-    name: String((c as any).name || (c as any).displayName || (c as any).id || ''),
+  const configuredGrades = storageService.getGrades();
+  const configuredClassrooms = storageService.getClassrooms();
+  const classroomOptions = configuredClassrooms.map(c => ({
+    id: String((c as any).id || (c as any).displayName || (c as any).classroomNumber || ''),
+    name: String((c as any).displayName || (c as any).name || (c as any).classroomNumber || (c as any).id || ''),
+    gradeId: String((c as any).gradeId || ''),
+    gradeName: String((c as any).gradeName || configuredGrades.find(g => g.id === (c as any).gradeId)?.name || ''),
   })).filter(c => c.id);
+  const [selectedClassroom, setSelectedClassroom] = useState<string>(() => classroomOptions[0]?.id || '');
   const [selectedSubject, setSelectedSubject] = useState<string>('العلوم التقنية التخصصية');
   const [absenceReason, setAbsenceReason] = useState<string>('غياب بعذر');
 
@@ -101,14 +105,20 @@ export const ReserveManagementView: React.FC = () => {
     const dayMap = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
     const dayName = dayMap[d.getDay()] || 'الأحد';
 
+    const selectedClassroomData = classroomOptions.find(c => c.id === selectedClassroom);
+    if (!selectedClassroomData) {
+      setIsAssigning(false);
+      return;
+    }
+
     const sub: ReserveSubstitutionAssignment = {
       id: `SUB-${Date.now()}`,
       date: selectedDate,
       dayOfWeek: dayName,
       periodNumber: selectedPeriod,
       classroomId: selectedClassroom,
-      classroomName: `فصل ${selectedClassroom}`,
-      gradeName: selectedClassroom.startsWith('1') ? 'الصف الأول الثانوي' : 'الصف الثاني الثانوي',
+      classroomName: selectedClassroomData.name,
+      gradeName: selectedClassroomData.gradeName,
       subjectName: selectedSubject,
       originalTeacherId: selectedAbsentTeacherId,
       originalTeacherCode: teachers.find(t => t.id === selectedAbsentTeacherId)?.teacherCode,
@@ -240,7 +250,7 @@ export const ReserveManagementView: React.FC = () => {
                   onChange={e => setSelectedClassroom(e.target.value)}
                   className="w-full border border-slate-300 rounded-lg p-2 text-xs font-medium"
                 >
-                  {(classroomOptions.length ? classroomOptions : [{ id: '1/1', name: '1/1' }]).map(c => (
+                  {classroomOptions.map(c => (
                     <option key={c.id} value={c.id}>فصل {c.name}</option>
                   ))}
                 </select>
