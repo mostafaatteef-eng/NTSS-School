@@ -156,6 +156,29 @@ function hasBackendPermission(context: RequestContext, permission: BackendPermis
   return BACKEND_ROLE_POLICIES[permission].has(context.role as never);
 }
 
+async function resolveAllowedSchoolIds(user: any): Promise<string[]> {
+  if (user?.role === 'Student' && user?.access_scope === 'SELF') {
+    return user?.school_id ? [String(user.school_id)] : [];
+  }
+  if (user?.access_scope === 'GLOBAL') {
+    const result = await pool.query("SELECT id AS school_id FROM schools WHERE status='ACTIVE' ORDER BY id");
+    return result.rows.map((row:any)=>String(row.school_id)).filter(Boolean);
+  }
+  const result = await pool.query("SELECT usa.school_id FROM user_school_access usa JOIN schools s ON s.id=usa.school_id WHERE usa.user_id=$1 AND s.status='ACTIVE' ORDER BY usa.school_id",[user?.user_id]);
+  const ids=result.rows.map((row:any)=>String(row.school_id)).filter(Boolean);
+  const home=String(user?.school_id||'').trim();
+  return home&&!ids.includes(home)?[home,...ids]:ids;
+}
+
+async function resolveRequestContext(user:any):Promise<RequestContext>{
+  const context=buildRequestContext(user);
+  const allowedSchoolIds=await resolveAllowedSchoolIds(user);
+  const activeSchoolId=allowedSchoolIds.includes(context.activeSchoolId)
+    ? context.activeSchoolId
+    : (allowedSchoolIds.includes(context.homeSchoolId)?context.homeSchoolId:(allowedSchoolIds[0]||''));
+  return {...context,allowedSchoolIds,activeSchoolId};
+}
+
 async function canAccessSchool(user: any, schoolId: string) {
   if (!schoolId) return false;
   if (user.access_scope === 'GLOBAL') {
