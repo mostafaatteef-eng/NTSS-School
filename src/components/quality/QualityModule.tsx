@@ -127,6 +127,14 @@ export const QualityModule: React.FC<QualityModuleProps> = ({ currentUser }) => 
       stds=[]; daily=[]; visits=[]; evals=[]; acts=[]; setTeachers([]);
     }
     const met = storageService.getQualityMetricOverview(schoolId,{ daily,visits,evals,actions:acts,standards:stds });
+    try {
+      met.overallQualityKpi = await storageService.getAuthoritativeQualityKpi(schoolId);
+      met.overallQualityScore = met.overallQualityKpi.value;
+    } catch (error) {
+      console.error('Authoritative quality KPI load failed',error);
+      met.overallQualityKpi = { value:null, sampleSize:0, period:null, status:'N/A' };
+      met.overallQualityScore = null;
+    }
 
     setStandards(stds);
     setDailyReports(daily);
