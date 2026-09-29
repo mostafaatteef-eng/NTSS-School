@@ -50,33 +50,6 @@ jobs:
         with:
           path: ./dist
 
-  deploy-vercel:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Trigger Vercel Production deployment
-        env:
-          VERCEL_DEPLOY_HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK }}
-        run: |
-          test -n "$VERCEL_DEPLOY_HOOK" || { echo "VERCEL_DEPLOY_HOOK secret is missing"; exit 1; }
-          RESPONSE="$(curl --fail-with-body --retry 3 --retry-all-errors --silent --show-error -X POST "$VERCEL_DEPLOY_HOOK")"
-          echo "$RESPONSE"
-          JOB_ID="$(node -e 'const d=JSON.parse(process.argv[1]); process.stdout.write(d.job?.id || "")' "$RESPONSE")"
-          test -n "$JOB_ID" || { echo "Vercel deploy hook did not return a job id"; exit 1; }
-          echo "Vercel deploy hook accepted job: $JOB_ID"
-          # Deploy hooks are asynchronous and return only a job id. Give Vercel time to build,
-          # then verify the canonical production API instead of assuming the hook response is a completed deploy.
-          for attempt in $(seq 1 30); do
-            sleep 10
-            CANONICAL_STATUS="$(curl --silent --show-error -o /dev/null -w '%{http_code}' https://ntss-school.vercel.app/api/validate-session -X OPTIONS)"
-            echo "Canonical production API status: $CANONICAL_STATUS"
-            if [ "$CANONICAL_STATUS" = "204" ] || [ "$CANONICAL_STATUS" = "200" ]; then
-              exit 0
-            fi
-          done
-          echo "Canonical production API did not become healthy after Vercel deploy hook job $JOB_ID"
-          exit 1
-
   deploy:
     needs: build
     runs-on: ubuntu-latest
