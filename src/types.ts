@@ -962,6 +962,57 @@ export type SeverityLevel =
 
 export type SamatTraitKey = 'SELF_LEADERSHIP' | 'RESPONSIBILITY' | 'RESPECT' | 'SAFETY' | 'INTEGRITY' | 'COOPERATION' | 'LEARNING';
 
+export type SamatSkillScore = 0 | 2 | 4 | 6 | 8 | 10;
+
+export interface SamatSkillDefinition {
+  id: string;
+  name: string;
+  sortOrder: number;
+}
+
+export interface SamatSkillAssessment {
+  id: string;
+  studentId: string;
+  studentName?: string;
+  grade?: string;
+  classroom?: string;
+  skillId: string;
+  skillName: string;
+  score: SamatSkillScore;
+  evidence?: string;
+  date: string;
+  recordedBy?: string;
+}
+
+export interface SamatDisciplineRecord {
+  id: string;
+  studentId: string;
+  studentName?: string;
+  grade?: string;
+  classroom?: string;
+  item: string;
+  points: number;
+  date: string;
+  month?: string;
+  notes?: string;
+}
+
+export interface SamatExcellenceRecord {
+  id: string;
+  studentId: string;
+  studentName?: string;
+  grade?: string;
+  classroom?: string;
+  excellenceItem: string;
+  points: number;
+  level?: SamatStudentLevel;
+  additionalBonus?: number;
+  date: string;
+  month?: string;
+  nominationSourceAndReason?: string;
+  notes?: string;
+}
+
 export interface SamatTraitDefinition {
   key: SamatTraitKey;
   name: string;
