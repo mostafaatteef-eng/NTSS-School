@@ -701,8 +701,9 @@ class StorageService {
     if (user && this.isAuthenticated(user)) {
       const sanitizedUser: User = { ...user };
       delete (sanitizedUser as any).password;
-      // PostgreSQL sessions are carried by Secure HttpOnly cookies. Never persist their bearer token.
-      if (isPostgresBackendEnabled()) delete (sanitizedUser as any).sessionToken;
+      // Keep the short-lived authoritative bearer token for cross-site deployments (for example
+      // GitHub Pages -> API host), where browsers may block third-party cookies. The backend still
+      // validates the token against the sessions table on every authoritative request.
       localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(sanitizedUser));
       localStorage.removeItem('ntss_current_user');
       this.logAudit('LOGIN', 'AUTH', `تسجيل دخول للمستخدم: ${sanitizedUser.fullName} (@${sanitizedUser.username})`);
