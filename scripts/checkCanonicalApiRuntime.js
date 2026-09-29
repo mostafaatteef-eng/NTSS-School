@@ -42,4 +42,16 @@ if (/json\(\{\s*status\s*:\s*['"]error['"]/.test(handlerBody)) {
   throw new Error('Canonical handler errors must use respond() so the request trace ID is preserved, including ternaries.');
 }
 
+const auditStart = canonicalApi.indexOf("path === '/audit/manage'");
+const notificationsStart = canonicalApi.indexOf("path === '/notifications/manage'");
+if (auditStart < 0 || notificationsStart < 0 || notificationsStart <= auditStart) throw new Error('Canonical audit/notification route boundaries are invalid.');
+const auditBlock = canonicalApi.slice(auditStart, notificationsStart);
+if (auditBlock.includes('NOTIFICATION_CONTENT_REQUIRED') || auditBlock.includes("INSERT INTO notifications")) {
+  throw new Error('Notification creation logic leaked into the audit route.');
+}
+const notificationsBlock = canonicalApi.slice(notificationsStart, canonicalApi.indexOf("path === '/master-data/manage'", notificationsStart));
+if (!notificationsBlock.includes("action==='create'") || !notificationsBlock.includes('INSERT INTO notifications')) {
+  throw new Error('Authoritative notification creation is missing from the notifications route.');
+}
+
 console.log('Canonical API runtime guard passed.');
