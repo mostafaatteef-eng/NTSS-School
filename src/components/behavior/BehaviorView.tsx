@@ -1081,10 +1081,13 @@ export const BehaviorView: React.FC = () => {
               <button onClick={()=>setProfileStudentId(null)} className="text-slate-400 hover:text-slate-700">✕</button>
             </div>
             {(() => { const score=storageService.calculateStudentBehaviorScore(profileStudent.id); return (
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
                 <div className="rounded-xl bg-slate-50 border border-slate-100 p-4"><div className="text-[11px] text-slate-500">الرصيد الحالي</div><div className="text-2xl font-black text-slate-900">{score.currentScore}%</div></div>
                 <div className="rounded-xl bg-teal-50 border border-teal-100 p-4"><div className="text-[11px] text-teal-700">مستوى سمات</div><div className="text-sm font-black text-teal-800 mt-1">{getSamatStudentLevel(score.currentScore)}</div></div>
-                <div className="rounded-xl bg-slate-50 border border-slate-100 p-4"><div className="text-[11px] text-slate-500">المواقف المسجلة</div><div className="text-2xl font-black text-slate-900">{profileTimeline.length}</div></div>
+                <div className="rounded-xl bg-blue-50 border border-blue-100 p-4"><div className="text-[11px] text-blue-700">متوسط المهارات</div><div className="text-xl font-black text-blue-800">{profileSkillAverage === null ? '—' : `${profileSkillAverage.toFixed(1)}/10`}</div></div>
+                <div className="rounded-xl bg-amber-50 border border-amber-100 p-4"><div className="text-[11px] text-amber-700">عدم الانضباط</div><div className="text-2xl font-black text-amber-800">{profileDisciplineRecords.length}</div></div>
+                <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-4"><div className="text-[11px] text-emerald-700">التميز والبونص</div><div className="text-2xl font-black text-emerald-800">{profileExcellenceRecords.length}</div></div>
+                <div className="rounded-xl bg-slate-50 border border-slate-100 p-4"><div className="text-[11px] text-slate-500">إجمالي السجل الزمني</div><div className="text-2xl font-black text-slate-900">{profileTimeline.length}</div></div>
               </div>
             ); })()}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
