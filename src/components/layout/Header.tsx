@@ -194,7 +194,7 @@ export const Header: React.FC<HeaderProps> = ({
                   )}
                 </div>
                 <div className="text-[10px] text-teal-700 font-semibold hidden sm:block">
-                  جمهورية مصر العربية • {settings.currentAcademicYear || '2026/2027'}
+                  جمهورية مصر العربية • {settings.currentAcademicYear || 'لم يتم تحديد العام الدراسي الحالي'}
                 </div>
               </div>
             )}
