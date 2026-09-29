@@ -96,6 +96,9 @@ function json(data: unknown, status = 200, origin = '', extraHeaders: Record<str
     'access-control-allow-headers': 'content-type, authorization',
     'access-control-allow-methods': 'GET,POST,OPTIONS',
     'access-control-allow-credentials': 'true',
+    'cache-control': 'no-store, no-cache, must-revalidate, private',
+    pragma: 'no-cache',
+    expires: '0',
     vary: 'Origin',
     ...extraHeaders,
   }});
