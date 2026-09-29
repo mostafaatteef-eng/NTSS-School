@@ -36,3 +36,7 @@ const hr = fs.readFileSync('src/services/hrService.ts','utf8');
 for (const guard of ['LEGACY_LOCAL_MONTH_CLOSING_DISABLED','LEGACY_LOCAL_MONTH_REOPEN_DISABLED','LEGACY_LOCAL_SALARY_MUTATION_DISABLED']) {
   if (!hr.includes(guard)) throw new Error(`HR legacy mutation guard missing: ${guard}`);
 }
+
+if (!storage.includes("'/audit/manage'")) throw new Error('Client audit events must be mirrored to authoritative PostgreSQL.');
+if (!storage.includes('getAuthoritativeAuditLogs')) throw new Error('Authoritative audit reader is missing.');
+if (!app.includes('getAuthoritativeAuditLogs(300)')) throw new Error('Displayed audit trail must refresh from PostgreSQL authority.');
