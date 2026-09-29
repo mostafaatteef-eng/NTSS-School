@@ -106,7 +106,7 @@ export const TimetableWeeklyMatrixView: React.FC<TimetableWeeklyMatrixViewProps>
     }
 
     if (viewMode === 'classroom') {
-      return item.classroom === selectedClassroom;
+      return String(item.classroomId || '') === selectedClassroom || String(item.classroom || '') === selectedClassroom;
     } else if (viewMode === 'teacher') {
       return item.teacherId === selectedTeacherId;
     } else if (viewMode === 'day') {
