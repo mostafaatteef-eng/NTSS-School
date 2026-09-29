@@ -58,6 +58,12 @@ jobs:
             -H 'Access-Control-Request-Headers: authorization'
           grep -qi '^access-control-allow-origin: https://mostafaatteef-eng.github.io' "$HEADERS"
           grep -qi '^access-control-allow-headers:.*authorization' "$HEADERS"
+          for ROUTE in schools system-overview; do
+            STATUS="$(curl --silent --show-error -o /dev/null -w '%{http_code}' "${API_URL}/api/${ROUTE}" \
+              -H 'Origin: https://mostafaatteef-eng.github.io' \
+              -H 'Authorization: Bearer ci-invalid-token')"
+            test "$STATUS" = "401"
+          done
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
