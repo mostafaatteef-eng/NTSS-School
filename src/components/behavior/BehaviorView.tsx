@@ -513,27 +513,78 @@ export const BehaviorView: React.FC = () => {
   };
 
   const handleExportExcel = () => {
-    const exportData = filteredViolations.map((v, idx) => ({
+    const wb = XLSX.utils.book_new();
+
+    const violationsSheet = filteredViolations.map((v, idx) => ({
       'م': idx + 1,
-      'تاريخ المخالفة': v.date,
+      'التاريخ': v.date,
       'كود الطالب': v.studentCode || v.studentId,
       'اسم الطالب': v.studentName,
-      'الصف الدراسي': v.grade,
+      'الصف': v.grade,
       'الفصل': v.classroom,
-      'بند المخالفة': v.violationName,
+      'الموقف / المخالفة': v.violationName,
       'درجة الخطورة': v.severity,
       'النقاط المخصومة': v.pointsDeducted,
       'الإجراء المتخذ': v.actionTaken || '',
       'إخطار ولي الأمر': v.parentNotified ? 'نعم' : 'لا',
-      'حالة الاعتماد': v.status || 'معتمدة',
+      'الحالة': v.status || 'معتمدة',
       'المسؤول': v.recordedBy || '',
       'ملاحظات': v.notes || '',
     }));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(violationsSheet), 'المواقف السلوكية');
 
-    const ws = XLSX.utils.json_to_sheet(exportData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'سجل المواقف السلوكية');
-    XLSX.writeFile(wb, `سجل_المخالفات_السلوكية_${getCairoCurrentDate()}.xlsx`);
+    const disciplineSheet = storageService.getSamatDisciplineRecords().map((row, idx) => ({
+      'م': idx + 1, 'التاريخ': row.date, 'اسم الطالب': row.studentName || row.studentId,
+      'الصف': row.grade || '', 'الفصل': row.classroom || '', 'حالة عدم الانضباط': row.item,
+      'النقاط': row.points, 'الشهر': row.month || '', 'ملاحظات': row.notes || '',
+    }));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(disciplineSheet), 'عدم الانضباط');
+
+    const excellenceSheet = storageService.getSamatExcellenceRecords().map((row, idx) => ({
+      'م': idx + 1, 'التاريخ': row.date, 'اسم الطالب': row.studentName || row.studentId,
+      'الصف': row.grade || '', 'الفصل': row.classroom || '', 'التميز / البونص': row.excellenceItem,
+      'النقاط': row.points, 'المستوى': row.level || '', 'البونص الإضافي': row.additionalBonus || 0,
+      'الشهر': row.month || '', 'جهة الترشيح وسبب المنح': row.nominationSourceAndReason || '', 'ملاحظات': row.notes || '',
+    }));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(excellenceSheet), 'التميز والبونص');
+
+    const skillsSheet = storageService.getSamatSkillAssessments().map((row, idx) => ({
+      'م': idx + 1, 'التاريخ': row.date, 'اسم الطالب': row.studentName || row.studentId,
+      'الصف': row.grade || '', 'الفصل': row.classroom || '', 'المهارة': row.skillName,
+      'الدرجة من 10': row.score, 'الدليل / الملاحظة': row.evidence || '', 'المسجل': row.recordedBy || '',
+    }));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(skillsSheet), 'تقييم المهارات');
+
+    const plansSheet = allImprovementPlans.map((plan, idx) => ({
+      'م': idx + 1, 'كود الخطة': plan.caseCode, 'اسم الطالب': plan.studentName,
+      'الصف': plan.grade, 'الفصل': plan.classroom, 'تاريخ الفتح': plan.openedDate,
+      'الحالة': plan.status, 'هدف الخطة': plan.summary,
+      'الرصيد عند الفتح': typeof plan.baselineScore === 'number' ? plan.baselineScore : '',
+      'الرصيد عند الإغلاق': typeof plan.closingScore === 'number' ? plan.closingScore : '',
+      'مقدار التحسن': typeof plan.improvementDelta === 'number' ? plan.improvementDelta : '',
+      'تاريخ الإغلاق': plan.closedDate || plan.closedAt || '', 'نتيجة الإغلاق': plan.resolutionSummary || '',
+    }));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(plansSheet), 'خطط التحسين');
+
+    const summarySheet = [
+      { 'المؤشر': 'إجمالي المواقف السلوكية', 'القيمة': stats.total },
+      { 'المؤشر': 'قيد التأسيس', 'القيمة': stats.foundation },
+      { 'المؤشر': 'مبتدئ', 'القيمة': stats.beginner },
+      { 'المؤشر': 'متمكن', 'القيمة': stats.proficient },
+      { 'المؤشر': 'قدوة حسنة', 'القيمة': stats.roleModel },
+      { 'المؤشر': 'المحترف', 'القيمة': stats.professional },
+      { 'المؤشر': 'سجلات عدم الانضباط', 'القيمة': schoolSamatSourceStats.disciplineCount },
+      { 'المؤشر': 'سجلات التميز والبونص', 'القيمة': schoolSamatSourceStats.excellenceCount },
+      { 'المؤشر': 'طلاب تم تقييم مهاراتهم', 'القيمة': schoolSamatSourceStats.assessedStudents },
+      { 'المؤشر': 'متوسط تقييم المهارات /10', 'القيمة': schoolSamatSourceStats.skillAverage === null ? '' : Number(schoolSamatSourceStats.skillAverage.toFixed(2)) },
+      { 'المؤشر': 'خطط تحسين مفتوحة', 'القيمة': planStats.open },
+      { 'المؤشر': 'متابعات متأخرة', 'القيمة': planStats.overdue },
+      { 'المؤشر': 'خطط مكتملة', 'القيمة': planStats.closed },
+      { 'المؤشر': 'متوسط التحسن في الخطط المكتملة', 'القيمة': planStats.averageImprovement === null ? '' : Number(planStats.averageImprovement.toFixed(2)) },
+    ];
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summarySheet), 'ملخص سمات');
+
+    XLSX.writeFile(wb, `تقرير_سمات_${getCairoCurrentDate()}.xlsx`);
   };
 
   return (
