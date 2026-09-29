@@ -1,4 +1,4 @@
-import React, { Component, type ErrorInfo, type ReactNode } from 'react';
+import React, { type ErrorInfo, type ReactNode } from 'react';
 
 interface ModuleErrorBoundaryProps {
   children: ReactNode;
@@ -14,7 +14,7 @@ interface ModuleErrorBoundaryState {
 const makeErrorId = () =>
   `module-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
-export class ModuleErrorBoundary extends Component<
+export class ModuleErrorBoundary extends React.Component<
   ModuleErrorBoundaryProps,
   ModuleErrorBoundaryState
 > {
