@@ -81,8 +81,9 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ onBackToLo
   const [homeworkSaveError, setHomeworkSaveError] = useState('');
   const [resourceSaveError, setResourceSaveError] = useState('');
   const [portalNotice, setPortalNotice] = useState('');
-  const portalClassrooms = Array.from(
-    new Map(
+  type PortalClassroom = { id: string; name: string; grade: string };
+  const portalClassrooms: PortalClassroom[] = Array.from(
+    new Map<string, PortalClassroom>(
       weeklySchedule
         .filter(item => item.classroomId || item.classroom)
         .map(item => {
