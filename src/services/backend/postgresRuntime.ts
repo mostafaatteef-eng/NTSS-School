@@ -22,6 +22,9 @@ export async function postgresApiRequest<T>(
   if (init.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
   // Bearer remains a temporary compatibility path only. Normal browser auth uses HttpOnly cookie.
   if (sessionToken) headers.set('Authorization', `Bearer ${sessionToken}`);
+  // Authoritative session-bound data must never be satisfied from browser/proxy cache.
+  headers.set('Cache-Control', 'no-cache');
+  headers.set('Pragma', 'no-cache');
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 15000);
@@ -36,6 +39,7 @@ export async function postgresApiRequest<T>(
     const response = await fetch(`${POSTGRES_API_URL}/api${path.startsWith('/') ? path : `/${path}`}`, {
       ...init,
       headers,
+      cache: 'no-store',
       credentials: 'include',
       signal: controller.signal,
     });
