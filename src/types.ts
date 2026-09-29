@@ -922,6 +922,8 @@ export interface PositiveBehaviorType {
   icon?: string;
   isActive: boolean;
   sortOrder?: number;
+  traitKey?: SamatTraitKey;
+  traitName?: string;
 }
 
 export interface BehaviorScoreLedger {
