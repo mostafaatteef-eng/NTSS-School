@@ -18,3 +18,9 @@ for (const scope of ['008','009','010','011','013','014','015']) {
   if (!guarded.includes(`runMigrationScope${scope}`)) throw new Error(`Migration scope ${scope} escaped the PostgreSQL legacy guard.`);
 }
 if (guarded.includes('runMigrationScope012RemoveLocalPasswords')) throw new Error('Security sanitation migration 012 should remain outside the legacy-only guard.');
+
+const qualityView = fs.readFileSync('src/components/quality/QualityModule.tsx','utf8');
+if (qualityView.includes('migrateLocalQualityToBackend(')) throw new Error('Quality UI must never auto-inject browser data into PostgreSQL.');
+for (const legacyRead of ['getQualityStandards(schoolId)','getDailyQualityReports(schoolId)','getTeacherVisitReports(schoolId)','getComprehensiveEvaluations(schoolId)','getCorrectiveActions(schoolId)']) {
+  if (qualityView.includes(legacyRead)) throw new Error(`Quality UI still treats browser data as Production authority: ${legacyRead}`);
+}
