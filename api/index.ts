@@ -896,6 +896,31 @@ export const ntssHandler = {
         return json({status:'success',data:{...q.rows[0].payload,id,status:q.rows[0].status}},200,corsOrigin);
       }
 
+      if (request.method === 'POST' && path === '/audit/manage') {
+        const body:any=await request.json();
+        const action=String(body.action||'');
+        const schoolId=String(body.schoolId||user.active_school_id||user.school_id||'').trim();
+        if(!(await canAccessSchool(user,schoolId))) return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);
+        const role=String(user.role||'');
+        if(action==='list') {
+          if(!['SystemAdmin','Admin','SchoolAdmin','SchoolDirector','HR','TeacherAffairs'].includes(role)) return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);
+          const limit=Math.min(500,Math.max(1,Number(body.limit)||200));
+          const q=await pool.query('SELECT id,school_id,user_id,username,role,action,entity,target_id,details,request_id,created_at FROM audit_logs WHERE school_id=$1 ORDER BY created_at DESC LIMIT $2',[schoolId,limit]);
+          return json({status:'success',data:q.rows.map((r:any)=>({id:String(r.id),schoolId:r.school_id,userId:r.user_id,username:r.username,userRole:r.role,action:r.action,entity:r.entity,targetId:r.target_id,details:r.details,requestId:r.request_id,timestamp:new Date(r.created_at).toISOString()}))},200,corsOrigin);
+        }
+        if(action==='append') {
+          const data=body.data||{};
+          const auditAction=String(data.action||'').trim();
+          if(!auditAction)return json({status:'error',code:'ACTION_REQUIRED'},400,corsOrigin);
+          const entity=String(data.entity||'SYSTEM').trim().slice(0,100);
+          const targetId=data.targetId?String(data.targetId).slice(0,200):null;
+          const details=String(data.details||'').slice(0,4000);
+          await pool.query('INSERT INTO audit_logs(school_id,user_id,username,role,action,entity,target_id,details) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[schoolId,user.user_id,user.email||user.username,user.role,auditAction,entity,targetId,details]);
+          return json({status:'success'},201,corsOrigin);
+        }
+        return json({status:'error',code:'ACTION_NOT_MIGRATED'},400,corsOrigin);
+      }
+
       if (request.method === 'POST' && path === '/notifications/manage') {
         const body:any=await request.json();
         const action=String(body.action||'');
