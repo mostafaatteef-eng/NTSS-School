@@ -908,9 +908,9 @@ export const ntssHandler = {
         const body:any=await request.json();
         const action=String(body.action||'');
         const data:any=body.data||{};
-        const requestContext=buildRequestContext(user);
+        const requestContext=await resolveRequestContext(user);
         const schoolId=String(body.schoolId||requestContext.activeSchoolId).trim();
-        if(!(await canAccessSchool(user,schoolId))) return respond({status: 'error',code:'FORBIDDEN'},403,corsOrigin);
+        if(!schoolId||!requestContext.allowedSchoolIds.includes(schoolId)) return respond({status: 'error',code:'FORBIDDEN'},403,corsOrigin);
         if(!hasBackendPermission(requestContext,'QUALITY_READ')) return respond({status: 'error',code:'FORBIDDEN'},403,corsOrigin);
         const reportTypes=new Set(['TEACHER_VISIT','DAILY_REPORT','COMPREHENSIVE_EVALUATION']);
         const allowedTypes=new Set([...reportTypes,'CORRECTIVE_ACTION','QUALITY_STANDARD']);
