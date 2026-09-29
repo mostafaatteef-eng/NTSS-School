@@ -97,7 +97,7 @@ export const TeacherLoadView: React.FC = () => {
   });
 
   const totalTeachers = loadList.length;
-  const avgLoad = totalTeachers > 0 ? (loadList.reduce((sum, t) => sum + t.totalCountedPeriods, 0) / totalTeachers).toFixed(1) : '0';
+  const avgLoad = totalTeachers > 0 ? (loadList.reduce((sum, t) => sum + t.countedWeeklyPeriods, 0) / totalTeachers).toFixed(1) : '0';
   const overloadCount = loadList.filter(t => t.loadStatus === 'OVERLOAD').length;
   const fullCount = loadList.filter(t => t.loadStatus === 'FULL' || t.loadStatus === 'NEAR_LIMIT').length;
 
@@ -105,14 +105,14 @@ export const TeacherLoadView: React.FC = () => {
     const rows = filteredList.map(t => ({
       'كود المعلم': t.teacherCode || '',
       'اسم المعلم': t.teacherName,
-      'النصاب المسند': t.assignedLoad,
+      'النصاب المسند': t.assignedPeriods,
       'الحصص المجدولة': t.scheduledBasePeriods,
       'احتياطي هذا الأسبوع': t.reservePeriodsThisWeek,
-      'إجمالي النصاب المحتسب': t.totalCountedPeriods,
-      'الحد الأقصى للنصاب': t.maxAllowedPeriods,
+      'إجمالي النصاب المحتسب': t.countedWeeklyPeriods,
+      'الحد الأقصى للنصاب': t.weeklyPeriodLimit || 30,
       'الطاقة المتبقية': t.remainingCapacity,
-      'نوبات الإشراف': t.supervisionCountThisWeek,
-      'رصيد الاحتياطي التراكمي': t.cumulativeReserveCount,
+      'نوبات الإشراف': t.supervisionCount,
+      'رصيد الاحتياطي التراكمي': t.historicalReserveCount,
       الحالة:
         t.loadStatus === 'OVERLOAD'
           ? 'نصاب زائد'
@@ -230,7 +230,7 @@ export const TeacherLoadView: React.FC = () => {
                 <tr key={t.teacherId} className="hover:bg-slate-50 transition">
                   <td className="p-3 font-mono font-bold text-teal-800">{t.teacherCode || '—'}</td>
                   <td className="p-3 font-bold text-slate-900">{t.teacherName}</td>
-                  <td className="p-3 text-center font-semibold text-slate-600">{t.assignedLoad}</td>
+                  <td className="p-3 text-center font-semibold text-slate-600">{t.assignedPeriods}</td>
                   <td className="p-3 text-center font-bold text-slate-800">{t.scheduledBasePeriods}</td>
                   <td className="p-3 text-center font-bold text-amber-700">{t.reservePeriodsThisWeek}</td>
                   <td className="p-3 text-center">
@@ -244,10 +244,10 @@ export const TeacherLoadView: React.FC = () => {
                               ? 'bg-amber-500'
                               : 'bg-indigo-600'
                           }`}
-                          style={{ width: `${Math.min((t.totalCountedPeriods / 30) * 100, 100)}%` }}
+                          style={{ width: `${Math.min((t.countedWeeklyPeriods / 30) * 100, 100)}%` }}
                         />
                       </div>
-                      <span className="font-mono font-bold">{t.totalCountedPeriods}</span>
+                      <span className="font-mono font-bold">{t.countedWeeklyPeriods}</span>
                     </div>
                   </td>
                   <td className="p-3 text-center font-bold">
@@ -255,12 +255,12 @@ export const TeacherLoadView: React.FC = () => {
                       {t.remainingCapacity}
                     </span>
                   </td>
-                  <td className="p-3 text-center text-slate-600">{t.supervisionCountThisWeek}</td>
-                  <td className="p-3 text-center font-mono font-semibold text-purple-700">{t.cumulativeReserveCount}</td>
+                  <td className="p-3 text-center text-slate-600">{t.supervisionCount}</td>
+                  <td className="p-3 text-center font-mono font-semibold text-purple-700">{t.historicalReserveCount}</td>
                   <td className="p-3 text-center">
                     {t.loadStatus === 'OVERLOAD' && (
                       <span className="inline-block px-2 py-0.5 rounded bg-rose-100 text-rose-800 font-bold">
-                        نصاب زائد (+{t.totalCountedPeriods - 30})
+                        نصاب زائد (+{t.countedWeeklyPeriods - 30})
                       </span>
                     )}
                     {t.loadStatus === 'FULL' && (
