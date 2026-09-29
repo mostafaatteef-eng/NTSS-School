@@ -685,13 +685,6 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
                 />
               </div>
 
-              {viewingReport.teacherFeedback?.trim() && (
-                <div className="rounded-xl border border-teal-100 bg-teal-50/60 p-4">
-                  <h4 className="text-xs font-bold text-teal-950 mb-1">انعكاس المعلم واتفاق المتابعة</h4>
-                  <p className="text-xs leading-6 text-teal-950/80 whitespace-pre-wrap">{viewingReport.teacherFeedback}</p>
-                </div>
-              )}
-
               {/* Footer */}
               <div className="flex items-center justify-between pt-4 border-t border-slate-200">
                 <button
