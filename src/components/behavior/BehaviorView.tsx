@@ -273,13 +273,13 @@ export const BehaviorView: React.FC = () => {
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-lg font-extrabold text-slate-900">لائحة الانضباط المدرسي وإدارة السلوك</h1>
+              <h1 className="text-lg font-extrabold text-slate-900">سمات | السلوك والمهارات والانضباط</h1>
               <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-50 text-amber-700 border border-amber-200">
-                القرار الوزاري للائحة الانضباط
+                منظومة سمات
               </span>
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
-              رصد المخالفات السلوكية، حسم نقاط السلوك آلياً، إدارة بنود وأوزان المخالفات، ومتابعة الحالات الحرجة
+              بناء سمات الطالب من خلال رصد السلوك والانضباط والتميز، وقياس الأثر والتدخل التربوي والمتابعة
             </p>
           </div>
         </div>
@@ -298,7 +298,7 @@ export const BehaviorView: React.FC = () => {
             className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
           >
             <Plus className="w-4 h-4" />
-            <span>تسجيل مخالفة جديدة</span>
+            <span>تسجيل موقف سلوكي</span>
           </button>
         </div>
       </div>
@@ -306,7 +306,7 @@ export const BehaviorView: React.FC = () => {
       {/* Stats Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs">
-          <div className="text-[11px] text-slate-500 font-bold">إجمالي المخالفات المسجلة</div>
+          <div className="text-[11px] text-slate-500 font-bold">إجمالي المواقف المسجلة</div>
           <div className="text-xl font-black text-slate-900 mt-1">{stats.total}</div>
           <div className="text-[10px] text-slate-400 mt-1">حالة مسجلة بالعام الحالي</div>
         </div>
