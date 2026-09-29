@@ -975,6 +975,7 @@ export interface SamatSkillDefinition {
 
 export interface SamatSkillAssessment {
   id: string;
+  schoolId?: string;
   studentId: string;
   studentName?: string;
   grade?: string;
@@ -989,6 +990,7 @@ export interface SamatSkillAssessment {
 
 export interface SamatDisciplineRecord {
   id: string;
+  schoolId?: string;
   studentId: string;
   studentName?: string;
   grade?: string;
@@ -1002,6 +1004,7 @@ export interface SamatDisciplineRecord {
 
 export interface SamatExcellenceRecord {
   id: string;
+  schoolId?: string;
   studentId: string;
   studentName?: string;
   grade?: string;
