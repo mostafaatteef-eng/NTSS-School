@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { beforeEach, describe, expect, it } from 'vitest';
 if(typeof globalThis.localStorage==='undefined'){const s=new Map<string,string>();(globalThis as any).localStorage={getItem:(k:string)=>s.get(k)??null,setItem:(k:string,v:string)=>s.set(k,String(v)),removeItem:(k:string)=>s.delete(k),clear:()=>s.clear(),key:(i:number)=>Array.from(s.keys())[i]??null,get length(){return s.size;}};}
 import { storageService } from '../src/services/storageService';
@@ -34,5 +35,15 @@ describe('Teacher Visit workflow integrity',()=>{
   ]));
   const r=storageService.saveTeacherVisitReport({teacherId:'EMP1',teacherName:'X',classroom:'1/1',subject:'Math',lessonTopic:'Fractions',visitDate:'2026-09-28',periodNumber:3,status:'DRAFT',standardScores:[{standardId:'S1',score:4},{standardId:'S2',score:0}] as any},admin);
   expect(r.success).toBe(true);expect(r.data?.percentage).toBe(75);expect(r.data?.overallScore).toBe(75);expect(r.data?.lessonTopic).toBe('Fractions');expect(r.data?.periodNumber).toBe(3);
+ });
+
+ it('does not dereference viewingReport inside the new-visit modal',()=>{
+  const source=readFileSync('src/components/quality/TeacherVisitReportSection.tsx','utf8');
+  const newModalStart=source.indexOf('{isModalOpen && (');
+  const viewModalStart=source.indexOf('{viewingReport && (',newModalStart);
+  expect(newModalStart).toBeGreaterThan(-1);
+  expect(viewModalStart).toBeGreaterThan(newModalStart);
+  const newModal=source.slice(newModalStart,viewModalStart);
+  expect(newModal).not.toContain('viewingReport.');
  });
 });
