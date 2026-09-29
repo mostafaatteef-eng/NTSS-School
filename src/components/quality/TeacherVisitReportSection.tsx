@@ -5,6 +5,7 @@ import {
   StandardScore,
   User,
   VisitType,
+  Employee,
 } from '../../types';
 import { storageService } from '../../services/storageService';
 import {
@@ -26,6 +27,7 @@ interface Props {
   onRefresh: () => void;
   canCreate: boolean;
   canApprove: boolean;
+  teachers: Employee[];
 }
 
 export const TeacherVisitReportSection: React.FC<Props> = ({
@@ -35,6 +37,7 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
   onRefresh,
   canCreate,
   canApprove,
+  teachers,
 }) => {
   const schoolId = storageService.getActiveSchoolId() || currentUser?.schoolId || '';
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -89,8 +92,8 @@ export const TeacherVisitReportSection: React.FC<Props> = ({
     ? scoredItems.reduce((sum, item) => sum + Number(item.score || 0), 0) / scoredItems.length
     : 0;
 
-  // Teachers list from storage
-  const allTeachers = storageService.getTeachers();
+  // Authoritative teacher list supplied by QualityModule from PostgreSQL employee management.
+  const allTeachers = teachers;
 
   const handleTeacherSelect = (tId: string) => {
     setTeacherId(tId);
