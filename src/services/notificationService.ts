@@ -23,39 +23,7 @@ export class NotificationService {
       }
     }
 
-    // Seed realistic initial notifications if empty
-    if (list.length === 0) {
-      const now = getCairoNowISO();
-      list = [
-        {
-          id: 'NOTIF-01',
-          type: 'HOMEWORK_NEW',
-          category: 'Homework',
-          title: 'واجب جديد: الرياضيات والجبر',
-          message: 'تم إضافة واجب تدريبات الدرس الثالث للصف الأول الثانوي، موعد التسليم غداً.',
-          priority: 'NORMAL',
-          targetRole: 'Parent',
-          isRead: false,
-          createdAt: now,
-          createdBySystem: true,
-          deduplicationKey: 'homework-seed-math-01',
-        },
-        {
-          id: 'NOTIF-02',
-          type: 'STUDENT_ABSENCE',
-          category: 'Attendance',
-          title: 'تنبيه غياب طالب',
-          message: 'تم تسجيل غياب في طابور الصباح اليوم بدون إذن مسبق.',
-          priority: 'HIGH',
-          targetRole: 'StudentAffairs',
-          isRead: false,
-          createdAt: now,
-          createdBySystem: true,
-          deduplicationKey: 'attendance-seed-abs-02',
-        },
-      ];
-      localStorage.setItem(this.getStorageKey(), JSON.stringify(list));
-    }
+    // Empty means empty: never manufacture production notifications in the browser.
 
     return list.filter(n => {
       if (currentUserId && n.targetUserId && n.targetUserId !== currentUserId) {
