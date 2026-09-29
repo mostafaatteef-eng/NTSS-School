@@ -53,6 +53,10 @@ export const BehaviorView: React.FC = () => {
   const [planGoal, setPlanGoal] = useState('');
   const [planAction, setPlanAction] = useState('');
   const [planFollowUpDate, setPlanFollowUpDate] = useState('');
+  const [followupCaseId, setFollowupCaseId] = useState<string | null>(null);
+  const [followupResult, setFollowupResult] = useState('');
+  const [followupNextAction, setFollowupNextAction] = useState('');
+  const [followupNextDate, setFollowupNextDate] = useState('');
 
   const [activeSubTab, setActiveSubTab] = useState<'violations' | 'positive' | 'types_manager' | 'at_risk'>('violations');
 
@@ -137,6 +141,7 @@ export const BehaviorView: React.FC = () => {
   }, [violations, behaviorTypes]);
 
   const profileStudent = useMemo(() => students.find(s => s.id === profileStudentId) || null, [students, profileStudentId]);
+  const profilePlans = useMemo(() => profileStudentId ? storageService.getBehaviorCases({ studentId: profileStudentId }).filter(x => x.severity === 'خطة تحسين') : [], [profileStudentId]);
   const profileTimeline = useMemo(() => {
     if (!profileStudentId) return [];
     const negative = violations.filter(v => v.studentId === profileStudentId).map(v => ({
@@ -319,6 +324,26 @@ export const BehaviorView: React.FC = () => {
     });
     setIsPlanModalOpen(false); setPlanStudentId(''); setPlanGoal(''); setPlanAction(''); setPlanFollowUpDate('');
     alert('تم إنشاء خطة تحسين سمات وجدولة المتابعة.');
+  };
+
+  const handlePlanFollowup = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!followupCaseId || !followupResult.trim()) return;
+    const user = storageService.getCurrentUser();
+    storageService.addBehaviorCaseFollowup(followupCaseId, {
+      caseId: followupCaseId,
+      date: getCairoCurrentDate(),
+      actionType: 'متابعة خطة تحسين سمات',
+      summary: followupResult.trim(),
+      notes: followupResult.trim(),
+      performedBy: user?.id || 'SOCIAL_SPECIALIST',
+      performedByName: user?.fullName || 'الأخصائي الاجتماعي',
+      nextAction: followupNextAction.trim() || undefined,
+      followUpDate: followupNextDate || undefined,
+      status: followupNextDate ? 'متابعة مستمرة' : 'تم القياس',
+    });
+    setFollowupCaseId(null); setFollowupResult(''); setFollowupNextAction(''); setFollowupNextDate('');
+    alert('تم تسجيل نتيجة متابعة خطة سمات.');
   };
 
   const handleDeleteViolation = (id: string) => {
@@ -835,6 +860,18 @@ export const BehaviorView: React.FC = () => {
         </div>
       )}
 
+      {followupCaseId && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs">
+          <form onSubmit={handlePlanFollowup} className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-lg p-6 space-y-4">
+            <div className="flex items-center justify-between"><h3 className="text-base font-bold text-slate-900">نتيجة متابعة خطة سمات</h3><button type="button" onClick={()=>setFollowupCaseId(null)} className="text-slate-400">✕</button></div>
+            <textarea required value={followupResult} onChange={e=>setFollowupResult(e.target.value)} placeholder="ما الذي تغير؟ وما نتيجة المتابعة؟" className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 min-h-24"/>
+            <textarea value={followupNextAction} onChange={e=>setFollowupNextAction(e.target.value)} placeholder="الإجراء التالي إن كانت المتابعة مستمرة" className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 min-h-20"/>
+            <input type="date" value={followupNextDate} onChange={e=>setFollowupNextDate(e.target.value)} className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5"/>
+            <button type="submit" className="w-full py-2.5 bg-teal-600 text-white rounded-xl text-xs font-bold">حفظ نتيجة المتابعة</button>
+          </form>
+        </div>
+      )}
+
       {isPlanModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs">
           <form onSubmit={handleCreateImprovementPlan} className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-lg p-6 space-y-4">
@@ -862,6 +899,16 @@ export const BehaviorView: React.FC = () => {
                 <div className="rounded-xl bg-slate-50 border border-slate-100 p-4"><div className="text-[11px] text-slate-500">المواقف المسجلة</div><div className="text-2xl font-black text-slate-900">{profileTimeline.length}</div></div>
               </div>
             ); })()}
+            {profilePlans.length > 0 && <div>
+              <h4 className="text-sm font-extrabold text-slate-900 mb-3">خطط تحسين سمات</h4>
+              <div className="space-y-2 mb-5">{profilePlans.map(plan => {
+                const latest=plan.followups?.[plan.followups.length-1];
+                return <div key={plan.id} className="rounded-xl border border-teal-100 bg-teal-50/40 p-4">
+                  <div className="flex items-start justify-between gap-3"><div><div className="text-xs font-black text-slate-900">{plan.summary}</div><div className="text-[11px] text-slate-500 mt-1">{latest?.summary || 'لم تسجل متابعة بعد'}{latest?.followUpDate ? ` · المتابعة القادمة: ${latest.followUpDate}` : ''}</div></div><span className="text-[10px] font-bold text-teal-700">{plan.status}</span></div>
+                  {plan.status !== 'CLOSED' && plan.status !== 'Closed' && <button onClick={()=>setFollowupCaseId(plan.id)} className="mt-3 px-3 py-1.5 rounded-lg bg-white border border-teal-200 text-teal-700 text-[11px] font-bold">تسجيل نتيجة متابعة</button>}
+                </div>;
+              })}</div>
+            </div>}
             <div>
               <h4 className="text-sm font-extrabold text-slate-900 mb-3">السجل الزمني لسمات</h4>
               <div className="space-y-2 max-h-96 overflow-y-auto">
