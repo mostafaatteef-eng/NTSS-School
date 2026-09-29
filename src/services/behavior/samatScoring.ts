@@ -18,7 +18,8 @@ export function calculateSamatScore(
   initialScore: number,
   ledger: BehaviorScoreLedger[],
 ): SamatScoreSummary {
-  const base=Math.max(0,Math.min(100,Number(initialScore)||100));
+  const numericInitial = Number(initialScore);
+  const base = Math.max(0, Math.min(100, Number.isFinite(numericInitial) ? numericInitial : 100));
   let credits=0;
   let debits=0;
   for(const entry of ledger){
