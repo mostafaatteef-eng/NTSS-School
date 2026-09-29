@@ -182,11 +182,11 @@ export const BehaviorView: React.FC = () => {
     return students
       .map(s => {
         const d = studentDeductionsMap.get(s.id) || { total: 0, count: 0 };
-        const score = Math.max(0, (s.initialBehaviorScore || 100) - d.total);
+        const canonical = storageService.calculateStudentBehaviorScore(s.id);
         return {
           ...s,
-          score,
-          samatLevel: getSamatStudentLevel(score),
+          score: canonical.currentScore,
+          samatLevel: getSamatStudentLevel(canonical.currentScore),
           deducted: d.total,
           violationCount: d.count,
         };
