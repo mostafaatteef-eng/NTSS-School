@@ -175,3 +175,28 @@ CREATE TABLE IF NOT EXISTS attendance_month_closings (
 );
 CREATE INDEX IF NOT EXISTS attendance_month_closings_school_period_idx
   ON attendance_month_closings(school_id,year DESC,month DESC);
+
+
+-- School-scoped authoritative master data. Defaults may seed the UI, but browser storage is not authoritative.
+CREATE TABLE IF NOT EXISTS master_data_items (
+  id text PRIMARY KEY,
+  school_id text NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+  category text NOT NULL,
+  type_key text NOT NULL,
+  code text NOT NULL,
+  name_ar text NOT NULL,
+  name_en text,
+  description text,
+  parent_id text,
+  sort_order integer NOT NULL DEFAULT 0,
+  is_active boolean NOT NULL DEFAULT true,
+  is_system_protected boolean NOT NULL DEFAULT false,
+  payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+  effective_from date,
+  effective_to date,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(school_id,category,type_key,code)
+);
+CREATE INDEX IF NOT EXISTS master_data_items_school_lookup_idx
+  ON master_data_items(school_id,category,type_key,is_active,sort_order);
