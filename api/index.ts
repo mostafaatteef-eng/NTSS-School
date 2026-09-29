@@ -906,6 +906,10 @@ export const ntssHandler = {
         const month=Number(body.month), year=Number(body.year);
         if(!Number.isInteger(month)||month<1||month>12||!Number.isInteger(year)||year<2000||year>2200) return json({status:'error',code:'INVALID_PERIOD'},400,corsOrigin);
         const mapClosing=(row:any)=>row?({...row.payload,id:`CLOSE-${row.year}-${String(row.month).padStart(2,'0')}`,schoolId:row.school_id,month:Number(row.month),year:Number(row.year),status:row.status,closedAt:row.closed_at?new Date(row.closed_at).toISOString():undefined}):undefined;
+        if(action==='capability') {
+          const q=await pool.query("SELECT to_regclass('public.attendance_month_closings') AS table_name");
+          return json({status:'success',available:Boolean(q.rows[0]?.table_name)},200,corsOrigin);
+        }
         if(action==='get') {
           const q=await pool.query('SELECT * FROM attendance_month_closings WHERE school_id=$1 AND year=$2 AND month=$3 LIMIT 1',[schoolId,year,month]);
           return json({status:'success',data:mapClosing(q.rows[0])||null},200,corsOrigin);
