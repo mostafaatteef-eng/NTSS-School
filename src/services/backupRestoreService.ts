@@ -8,6 +8,7 @@ import {
 import { storageService } from './storageService';
 import { STORAGE_KEYS } from './masterDataDefaults';
 import { getCairoNowISO } from '../utils/egyptianTime';
+import { isPostgresBackendEnabled } from './backend/postgresRuntime';
 
 export class BackupRestoreService {
   public static readonly SCHEMA_VERSION = '3.2.0';
@@ -22,6 +23,9 @@ export class BackupRestoreService {
   ): { backupPackage: SystemBackupPackage; jsonString: string } {
     if (!currentUser || currentUser.role !== 'Admin') {
       throw new Error('403 Forbidden: عمليات النسخ الاحتياطي مقصورة فقط على مدير النظام الأعلى.');
+    }
+    if (isPostgresBackendEnabled()) {
+      throw new Error('النسخ الاحتياطي المحلي معطل في وضع PostgreSQL لأنه لا يمثل قاعدة بيانات Production. استخدم نسخة احتياطية معتمدة من الخادم.');
     }
 
     const entitiesCount: Record<string, number> = {};
@@ -201,6 +205,9 @@ export class BackupRestoreService {
   ): { success: boolean; safetyBackupId: string; restoredCount: number } {
     if (!currentUser || currentUser.role !== 'Admin') {
       throw new Error('403 Forbidden: استعادة النسخ الاحتياطية تتطلب صلاحيات الإدارة العليا.');
+    }
+    if (isPostgresBackendEnabled()) {
+      throw new Error('تم رفض الاستعادة المحلية: PostgreSQL هو مصدر الحقيقة ولا يجوز استبدال بيانات Production عبر localStorage.');
     }
 
     // 1. Mandatory Auto-Safety Backup before destructive restore
