@@ -60,7 +60,11 @@ export const TeacherLoadView: React.FC = () => {
     if (!selectedTeacherForAssignments || !newSubject.trim()) return;
 
     const currentYear = storageService.getAcademicYears().find(y => y.isCurrent || y.isActive || y.status === 'ACTIVE');
-    const currentTerm = currentYear?.terms?.find(term => (term as any).isCurrent || (term as any).isActive);\n    if (!currentYear?.id || !currentTerm?.id) {\n      alert('لا يمكن إضافة إسناد قبل تحديد العام والفصل الدراسي الحاليين من الإعدادات.');\n      return;\n    }
+    const currentTerm = currentYear?.terms?.find(term => (term as any).isCurrent || (term as any).isActive);
+    if (!currentYear?.id || !currentTerm?.id) {
+      alert('لا يمكن إضافة إسناد قبل تحديد العام والفصل الدراسي الحاليين من الإعدادات.');
+      return;
+    }
 
     const classroom = classroomOptions.find(c => c.id === newClassroom || c.name === newClassroom) || classroomOptions[0];
     const newAssign: TeacherTeachingAssignment = {
