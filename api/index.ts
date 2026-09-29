@@ -893,7 +893,7 @@ export const ntssHandler = {
         const allowedTypes=new Set([...reportTypes,'CORRECTIVE_ACTION','QUALITY_STANDARD']);
         const recordType=String(data.recordType||body.recordType||'').toUpperCase();
         if(action==='metrics'){
-          const q=await pool.query(\`SELECT record_type,payload,approved_at,updated_at FROM quality_records WHERE school_id=$1 AND upper(status)='APPROVED' AND record_type=ANY($2::text[]) ORDER BY updated_at DESC\`,[schoolId,Array.from(reportTypes)]);
+          const q=await pool.query(`SELECT record_type,payload,approved_at,updated_at FROM quality_records WHERE school_id=$1 AND upper(status)='APPROVED' AND record_type=ANY($2::text[]) ORDER BY updated_at DESC`,[schoolId,Array.from(reportTypes)]);
           const scoreOf=(row:any):number|null=>{
             const payload=row?.payload||{};
             const candidates=[payload.percentage,payload.overallScore,payload.averageScore,payload.score];
