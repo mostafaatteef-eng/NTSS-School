@@ -590,7 +590,7 @@ export const TeacherPortalView: React.FC<TeacherPortalViewProps> = ({ onBackToLo
               <div>
                 <span className="text-slate-400 block text-[10px]">نصابي الأسبوعي</span>
                 <span className="font-bold text-slate-800">
-                  {loadStats.totalCountedPeriods} / {loadStats.maxAllowedPeriods} حصة
+                  {loadStats.countedWeeklyPeriods} / {(loadStats.weeklyPeriodLimit || 30)} حصة
                 </span>
               </div>
               <div className="border-r pr-3">
