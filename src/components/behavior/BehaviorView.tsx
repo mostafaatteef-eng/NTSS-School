@@ -48,6 +48,11 @@ export const BehaviorView: React.FC = () => {
   const [restoreReason, setRestoreReason] = useState('');
   const [isRestoreModalOpen, setIsRestoreModalOpen] = useState(false);
   const [profileStudentId, setProfileStudentId] = useState<string | null>(null);
+  const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
+  const [planStudentId, setPlanStudentId] = useState('');
+  const [planGoal, setPlanGoal] = useState('');
+  const [planAction, setPlanAction] = useState('');
+  const [planFollowUpDate, setPlanFollowUpDate] = useState('');
 
   const [activeSubTab, setActiveSubTab] = useState<'violations' | 'positive' | 'types_manager' | 'at_risk'>('violations');
 
@@ -270,6 +275,50 @@ export const BehaviorView: React.FC = () => {
     setRestoreReason('');
     reloadData();
     alert(`تم توثيق استعادة النقاط بعد المتابعة: ${before} ← ${result.newScore}`);
+  };
+
+  const handleCreateImprovementPlan = (e: React.FormEvent) => {
+    e.preventDefault();
+    const student = students.find(s => s.id === planStudentId);
+    if (!student || !planGoal.trim() || !planAction.trim() || !planFollowUpDate) {
+      alert('أكمل الطالب والهدف والإجراء وموعد المتابعة.');
+      return;
+    }
+    const user = storageService.getCurrentUser();
+    const now = new Date().toISOString();
+    storageService.saveBehaviorCase({
+      id: `SAMAT-PLAN-${Date.now()}`,
+      caseCode: `SAMAT-${Date.now()}`,
+      studentId: student.id,
+      studentName: student.name,
+      grade: student.grade,
+      classroom: student.classroom,
+      openedDate: getCairoCurrentDate(),
+      status: 'Monitoring',
+      severity: 'خطة تحسين',
+      assignedTo: user?.id || 'SOCIAL_SPECIALIST',
+      assignedToName: user?.fullName || 'الأخصائي الاجتماعي',
+      summary: planGoal.trim(),
+      violationIds: violations.filter(v => v.studentId === student.id).map(v => v.id),
+      createdBy: user?.fullName || 'الأخصائي الاجتماعي',
+      createdAt: now,
+      followups: [{
+        id: `FOL-${Date.now()}`,
+        caseId: `SAMAT-PLAN-${Date.now()}`,
+        date: getCairoCurrentDate(),
+        actionType: 'خطة تحسين سمات',
+        summary: planAction.trim(),
+        notes: planAction.trim(),
+        performedBy: user?.id || 'SOCIAL_SPECIALIST',
+        performedByName: user?.fullName || 'الأخصائي الاجتماعي',
+        nextAction: 'قياس التحسن وتحديث الخطة',
+        followUpDate: planFollowUpDate,
+        status: 'مجدولة',
+        createdAt: now,
+      }],
+    });
+    setIsPlanModalOpen(false); setPlanStudentId(''); setPlanGoal(''); setPlanAction(''); setPlanFollowUpDate('');
+    alert('تم إنشاء خطة تحسين سمات وجدولة المتابعة.');
   };
 
   const handleDeleteViolation = (id: string) => {
@@ -732,11 +781,13 @@ export const BehaviorView: React.FC = () => {
       {/* 3. SubTab: AT RISK & BEHAVIOR SCORES */}
       {activeSubTab === 'at_risk' && (
         <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-xs space-y-4">
-          <div>
+          <div className="flex items-start justify-between gap-3">
+            <div>
             <h2 className="font-bold text-slate-900 text-sm">ملف سمات للطلاب</h2>
             <p className="text-xs text-slate-500 mt-0.5">
               متابعة رصيد سمات ومستوى كل طالب لتحديد الاحتياج للتعزيز أو التدخل التربوي نفسياً وتربوياً
-            </p>
+            </p></div>
+            <button onClick={()=>setIsPlanModalOpen(true)} className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5"><Plus className="w-4 h-4"/> خطة تحسين سمات</button>
           </div>
 
           <div className="overflow-x-auto">
@@ -781,6 +832,19 @@ export const BehaviorView: React.FC = () => {
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {isPlanModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs">
+          <form onSubmit={handleCreateImprovementPlan} className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-lg p-6 space-y-4">
+            <div className="flex items-center justify-between"><h3 className="text-base font-bold text-slate-900">إنشاء خطة تحسين سمات</h3><button type="button" onClick={()=>setIsPlanModalOpen(false)} className="text-slate-400">✕</button></div>
+            <select required value={planStudentId} onChange={e=>setPlanStudentId(e.target.value)} className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5"><option value="">— اختر الطالب —</option>{students.map(s=><option key={s.id} value={s.id}>{s.name} ({s.grade} - {s.classroom})</option>)}</select>
+            <textarea required value={planGoal} onChange={e=>setPlanGoal(e.target.value)} placeholder="هدف التحسين السلوكي/المهاري" className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 min-h-20"/>
+            <textarea required value={planAction} onChange={e=>setPlanAction(e.target.value)} placeholder="الإجراء أو النشاط التربوي المتفق عليه" className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 min-h-24"/>
+            <div><label className="block text-xs font-bold text-slate-700 mb-1">موعد قياس التحسن</label><input required type="date" value={planFollowUpDate} onChange={e=>setPlanFollowUpDate(e.target.value)} className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5"/></div>
+            <button type="submit" className="w-full py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-bold">حفظ الخطة وجدولة المتابعة</button>
+          </form>
         </div>
       )}
 
