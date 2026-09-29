@@ -998,10 +998,18 @@ export const ntssHandler = {
           const category=String(data.category||'').trim(),typeKey=String(data.typeKey||'').trim(),code=String(data.code||'').trim().toUpperCase(),nameAr=String(data.nameAr||'').trim();
           if(!category||!typeKey||!code||!nameAr)return respond({status: 'error',code:'MISSING_FIELDS'},400,corsOrigin);
           const payload=JSON.stringify(data.metaData===undefined?{}:{metaData:data.metaData});
-          const q=await pool.query(`INSERT INTO master_data_items(id,school_id,category,type_key,code,name_ar,name_en,description,parent_id,sort_order,is_active,is_system_protected,payload,effective_from,effective_to)
-            VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,NULLIF($14,'')::date,NULLIF($15,'')::date)
-            ON CONFLICT(id) DO UPDATE SET category=EXCLUDED.category,type_key=EXCLUDED.type_key,code=EXCLUDED.code,name_ar=EXCLUDED.name_ar,name_en=EXCLUDED.name_en,description=EXCLUDED.description,parent_id=EXCLUDED.parent_id,sort_order=EXCLUDED.sort_order,is_active=EXCLUDED.is_active,is_system_protected=EXCLUDED.is_system_protected,payload=EXCLUDED.payload,effective_from=EXCLUDED.effective_from,effective_to=EXCLUDED.effective_to,updated_at=now()
-            WHERE master_data_items.school_id=EXCLUDED.school_id RETURNING *`,[id,schoolId,category,typeKey,code,nameAr,String(data.nameEn||''),String(data.description||''),data.parentId||null,Number(data.sortOrder||0),data.isActive!==false,Boolean(data.isSystemProtected),payload,String(data.effectiveFrom||''),String(data.effectiveTo||'')]);
+          const duplicate=await pool.query('SELECT id FROM master_data_items WHERE school_id=$1 AND category=$2 AND type_key=$3 AND code=$4 AND id<>$5 LIMIT 1',[schoolId,category,typeKey,code,id]);
+          if(duplicate.rowCount)return respond({status:'error',code:'MASTER_DATA_CODE_EXISTS',message:'يوجد بالفعل عنصر بنفس الكود داخل نفس النوع.'},409,corsOrigin);
+          let q;
+          try {
+            q=await pool.query(`INSERT INTO master_data_items(id,school_id,category,type_key,code,name_ar,name_en,description,parent_id,sort_order,is_active,is_system_protected,payload,effective_from,effective_to)
+              VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,NULLIF($14,'')::date,NULLIF($15,'')::date)
+              ON CONFLICT(id) DO UPDATE SET category=EXCLUDED.category,type_key=EXCLUDED.type_key,code=EXCLUDED.code,name_ar=EXCLUDED.name_ar,name_en=EXCLUDED.name_en,description=EXCLUDED.description,parent_id=EXCLUDED.parent_id,sort_order=EXCLUDED.sort_order,is_active=EXCLUDED.is_active,is_system_protected=EXCLUDED.is_system_protected,payload=EXCLUDED.payload,effective_from=EXCLUDED.effective_from,effective_to=EXCLUDED.effective_to,updated_at=now()
+              WHERE master_data_items.school_id=EXCLUDED.school_id RETURNING *`,[id,schoolId,category,typeKey,code,nameAr,String(data.nameEn||''),String(data.description||''),data.parentId||null,Number(data.sortOrder||0),data.isActive!==false,Boolean(data.isSystemProtected),payload,String(data.effectiveFrom||''),String(data.effectiveTo||'')]);
+          } catch(error:any) {
+            if(String(error?.code||'')==='23505')return respond({status:'error',code:'MASTER_DATA_CODE_EXISTS',message:'يوجد بالفعل عنصر بنفس الكود داخل نفس النوع.'},409,corsOrigin);
+            throw error;
+          }
           if(!q.rowCount)return respond({status: 'error',code:'MASTER_DATA_WRITE_REJECTED'},409,corsOrigin);
           await pool.query('INSERT INTO audit_logs(school_id,user_id,username,role,action,entity,target_id,details) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[schoolId,user.user_id,user.email,user.role,'UPSERT','MASTER_DATA',id,`${category}/${typeKey}/${code}`]);
           return json({status:'success',data:mapItem(q.rows[0])},200,corsOrigin);
