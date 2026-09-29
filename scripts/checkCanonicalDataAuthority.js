@@ -51,3 +51,6 @@ if (!storage.includes('const overall=availableScores.length ? availableScores.re
 const qualityDashboard = fs.readFileSync('src/components/quality/QualityDashboardSection.tsx','utf8');
 if (qualityDashboard.includes('إجمالي المعايير المقيمة: {da.count}')) throw new Error('Quality dashboard must not label configured standards as evaluated.');
 if (!qualityDashboard.includes('لم يتم تقييم هذا المجال بعد')) throw new Error('Quality dashboard needs an explicit no-evaluation state.');
+
+const pgRuntime = fs.readFileSync('src/services/backend/postgresRuntime.ts','utf8');
+if (!pgRuntime.includes("response.headers.get('x-request-id')")) throw new Error('PostgreSQL client must preserve server request IDs for traceability.');
