@@ -108,6 +108,19 @@ export const BehaviorView: React.FC = () => {
   }, [violations, students]);
 
   // Students list with computed behavior score
+  const traitStats = useMemo(() => {
+    const map = new Map<string, { name: string; incidents: number; deducted: number }>();
+    violations.forEach(v => {
+      const type = behaviorTypes.find(t => t.id === (v.behaviorTypeId || v.violationTypeId));
+      const name = type?.traitName || 'سمة غير مصنفة';
+      const current = map.get(name) || { name, incidents: 0, deducted: 0 };
+      current.incidents += 1;
+      current.deducted += Number(v.pointsDeducted || 0);
+      map.set(name, current);
+    });
+    return Array.from(map.values()).sort((a, b) => b.incidents - a.incidents);
+  }, [violations, behaviorTypes]);
+
   const studentsWithScores = useMemo(() => {
     const studentDeductionsMap = new Map<string, { total: number; count: number }>();
     violations.forEach(v => {
@@ -304,6 +317,27 @@ export const BehaviorView: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {traitStats.length > 0 && (
+        <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div>
+              <h2 className="text-sm font-extrabold text-slate-900">مؤشرات سمات المدرسة</h2>
+              <p className="text-[11px] text-slate-500 mt-0.5">توزيع المواقف المرصودة على السمات المستهدفة لتحديد أولويات التدخل التربوي.</p>
+            </div>
+            <Award className="w-5 h-5 text-amber-600" />
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-2">
+            {traitStats.map(trait => (
+              <div key={trait.name} className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+                <div className="text-[11px] font-extrabold text-slate-800">{trait.name}</div>
+                <div className="text-lg font-black text-slate-900 mt-1">{trait.incidents}</div>
+                <div className="text-[10px] text-slate-500">موقف مرصود · أثر {trait.deducted} نقطة</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Stats Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
