@@ -152,18 +152,30 @@ export const BehaviorView: React.FC = () => {
     return Array.from(map.values()).sort((a, b) => b.incidents - a.incidents);
   }, [violations, behaviorTypes]);
 
+  const schoolSamatSourceStats = useMemo(() => {
+    const discipline = storageService.getSamatDisciplineRecords();
+    const excellence = storageService.getSamatExcellenceRecords();
+    const skills = storageService.getSamatSkillAssessments();
+    const assessedStudents = new Set(skills.map(row => row.studentId)).size;
+    const skillAverage = skills.length ? skills.reduce((sum,row)=>sum+Number(row.score),0)/skills.length : null;
+    return { disciplineCount: discipline.length, excellenceCount: excellence.length, assessedStudents, skillAverage };
+  }, [violations, students]);
+
   const profileStudent = useMemo(() => students.find(s => s.id === profileStudentId) || null, [students, profileStudentId]);
   const allImprovementPlans = useMemo(() => storageService.getBehaviorCases().filter(x => x.severity === 'خطة تحسين'), [violations, students, isPlanModalOpen, followupCaseId, closePlanId]);
   const planStats = useMemo(() => {
     const today = getCairoCurrentDate();
-    const closed = allImprovementPlans.filter(p => p.status === 'CLOSED' || p.status === 'Closed').length;
+    const closedPlans = allImprovementPlans.filter(p => p.status === 'CLOSED' || p.status === 'Closed');
+    const closed = closedPlans.length;
     const open = allImprovementPlans.length - closed;
     const overdue = allImprovementPlans.filter(p => {
       if (p.status === 'CLOSED' || p.status === 'Closed') return false;
       const latest = p.followups?.[p.followups.length - 1];
       return Boolean(latest?.followUpDate && latest.followUpDate < today);
     }).length;
-    return { open, overdue, closed };
+    const measured = closedPlans.filter(p => typeof p.improvementDelta === 'number');
+    const averageImprovement = measured.length ? measured.reduce((sum,p)=>sum+Number(p.improvementDelta || 0),0)/measured.length : null;
+    return { open, overdue, closed, averageImprovement };
   }, [allImprovementPlans]);
   const profilePlans = useMemo(() => profileStudentId ? allImprovementPlans.filter(x => x.studentId === profileStudentId) : [], [profileStudentId, allImprovementPlans]);
   const profileSkillAssessments = useMemo(() => profileStudentId ? storageService.getSamatSkillAssessments(profileStudentId) : [], [profileStudentId, skillId, skillScore, skillEvidence]);
@@ -585,10 +597,18 @@ export const BehaviorView: React.FC = () => {
         </div>
       )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
         <div className="bg-white rounded-2xl p-4 border border-slate-200"><div className="text-[11px] text-slate-500">خطط تحسين مفتوحة</div><div className="text-2xl font-black text-slate-900 mt-1">{planStats.open}</div></div>
         <div className="bg-white rounded-2xl p-4 border border-rose-100"><div className="text-[11px] text-rose-600">متابعات متأخرة</div><div className="text-2xl font-black text-rose-700 mt-1">{planStats.overdue}</div></div>
         <div className="bg-white rounded-2xl p-4 border border-emerald-100"><div className="text-[11px] text-emerald-600">خطط مكتملة</div><div className="text-2xl font-black text-emerald-700 mt-1">{planStats.closed}</div></div>
+        <div className="bg-white rounded-2xl p-4 border border-teal-100"><div className="text-[11px] text-teal-700">متوسط التحسن في الخطط المكتملة</div><div className="text-2xl font-black text-teal-700 mt-1">{planStats.averageImprovement === null ? '—' : `${planStats.averageImprovement >= 0 ? '+' : ''}${planStats.averageImprovement.toFixed(1)}`}</div></div>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="bg-white rounded-2xl p-4 border border-amber-100"><div className="text-[11px] text-slate-500">سجلات عدم الانضباط</div><div className="text-2xl font-black text-amber-700 mt-1">{schoolSamatSourceStats.disciplineCount}</div></div>
+        <div className="bg-white rounded-2xl p-4 border border-emerald-100"><div className="text-[11px] text-slate-500">سجلات التميز والبونص</div><div className="text-2xl font-black text-emerald-700 mt-1">{schoolSamatSourceStats.excellenceCount}</div></div>
+        <div className="bg-white rounded-2xl p-4 border border-blue-100"><div className="text-[11px] text-slate-500">طلاب تم تقييم مهاراتهم</div><div className="text-2xl font-black text-blue-700 mt-1">{schoolSamatSourceStats.assessedStudents}</div></div>
+        <div className="bg-white rounded-2xl p-4 border border-violet-100"><div className="text-[11px] text-slate-500">متوسط تقييم المهارات</div><div className="text-2xl font-black text-violet-700 mt-1">{schoolSamatSourceStats.skillAverage === null ? '—' : `${schoolSamatSourceStats.skillAverage.toFixed(1)}/10`}</div></div>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
