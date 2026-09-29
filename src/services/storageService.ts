@@ -75,6 +75,7 @@ import {
   normalizeStaffRole,
 } from '../types';
 import { isPostgresBackendEnabled, postgresApiRequest } from './backend/postgresRuntime';
+import { getSamatStudentLevel } from './behavior/samatScoring';
 import { EmployeePermissionRecord } from '../types_extended';
 import {
   MASTER_SCHOOLS_KEY,
@@ -2379,21 +2380,13 @@ class StorageService {
 
     const currentScore = Math.max(rules.minScore, Math.min(rules.maxScore, rules.initialScore - totalDeductions - ledgerDebits + ledgerCredits));
 
-    let statusText = 'المحترف';
-    let statusColor = 'text-emerald-700 bg-emerald-50 border-emerald-200';
-    if (currentScore <= 49) {
-      statusText = 'قيد التأسيس';
-      statusColor = 'text-rose-700 bg-rose-50 border-rose-200';
-    } else if (currentScore <= 65) {
-      statusText = 'مبتدئ';
-      statusColor = 'text-amber-700 bg-amber-50 border-amber-200';
-    } else if (currentScore <= 80) {
-      statusText = 'متمكن';
-      statusColor = 'text-blue-700 bg-blue-50 border-blue-200';
-    } else if (currentScore <= 90) {
-      statusText = 'قدوة حسنة';
-      statusColor = 'text-teal-700 bg-teal-50 border-teal-200';
-    }
+    const statusText = getSamatStudentLevel(currentScore);
+    const statusColor =
+      statusText === 'قيد التأسيس' ? 'text-rose-700 bg-rose-50 border-rose-200' :
+      statusText === 'مبتدئ' ? 'text-amber-700 bg-amber-50 border-amber-200' :
+      statusText === 'متمكن' ? 'text-blue-700 bg-blue-50 border-blue-200' :
+      statusText === 'قدوة حسنة' ? 'text-teal-700 bg-teal-50 border-teal-200' :
+      'text-emerald-700 bg-emerald-50 border-emerald-200';
 
     return { currentScore, violationsCount: violations.length, statusText, statusColor };
   }
