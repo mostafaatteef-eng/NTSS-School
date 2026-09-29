@@ -61,9 +61,11 @@ export const SystemAdminDashboard: React.FC<SystemAdminDashboardProps> = ({
       if (res.success && Array.isArray(res.data)) {
         setSchools(res.data);
       } else {
+        setSchools(null);
         setError(res.message || 'تعذر تحميل سجل المدارس المعتمد.');
       }
     } catch {
+      setSchools(null);
       setError('تعذر تحميل سجل المدارس المعتمد.');
     } finally {
       setIsLoading(false);
@@ -78,9 +80,11 @@ export const SystemAdminDashboard: React.FC<SystemAdminDashboardProps> = ({
       if (res.success && res.data) {
         setOverview(res.data);
       } else {
+        setOverview(null);
         setOverviewError(res.message || 'تعذر تحميل مؤشرات البيانات التشغيلية.');
       }
     } catch {
+      setOverview(null);
       setOverviewError('تعذر تحميل مؤشرات البيانات التشغيلية.');
     } finally {
       setIsLoadingOverview(false);
@@ -275,7 +279,7 @@ export const SystemAdminDashboard: React.FC<SystemAdminDashboardProps> = ({
           <div>
             <div className="text-[11px] font-bold text-slate-500">إجمالي المدارس</div>
             <div className="text-2xl font-black text-slate-800 mt-1">
-              {isLoading && schools === null ? '—' : totalCount}
+              {isLoading || error || schools === null ? '—' : totalCount}
             </div>
           </div>
           <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-600">
@@ -288,7 +292,7 @@ export const SystemAdminDashboard: React.FC<SystemAdminDashboardProps> = ({
           <div>
             <div className="text-[11px] font-bold text-emerald-600">المدارس النشطة</div>
             <div className="text-2xl font-black text-emerald-700 mt-1">
-              {isLoading && schools === null ? '—' : activeCount}
+              {isLoading || error || schools === null ? '—' : activeCount}
             </div>
           </div>
           <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600">
@@ -301,7 +305,7 @@ export const SystemAdminDashboard: React.FC<SystemAdminDashboardProps> = ({
           <div>
             <div className="text-[11px] font-bold text-slate-500">المدارس غير النشطة</div>
             <div className="text-2xl font-black text-slate-600 mt-1">
-              {isLoading && schools === null ? '—' : inactiveCount}
+              {isLoading || error || schools === null ? '—' : inactiveCount}
             </div>
           </div>
           <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-500">
