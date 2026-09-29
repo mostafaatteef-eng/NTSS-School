@@ -125,6 +125,7 @@ import { hasPermission } from '../utils/permissions';
 import { SyncQueueService } from './syncQueueService';
 import { NotificationService } from './notificationService';
 import { CANONICAL_BACKEND_SOURCE, CANONICAL_BACKEND_VERSION } from './googleSheetsAppScript';
+import { QualityApiClient, type QualityRecordType } from './quality/qualityApiClient';
 
 const STORAGE_KEYS = {
   SETTINGS: 'ntss_school_settings_v3',
@@ -8469,53 +8470,35 @@ class StorageService {
     return { success: true, message: 'تم حذف التقييم الشامل بنجاح' };
   }
 
-  public async getAuthoritativeQualityRecords(recordType: 'TEACHER_VISIT'|'DAILY_REPORT'|'COMPREHENSIVE_EVALUATION'|'CORRECTIVE_ACTION'|'QUALITY_STANDARD', schoolId?: string): Promise<any[]> {
+  private getQualityApiClient(): QualityApiClient {
+    return new QualityApiClient(() => this.getCurrentUser()?.sessionToken || '');
+  }
+
+  public async getAuthoritativeQualityRecords(recordType: QualityRecordType, schoolId?: string): Promise<any[]> {
     const target=(schoolId||this.getActiveSchoolId()).trim();
     if(!this.getPostgresApiUrl()) return [];
-    const response=await this.postgresRequest('/api/quality/manage',{method:'POST',body:JSON.stringify({action:'list',schoolId:target,recordType})});
-    const result=await response.json().catch(()=>({}));
-    if(!response.ok||result.status!=='success') throw new Error(result.code||'QUALITY_LOAD_FAILED');
-    return Array.isArray(result.data)?result.data:[];
+    return this.getQualityApiClient().list(recordType,target);
   }
 
   public async getAuthoritativeQualityKpi(schoolId?: string): Promise<QualityKpiContract> {
     const target=(schoolId||this.getActiveSchoolId()).trim();
     if(!this.getPostgresApiUrl()) return { value:null, sampleSize:0, period:null, status:'N/A' };
-    const response=await this.postgresRequest('/api/quality/manage',{method:'POST',body:JSON.stringify({action:'metrics',schoolId:target})});
-    const result=await response.json().catch(()=>({}));
-    if(!response.ok||result.status!=='success') throw new Error(result.code||'QUALITY_METRICS_LOAD_FAILED');
-    const data=result.data||{};
-    const sampleSize=Math.max(0,Number(data.sampleSize)||0);
-    const value=data.value===null||data.value===undefined?null:Number(data.value);
-    return {
-      value:Number.isFinite(value as number)?value:null,
-      sampleSize,
-      period:data.period&&typeof data.period==='object'?{from:String(data.period.from||''),to:String(data.period.to||'')}:null,
-      status:sampleSize>0&&Number.isFinite(value as number)?'AVAILABLE':'N/A',
-    };
+    return this.getQualityApiClient().metrics(target);
   }
 
-  public async saveAuthoritativeQualityRecord(recordType: 'TEACHER_VISIT'|'DAILY_REPORT'|'COMPREHENSIVE_EVALUATION'|'CORRECTIVE_ACTION'|'QUALITY_STANDARD', data:any, schoolId?:string): Promise<any> {
+  public async saveAuthoritativeQualityRecord(recordType: QualityRecordType, data:any, schoolId?:string): Promise<any> {
     const target=(schoolId||this.getActiveSchoolId()).trim();
-    const response=await this.postgresRequest('/api/quality/manage',{method:'POST',body:JSON.stringify({action:'save',schoolId:target,data:{...data,recordType}})});
-    const result=await response.json().catch(()=>({}));
-    if(!response.ok||result.status!=='success') throw new Error(result.code||'QUALITY_SAVE_FAILED');
-    return result.data;
+    return this.getQualityApiClient().save(recordType,data,target);
   }
 
   public async approveAuthoritativeQualityRecord(id:string,schoolId?:string):Promise<any>{
     const target=(schoolId||this.getActiveSchoolId()).trim();
-    const response=await this.postgresRequest('/api/quality/manage',{method:'POST',body:JSON.stringify({action:'approve',schoolId:target,data:{id}})});
-    const result=await response.json().catch(()=>({}));
-    if(!response.ok||result.status!=='success') throw new Error(result.code||'QUALITY_APPROVE_FAILED');
-    return result.data;
+    return this.getQualityApiClient().approve(id,target);
   }
 
   public async deleteAuthoritativeQualityRecord(id:string,schoolId?:string):Promise<void>{
     const target=(schoolId||this.getActiveSchoolId()).trim();
-    const response=await this.postgresRequest('/api/quality/manage',{method:'POST',body:JSON.stringify({action:'delete',schoolId:target,data:{id}})});
-    const result=await response.json().catch(()=>({}));
-    if(!response.ok||result.status!=='success') throw new Error(result.code||'QUALITY_DELETE_FAILED');
+    return this.getQualityApiClient().delete(id,target);
   }
 
   /**
