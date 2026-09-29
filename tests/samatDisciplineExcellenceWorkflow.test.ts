@@ -1,0 +1,4 @@
+import fs from'node:fs';import{describe,expect,it}from'vitest';
+describe('Samat discipline and excellence source workflows',()=>{const v=fs.readFileSync('src/components/behavior/BehaviorView.tsx','utf8');const s=fs.readFileSync('src/services/storageService.ts','utf8');
+it('keeps non-discipline as an independent source register',()=>{for(const x of ['تسجيل عدم الانضباط','handleSaveDisciplineRecord','getSamatDisciplineRecords','saveSamatDisciplineRecord'])expect(v+s).toContain(x);expect(v).toContain('ولا يُدمج تلقائيًا مع المخالفات');});
+it('keeps excellence and bonus nomination fields',()=>{for(const x of ['سجل التميز والبونص','البونص الإضافي','جهة الترشيح وسبب المنح','handleSaveExcellenceRecord','saveSamatExcellenceRecord'])expect(v+s).toContain(x);});});
