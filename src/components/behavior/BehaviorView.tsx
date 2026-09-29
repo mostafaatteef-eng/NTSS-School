@@ -25,7 +25,7 @@ import {
   Users,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { BehaviorType, BehaviorViolation, Student } from '../../types';
+import { BehaviorType, BehaviorViolation, PositiveBehaviorType, Student } from '../../types';
 import { storageService } from '../../services/storageService';
 import { getSamatStudentLevel } from '../../services/behavior/samatScoring';
 import {
@@ -38,8 +38,13 @@ export const BehaviorView: React.FC = () => {
   const [violations, setViolations] = useState<BehaviorViolation[]>(() => storageService.getBehaviorViolations());
   const [behaviorTypes, setBehaviorTypes] = useState<BehaviorType[]>(() => storageService.getBehaviorTypes());
   const [students, setStudents] = useState<Student[]>(() => storageService.getStudents());
+  const [positiveTypes] = useState<PositiveBehaviorType[]>(() => storageService.getPositiveBehaviorTypes());
+  const [isPositiveModalOpen, setIsPositiveModalOpen] = useState(false);
+  const [positiveStudentId, setPositiveStudentId] = useState('');
+  const [positiveTypeId, setPositiveTypeId] = useState('');
+  const [positiveNotes, setPositiveNotes] = useState('');
 
-  const [activeSubTab, setActiveSubTab] = useState<'violations' | 'types_manager' | 'at_risk'>('violations');
+  const [activeSubTab, setActiveSubTab] = useState<'violations' | 'positive' | 'types_manager' | 'at_risk'>('violations');
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSeverity, setSelectedSeverity] = useState('ALL');
@@ -186,6 +191,36 @@ export const BehaviorView: React.FC = () => {
     setSelectedTypeId('');
     setNotes('');
     alert(`تم تسجيل الموقف السلوكي بنجاح واحتساب (${pointsDeducted}) نقاط من رصيد الطالب.`);
+  };
+
+  const handleSavePositiveBehavior = (e: React.FormEvent) => {
+    e.preventDefault();
+    const student = students.find(s => s.id === positiveStudentId);
+    const type = positiveTypes.find(t => t.id === positiveTypeId);
+    if (!student || !type) {
+      alert('يرجى اختيار الطالب ونوع التميز');
+      return;
+    }
+    const result = storageService.addBehaviorScoreTransaction({
+      id: `SAMAT-POS-${Date.now()}`,
+      studentId: student.id,
+      studentName: student.name,
+      type: 'POSITIVE',
+      sourceType: 'positive_behavior',
+      sourceId: type.id,
+      points: Math.abs(type.points),
+      pointsAwarded: Math.abs(type.points),
+      grade: student.grade,
+      classroom: student.classroom,
+      date: getCairoCurrentDate(),
+      reason: positiveNotes.trim() || type.name,
+    });
+    setIsPositiveModalOpen(false);
+    setPositiveStudentId('');
+    setPositiveTypeId('');
+    setPositiveNotes('');
+    reloadData();
+    alert(`تم تسجيل التميز وإضافة ${type.points} نقاط. الرصيد الحالي: ${result.newScore}`);
   };
 
   const handleDeleteViolation = (id: string) => {
@@ -381,6 +416,14 @@ export const BehaviorView: React.FC = () => {
         </button>
 
         <button
+          onClick={() => setActiveSubTab('positive')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${activeSubTab === 'positive' ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-600 hover:bg-slate-100'}`}
+        >
+          <Award className="w-4 h-4" />
+          <span>التميز والتعزيز</span>
+        </button>
+
+        <button
           onClick={() => setActiveSubTab('types_manager')}
           className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
             activeSubTab === 'types_manager'
@@ -507,6 +550,29 @@ export const BehaviorView: React.FC = () => {
                 )}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {activeSubTab === 'positive' && (
+        <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-xs space-y-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="font-bold text-slate-900 text-sm">التميز والتعزيز في سمات</h2>
+              <p className="text-xs text-slate-500 mt-0.5">تعزيز السلوك الإيجابي وربطه بالسمة المستهدفة وإضافته إلى رصيد الطالب.</p>
+            </div>
+            <button onClick={() => setIsPositiveModalOpen(true)} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5">
+              <Plus className="w-4 h-4" /> تسجيل تميز
+            </button>
+          </div>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {positiveTypes.filter(t => t.isActive).map(t => (
+              <div key={t.id} className="rounded-xl border border-emerald-100 bg-emerald-50/40 p-4">
+                <div className="text-xs font-extrabold text-slate-900">{t.name}</div>
+                <div className="text-[11px] text-slate-500 mt-1">{t.traitName || t.category}</div>
+                <div className="text-lg font-black text-emerald-700 mt-2">+{t.points}</div>
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -663,6 +729,27 @@ export const BehaviorView: React.FC = () => {
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {isPositiveModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs">
+          <form onSubmit={handleSavePositiveBehavior} className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-lg p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold text-slate-900">تسجيل تميز وتعزيز</h3>
+              <button type="button" onClick={() => setIsPositiveModalOpen(false)} className="text-slate-400">✕</button>
+            </div>
+            <select required value={positiveStudentId} onChange={e=>setPositiveStudentId(e.target.value)} className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5">
+              <option value="">— اختر الطالب —</option>
+              {students.map(s=><option key={s.id} value={s.id}>{s.name} ({s.grade} - {s.classroom})</option>)}
+            </select>
+            <select required value={positiveTypeId} onChange={e=>setPositiveTypeId(e.target.value)} className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5">
+              <option value="">— اختر نوع التميز —</option>
+              {positiveTypes.filter(t=>t.isActive).map(t=><option key={t.id} value={t.id}>{t.name} (+{t.points})</option>)}
+            </select>
+            <textarea value={positiveNotes} onChange={e=>setPositiveNotes(e.target.value)} placeholder="ملاحظات أو وصف التميز" className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 min-h-24" />
+            <button type="submit" className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold">حفظ التعزيز وإضافة النقاط</button>
+          </form>
         </div>
       )}
 
