@@ -27,6 +27,23 @@ describe('Portable API CORS contract', () => {
     expect(response.headers.get('access-control-allow-credentials')).toBe('true');
   });
 
+  it('allows cache-control and pragma on authenticated browser preflight', async () => {
+    const { ntssHandler } = await import('../api/index');
+    const response = await ntssHandler.fetch(new Request('https://api.example.test/api/system-overview', {
+      method: 'OPTIONS',
+      headers: {
+        Origin: 'https://mostafaatteef-eng.github.io',
+        'Access-Control-Request-Method': 'GET',
+        'Access-Control-Request-Headers': 'authorization,cache-control,pragma',
+      },
+    }));
+    expect(response.status).toBe(204);
+    const allowed = response.headers.get('access-control-allow-headers') || '';
+    expect(allowed).toContain('authorization');
+    expect(allowed).toContain('cache-control');
+    expect(allowed).toContain('pragma');
+  });
+
   it('never emits wildcard CORS together with credentials', async () => {
     const { ntssHandler } = await import('../api/index');
     const response = await ntssHandler.fetch(new Request('https://api.example.test/api/health'));
