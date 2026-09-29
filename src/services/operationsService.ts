@@ -775,6 +775,7 @@ export class OperationsService {
    * Saves a clean snapshot of the current broken state before any restore operation!
    */
   public static executeRollbackSafetySnapshot(): { success: boolean; snapshotKey: string; timestamp: string } {
+    if (isPostgresBackendEnabled()) throw new Error('LEGACY_LOCAL_ROLLBACK_SNAPSHOT_DISABLED');
     const timestamp = getCairoNowISO();
     const snapshotKey = `ntss_rollback_snapshot_${Date.now()}`;
     const allData = {
@@ -807,6 +808,7 @@ export class OperationsService {
     blockers: string[];
     recommendations: string[];
   } {
+    if (isPostgresBackendEnabled()) return { verdict: 'NO_GO', verdictText: 'لم يتم تقييم جاهزية Production', score: 0, summary: 'لا تتوفر حتى الآن بيانات UAT/Pilot/Go-Live authoritative كافية لإصدار قرار جاهزية آلي.', blockers: ['PRODUCTION_READINESS_EVIDENCE_UNAVAILABLE'], recommendations: ['استخدم نتائج CI وبيانات المراقبة واختبارات UAT المعتمدة من الخادم قبل قرار الإطلاق.'] };
     const uat = this.getUatTestCases();
     const checklist = this.getGoLiveChecklist();
     const metrics = this.getPilotMetrics();
