@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit && node scripts/checkGasSyntax.js && node scripts/checkPostgresSchema.js",
+    "lint": "tsc --noEmit && node scripts/checkGasSyntax.js && node scripts/checkPostgresSchema.js && node scripts/checkCanonicalApiRuntime.js",
     "check:gas-syntax": "node scripts/checkGasSyntax.js",
     "test": "vitest run",
     "db:check": "node scripts/checkPostgresSchema.js",
@@ -18,7 +18,8 @@
     "db:import": "node scripts/importSheetsExportToPostgres.js",
     "db:migrate": "node scripts/runPostgresSchema.js",
     "api:check": "npm run api:build && node --check dist-api/server.js",
-    "api:build": "esbuild server/canonical-api.ts --bundle --platform=node --format=esm --target=node20 --packages=external --outfile=dist-api/server.js"
+    "api:build": "esbuild server/canonical-api.ts --bundle --platform=node --format=esm --target=node20 --packages=external --outfile=dist-api/server.js",
+    "check:canonical-api": "node scripts/checkCanonicalApiRuntime.js"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
