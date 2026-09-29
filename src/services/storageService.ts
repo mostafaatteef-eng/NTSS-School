@@ -51,6 +51,7 @@ import {
   QualityStandard,
   StandardScore,
   TeacherVisitReport,
+  SamatSkillAssessment,
   ScheduleConfig,
   ScheduleItem,
   SchedulePeriodItem,
@@ -146,6 +147,7 @@ const STORAGE_KEYS = {
   BEHAVIOR_VIOLATIONS: 'ntss_behavior_violations_v3',
   BEHAVIOR_LEDGER: 'ntss_behavior_ledger_v3',
   BEHAVIOR_CASES: 'ntss_behavior_cases_v3',
+  SAMAT_SKILL_ASSESSMENTS: 'ntss_samat_skill_assessments_v1',
   SCHEDULE: 'ntss_schedule_v3',
   SCHEDULE_SUBSTITUTIONS: 'ntss_schedule_substitutions_v3',
   LESSON_INSTANCES: 'ntss_lesson_instances_v3',
@@ -4665,6 +4667,28 @@ class StorageService {
     this.logAudit('UPDATE', 'BEHAVIOR', `إغلاق الحالة السلوكية (${target.caseNumber}) بنجاح: ${resolutionSummary}`);
     this.notifyChange();
     this.pushPost('saveBehaviorCase', target).catch(() => {});
+    return { success: true };
+  }
+
+  public getSamatSkillAssessments(studentId?: string): SamatSkillAssessment[] {
+    const raw = localStorage.getItem(STORAGE_KEYS.SAMAT_SKILL_ASSESSMENTS);
+    if (!raw) return [];
+    try {
+      const rows: SamatSkillAssessment[] = JSON.parse(raw);
+      return studentId ? rows.filter(row => row.studentId === studentId) : rows;
+    } catch { return []; }
+  }
+
+  public saveSamatSkillAssessment(assessment: SamatSkillAssessment): { success: boolean } {
+    const allowed = [0, 2, 4, 6, 8, 10];
+    if (!allowed.includes(Number(assessment.score))) return { success: false };
+    const rows = this.getSamatSkillAssessments();
+    const prepared = { ...assessment, id: assessment.id || `SAMAT-SKILL-${Date.now()}`, recordedBy: assessment.recordedBy || this.getCurrentUser()?.fullName };
+    rows.unshift(prepared);
+    localStorage.setItem(STORAGE_KEYS.SAMAT_SKILL_ASSESSMENTS, JSON.stringify(rows));
+    this.logAudit('CREATE', 'BEHAVIOR', `تقييم مهارة سمات: ${prepared.studentName || prepared.studentId} - ${prepared.skillName} = ${prepared.score}`);
+    this.notifyChange();
+    this.pushPost('saveSamatSkillAssessment', prepared).catch(() => {});
     return { success: true };
   }
 
