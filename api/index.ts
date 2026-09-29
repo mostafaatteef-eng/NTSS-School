@@ -144,20 +144,22 @@ async function canAccessSchool(user: any, schoolId: string) {
 
 export const ntssHandler = {
   async fetch(request: Request) {
+    const traceRequestId = String(request.headers.get('x-request-id') || crypto.randomUUID());
+    const respond = (data: unknown, status = 200, origin = '', extraHeaders: Record<string,string> = {}) => json(data,status,origin,{...extraHeaders,'x-request-id':traceRequestId});
     const origin = String(request.headers.get('origin') || '').trim();
     const hasOrigin = Boolean(origin);
     const originAllowed = !hasOrigin || isAllowedOrigin(origin);
     const corsOrigin = hasOrigin && originAllowed ? origin.replace(/\/$/, '') : '';
     if (hasOrigin && !originAllowed) {
       if (request.method === 'OPTIONS') return new Response(null, { status: 403, headers: { vary: 'Origin' } });
-      return json({ status: 'error', code: 'ORIGIN_NOT_ALLOWED' }, 403, '');
+      return respond({ status: 'error', code: 'ORIGIN_NOT_ALLOWED' }, 403, '');
     }
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: {
       ...(corsOrigin ? { 'access-control-allow-origin': corsOrigin } : {}),
       'access-control-allow-headers': 'content-type, authorization, cache-control, pragma', 'access-control-allow-methods': 'GET,POST,OPTIONS', 'access-control-allow-credentials': 'true', vary: 'Origin'
     }});
 
-    console.log(JSON.stringify({ marker: 'NTSS_REQ', method: request.method, origin, corsOrigin, url: request.url }));
+    console.log(JSON.stringify({ marker: 'NTSS_REQ', requestId: traceRequestId, method: request.method, origin, corsOrigin, url: request.url }));
     const url = new URL(request.url);
     const path = url.pathname.replace(/^\/api(?=\/|$)/, '') || '/';
 
@@ -1333,8 +1335,8 @@ export const ntssHandler = {
 
       return json({ status: 'error', code: 'NOT_FOUND' }, 404, corsOrigin);
     } catch (error) {
-      console.error(JSON.stringify({ marker: 'NTSS_API_ERROR', message: String((error as any)?.message || error), stack: String((error as any)?.stack || '') }));
-      return json({ status: 'error', code: 'INTERNAL_ERROR' }, 500, corsOrigin);
+      console.error(JSON.stringify({ marker: 'NTSS_API_ERROR', requestId: traceRequestId, message: String((error as any)?.message || error), stack: String((error as any)?.stack || '') }));
+      return respond({ status: 'error', code: 'INTERNAL_ERROR' }, 500, corsOrigin);
     }
   }
 };
