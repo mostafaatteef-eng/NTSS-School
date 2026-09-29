@@ -59,7 +59,22 @@ jobs:
           VERCEL_DEPLOY_HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK }}
         run: |
           test -n "$VERCEL_DEPLOY_HOOK" || { echo "VERCEL_DEPLOY_HOOK secret is missing"; exit 1; }
-          curl --fail-with-body --retry 3 --retry-all-errors --silent --show-error -X POST "$VERCEL_DEPLOY_HOOK"
+          RESPONSE="$(curl --fail-with-body --retry 3 --retry-all-errors --silent --show-error -X POST "$VERCEL_DEPLOY_HOOK")"
+          echo "$RESPONSE"
+          JOB_URL="$(node -e 'const d=JSON.parse(process.argv[1]); process.stdout.write(d.job?.url || "")' "$RESPONSE")"
+          test -n "$JOB_URL" || { echo "Vercel deploy hook did not return a job URL"; exit 1; }
+          for attempt in $(seq 1 30); do
+            STATUS_JSON="$(curl --fail-with-body --silent --show-error "$JOB_URL")"
+            STATE="$(node -e 'const d=JSON.parse(process.argv[1]); process.stdout.write(d.job?.state || d.state || "")' "$STATUS_JSON")"
+            echo "Vercel deployment state: $STATE"
+            case "$STATE" in
+              READY|SUCCEEDED|SUCCESS) exit 0 ;;
+              ERROR|FAILED|CANCELED|CANCELLED) echo "$STATUS_JSON"; exit 1 ;;
+            esac
+            sleep 10
+          done
+          echo "Timed out waiting for Vercel deployment to become ready"
+          exit 1
 
   deploy:
     needs: build
