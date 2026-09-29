@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Database,
   Plus,
@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { MasterDataCategory, MasterDataItem } from '../../types';
 import { MasterDataService } from '../../services/masterDataService';
+import { masterDataAuthoritativeService } from '../../services/masterDataAuthoritativeService';
 import { storageService } from '../../services/storageService';
 import { AcademicYearsManagement } from '../settings/AcademicYearsManagement';
 
@@ -34,6 +35,8 @@ export const MasterDataManagerView: React.FC = () => {
   const [activeSubFilter, setActiveSubFilter] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [masterData, setMasterData] = useState<MasterDataItem[]>(() => MasterDataService.getMasterData());
+  const [serverMasterDataAvailable, setServerMasterDataAvailable] = useState(false);
+  const currentUser = storageService.getCurrentUser();
   const [editingItem, setEditingItem] = useState<Partial<MasterDataItem> | null>(null);
   const [dependencyWarning, setDependencyWarning] = useState<{ isOpen: boolean; message: string; itemId?: string; itemName?: string } | null>(null);
   const [notification, setNotification] = useState<string | null>(null);
@@ -43,9 +46,25 @@ export const MasterDataManagerView: React.FC = () => {
     setTimeout(() => setNotification(null), 3500);
   };
 
-  const reloadData = () => {
+  const reloadData = async () => {
+    if (serverMasterDataAvailable) {
+      const result = await masterDataAuthoritativeService.list(currentUser);
+      if (result.success && result.data) { setMasterData(result.data); return; }
+    }
     setMasterData(MasterDataService.getMasterData());
   };
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      const capability = await masterDataAuthoritativeService.capability(currentUser);
+      if (!active || !capability.success || !capability.available) return;
+      setServerMasterDataAvailable(true);
+      const result = await masterDataAuthoritativeService.list(currentUser);
+      if (active && result.success && result.data) setMasterData(result.data);
+    })();
+    return () => { active = false; };
+  }, []);
 
   const subTypeOptions: Record<string, Array<{ key: string; label: string }>> = {
     ACADEMIC: [
@@ -93,34 +112,43 @@ export const MasterDataManagerView: React.FC = () => {
     return true;
   });
 
-  const handleSaveItem = (e: React.FormEvent) => {
+  const handleSaveItem = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingItem || !editingItem.nameAr?.trim() || !editingItem.code?.trim()) {
       alert('يرجى ملء اسم البند والكود الفريد');
       return;
     }
 
-    const res = MasterDataService.saveMasterDataItem({
+    const prepared = {
       ...editingItem,
       category: activeMainTab === 'YEARS' ? 'ACADEMIC' : (activeMainTab as MasterDataCategory),
       nameAr: editingItem.nameAr.trim(),
       code: editingItem.code.trim().toUpperCase(),
-    });
+    };
+    const res = serverMasterDataAvailable
+      ? await masterDataAuthoritativeService.save(currentUser, prepared)
+      : MasterDataService.saveMasterDataItem(prepared);
 
     if (res.success) {
       showNotif(res.message || 'تم حفظ البند بنجاح');
-      reloadData();
+      await reloadData();
       setEditingItem(null);
+    } else {
+      showNotif(res.message || 'تعذر حفظ البند.');
     }
   };
 
-  const handleToggleActive = (id: string) => {
-    MasterDataService.toggleActive(id);
-    reloadData();
-    showNotif('تم تغيير حالة تفعيل البند');
+  const handleToggleActive = async (id: string) => {
+    const res = serverMasterDataAvailable
+      ? await masterDataAuthoritativeService.toggle(currentUser, id)
+      : MasterDataService.toggleActive(id);
+    if (res.success) {
+      await reloadData();
+      showNotif('تم تغيير حالة تفعيل البند');
+    } else showNotif('تعذر تغيير حالة البند.');
   };
 
-  const handleDeleteCheck = (item: MasterDataItem) => {
+  const handleDeleteCheck = async (item: MasterDataItem) => {
     // Dependency safeguard
     let entityType: any = 'subject';
     if (item.typeKey === 'GRADES') entityType = 'grade';
@@ -141,7 +169,7 @@ export const MasterDataManagerView: React.FC = () => {
     }
 
     if (window.confirm(`هل أنت متأكد من حذف البند "${item.nameAr}" نهائياً من القوائم؟`)) {
-      handleToggleActive(item.id);
+      await handleToggleActive(item.id);
       showNotif('تم تعطيل البند بأمان');
     }
   };
