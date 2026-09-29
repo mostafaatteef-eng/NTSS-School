@@ -15,8 +15,10 @@ import {
   Sparkles,
   Award,
 } from 'lucide-react';
-import { AppNotification, NotificationCategory, UserRole } from '../../types';
+import { AppNotification, NotificationCategory, User, UserRole } from '../../types';
 import { NotificationService } from '../../services/notificationService';
+import { notificationAuthoritativeService } from '../../services/notificationAuthoritativeService';
+import { storageService } from '../../services/storageService';
 import { formatEgyptianDate } from '../../utils/egyptianTime';
 
 interface NotificationBellProps {
@@ -36,38 +38,57 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
     NotificationService.getNotifications(userRole, userId, targetStudentId)
   );
   const [isOpen, setIsOpen] = useState(false);
+  const [serverAvailable, setServerAvailable] = useState(false);
+  const currentUser = storageService.getCurrentUser() as User | null;
   const [activeCategory, setActiveCategory] = useState<NotificationCategory | 'ALL'>('ALL');
 
-  const refresh = () => {
+  const refresh = async () => {
+    if (serverAvailable) {
+      const result = await notificationAuthoritativeService.list(currentUser);
+      if (result.success && result.data) { setNotifications(result.data); return; }
+    }
     setNotifications(NotificationService.getNotifications(userRole, userId, targetStudentId));
   };
 
   useEffect(() => {
-    refresh();
-    const interval = setInterval(refresh, 8000);
-    return () => clearInterval(interval);
-  }, [userRole, userId, targetStudentId]);
+    let active = true;
+    (async () => {
+      const capability = await notificationAuthoritativeService.capability(currentUser);
+      if (!active) return;
+      const available = Boolean(capability.success && capability.available);
+      setServerAvailable(available);
+      if (available) {
+        const result = await notificationAuthoritativeService.list(currentUser);
+        if (active && result.success && result.data) setNotifications(result.data);
+      } else setNotifications(NotificationService.getNotifications(userRole, userId, targetStudentId));
+    })();
+    const interval = setInterval(() => { void refresh(); }, 8000);
+    return () => { active = false; clearInterval(interval); };
+  }, [userRole, userId, targetStudentId, currentUser?.sessionToken, currentUser?.activeSchoolId, currentUser?.schoolId, serverAvailable]);
 
   const unreadCount = notifications.filter(n => !n.isRead).length;
 
-  const handleMarkAsRead = (id: string) => {
-    NotificationService.markAsRead(id);
-    refresh();
+  const handleMarkAsRead = async (id: string) => {
+    if (serverAvailable) await notificationAuthoritativeService.markRead(currentUser, id);
+    else NotificationService.markAsRead(id);
+    await refresh();
   };
 
-  const handleMarkAllRead = () => {
-    NotificationService.markAllAsRead(userRole, userId, targetStudentId);
-    refresh();
+  const handleMarkAllRead = async () => {
+    if (serverAvailable) await notificationAuthoritativeService.markAllRead(currentUser);
+    else NotificationService.markAllAsRead(userRole, userId, targetStudentId);
+    await refresh();
   };
 
-  const handleDelete = (id: string, e: React.MouseEvent) => {
+  const handleDelete = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    NotificationService.deleteNotification(id);
-    refresh();
+    if (serverAvailable) await notificationAuthoritativeService.delete(currentUser, id);
+    else NotificationService.deleteNotification(id);
+    await refresh();
   };
 
-  const handleActionClick = (notif: AppNotification) => {
-    handleMarkAsRead(notif.id);
+  const handleActionClick = async (notif: AppNotification) => {
+    await handleMarkAsRead(notif.id);
     if (notif.actionUrl && onNavigate) {
       onNavigate(notif.actionUrl);
       setIsOpen(false);
