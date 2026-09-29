@@ -2753,19 +2753,19 @@ export interface ComprehensiveEvaluation {
 }
 
 export interface QualityMetricOverview {
-  overallQualityScore: number;
+  overallQualityScore: number | null;
   totalDailyReports: number;
-  averageDailyScore: number;
+  averageDailyScore: number | null;
   totalTeacherVisits: number;
-  averageTeacherVisitScore: number;
+  averageTeacherVisitScore: number | null;
   totalComprehensiveEvaluations: number;
-  averageComprehensiveScore: number;
+  averageComprehensiveScore: number | null;
   totalActionsCount: number;
   resolvedActionsCount: number;
-  actionsResolutionRate: number;
+  actionsResolutionRate: number | null;
   domainAverages: {
     domain: string;
-    averagePercentage: number;
+    averagePercentage: number | null;
     count: number;
   }[];
 }
