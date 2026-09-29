@@ -13,7 +13,7 @@ export async function postgresApiRequest<T>(
   path: string,
   sessionToken: string,
   init: RequestInit = {}
-): Promise<{ ok: boolean; status: number; body: T | any }> {
+): Promise<{ ok: boolean; status: number; body: T | any; requestId?: string }> {
   if (!POSTGRES_API_URL) {
     return { ok: false, status: 0, body: { status: 'error', code: 'POSTGRES_API_NOT_CONFIGURED' } };
   }
@@ -41,7 +41,8 @@ export async function postgresApiRequest<T>(
       signal: controller.signal,
     });
     const body = await response.json().catch(() => ({}));
-    return { ok: response.ok, status: response.status, body };
+    const requestId = response.headers.get('x-request-id') || (body && typeof body === 'object' ? body.requestId : undefined);
+    return { ok: response.ok, status: response.status, body, ...(requestId ? { requestId: String(requestId) } : {}) };
   } catch (error) {
     const isAbort =
       controller.signal.aborted ||
