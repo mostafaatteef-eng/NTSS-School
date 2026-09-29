@@ -109,6 +109,7 @@ describe('NTSS ERP - Sidebar Navigation Stability & Route Guard Tests', () => {
     expect(storageService.isAuthenticated(authenticatedUser)).toBe(true);
     storageService.setCurrentUser(authenticatedUser);
     expect(storageService.getCurrentUser()?.id).toBe('U100');
+    expect(storageService.getCurrentUser()?.sessionToken).toBe('BE_AUTH_SECURE_TOKEN_9988776655');
 
     // 4. Expired session is NOT authenticated and triggers logout
     const expiredUser: User = {
