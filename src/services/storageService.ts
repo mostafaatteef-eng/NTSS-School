@@ -46,6 +46,7 @@ import {
   PublicSchoolOption,
   PublicScheduleGradeOption,
   PublicScheduleClassroomOption,
+  QualityKpiContract,
   QualityMetricOverview,
   QualityStandard,
   StandardScore,
