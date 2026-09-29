@@ -896,6 +896,53 @@ export const ntssHandler = {
         return json({status:'success',data:{...q.rows[0].payload,id,status:q.rows[0].status}},200,corsOrigin);
       }
 
+      if (request.method === 'POST' && path === '/attendance-month-closing') {
+        const body:any=await request.json();
+        const action=String(body.action||'');
+        const schoolId=String(body.schoolId||user.active_school_id||user.school_id||'').trim();
+        if(!(await canAccessSchool(user,schoolId))) return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);
+        const allowedRoles=new Set(['SystemAdmin','Admin','SchoolAdmin','SchoolDirector','TeacherAffairs','HR']);
+        if(!allowedRoles.has(String(user.role||''))) return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);
+        const month=Number(body.month), year=Number(body.year);
+        if(!Number.isInteger(month)||month<1||month>12||!Number.isInteger(year)||year<2000||year>2200) return json({status:'error',code:'INVALID_PERIOD'},400,corsOrigin);
+        const mapClosing=(row:any)=>row?({...row.payload,id:`CLOSE-${row.year}-${String(row.month).padStart(2,'0')}`,schoolId:row.school_id,month:Number(row.month),year:Number(row.year),status:row.status,closedAt:row.closed_at?new Date(row.closed_at).toISOString():undefined}):undefined;
+        if(action==='get') {
+          const q=await pool.query('SELECT * FROM attendance_month_closings WHERE school_id=$1 AND year=$2 AND month=$3 LIMIT 1',[schoolId,year,month]);
+          return json({status:'success',data:mapClosing(q.rows[0])||null},200,corsOrigin);
+        }
+        if(action==='close') {
+          const from=`${year}-${String(month).padStart(2,'0')}-01`;
+          const [employees,summary]=await Promise.all([
+            pool.query("SELECT count(*)::int total FROM employees WHERE school_id=$1 AND status='Active'",[schoolId]),
+            pool.query(`SELECT count(DISTINCT employee_id)::int recorded,
+              count(*) FILTER (WHERE status='حاضر')::int present,
+              count(*) FILTER (WHERE status='غائب')::int absent,
+              COALESCE(sum(CASE WHEN payload ? 'lateMinutes' THEN (payload->>'lateMinutes')::numeric ELSE 0 END),0)::float8 late_minutes,
+              COALESCE(sum(CASE WHEN payload ? 'overtimeHours' THEN (payload->>'overtimeHours')::numeric ELSE 0 END),0)::float8 overtime_hours
+              FROM employee_attendance WHERE school_id=$1 AND attendance_date >= $2::date AND attendance_date < ($2::date + interval '1 month')`,[schoolId,from])
+          ]);
+          const s=summary.rows[0]||{};
+          const payload={totalEmployees:Number(employees.rows[0]?.total||0),recordedEmployees:Number(s.recorded||0),totalPresentDays:Number(s.present||0),totalAbsentDays:Number(s.absent||0),totalLateMinutes:Number(s.late_minutes||0),totalOvertimeHours:Number(s.overtime_hours||0),closedBy:user.full_name||user.email,notes:String(body.notes||''),isPayrollGenerated:false,version:1};
+          const q=await pool.query(`INSERT INTO attendance_month_closings(school_id,year,month,status,payload,closed_by,closed_at)
+            VALUES($1,$2,$3,'CLOSED',$4::jsonb,$5,now())
+            ON CONFLICT(school_id,year,month) DO UPDATE SET status='CLOSED',payload=EXCLUDED.payload,closed_by=EXCLUDED.closed_by,closed_at=now(),updated_at=now()
+            RETURNING *`,[schoolId,year,month,JSON.stringify(payload),user.user_id]);
+          await pool.query('INSERT INTO audit_logs(school_id,user_id,username,role,action,entity,target_id,details) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[schoolId,user.user_id,user.email,user.role,'CLOSE','ATTENDANCE_PERIOD',`${year}-${String(month).padStart(2,'0')}`,String(body.notes||'')]);
+          return json({status:'success',data:mapClosing(q.rows[0])},200,corsOrigin);
+        }
+        if(action==='reopen') {
+          if(!['SystemAdmin','Admin','SchoolAdmin','SchoolDirector'].includes(String(user.role||''))) return json({status:'error',code:'FORBIDDEN'},403,corsOrigin);
+          const reason=String(body.reason||'').trim();
+          if(!reason) return json({status:'error',code:'REASON_REQUIRED'},400,corsOrigin);
+          const q=await pool.query(`UPDATE attendance_month_closings SET status='OPEN',payload=payload || $4::jsonb,updated_at=now()
+            WHERE school_id=$1 AND year=$2 AND month=$3 RETURNING *`,[schoolId,year,month,JSON.stringify({reopenReason:reason,reopenedBy:user.full_name||user.email,reopenedAt:new Date().toISOString()})]);
+          if(!q.rowCount)return json({status:'error',code:'NOT_FOUND'},404,corsOrigin);
+          await pool.query('INSERT INTO audit_logs(school_id,user_id,username,role,action,entity,target_id,details) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[schoolId,user.user_id,user.email,user.role,'REOPEN','ATTENDANCE_PERIOD',`${year}-${String(month).padStart(2,'0')}`,reason]);
+          return json({status:'success',data:mapClosing(q.rows[0])},200,corsOrigin);
+        }
+        return json({status:'error',code:'ACTION_NOT_MIGRATED'},400,corsOrigin);
+      }
+
       if (request.method === 'POST' && path === '/leave-management') {
         const body: any = await request.json();
         const action = String(body.action || '');
