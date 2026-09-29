@@ -593,7 +593,7 @@ export const ntssHandler = {
 
       if (request.method === 'POST' && path === '/settings/manage') {
         const body: any=await request.json(); const action=String(body.action||''); const data:any=body.data||{};
-        const schoolId=String(body.schoolId||user.active_school_id||user.school_id||'').trim();
+        const schoolId=String(body.schoolId||buildRequestContext(user).activeSchoolId).trim();
         if(!(await canAccessSchool(user,schoolId)))return respond({status: 'error',code:'FORBIDDEN'},403,corsOrigin);
         if(action==='getSettings'){
           const row=await pool.query("SELECT details FROM audit_logs WHERE school_id=$1 AND entity='SYSTEM_SETTINGS' AND action='SNAPSHOT' ORDER BY created_at DESC,id DESC LIMIT 1",[schoolId]);
@@ -611,7 +611,7 @@ export const ntssHandler = {
 
       if (request.method === 'POST' && path === '/academic-years/manage') {
         const body: any=await request.json(); const action=String(body.action||''); const data:any=body.data||{};
-        const schoolId=String(body.schoolId||user.active_school_id||user.school_id||'').trim();
+        const schoolId=String(body.schoolId||buildRequestContext(user).activeSchoolId).trim();
         if(!(await canAccessSchool(user,schoolId)))return respond({status: 'error',code:'FORBIDDEN'},403,corsOrigin);
         const allowedRoles=new Set(['SystemAdmin','Admin','SchoolAdmin','SchoolDirector']);
         if(!allowedRoles.has(String(user.role||'')))return respond({status: 'error',code:'FORBIDDEN'},403,corsOrigin);
@@ -715,7 +715,7 @@ export const ntssHandler = {
 
       if (request.method === 'POST' && path === '/curriculum/manage') {
         const body:any=await request.json(); const action=String(body.action||''); const data:any=body.data||{};
-        const schoolId=String(body.schoolId||user.active_school_id||user.school_id||'').trim();
+        const schoolId=String(body.schoolId||buildRequestContext(user).activeSchoolId).trim();
         if(!(await canAccessSchool(user,schoolId)))return respond({status: 'error',code:'FORBIDDEN'},403,corsOrigin);
         const adminRoles=new Set(['SystemAdmin','Admin','SchoolAdmin','SchoolDirector','TeacherAffairs']);
         const isAdmin=adminRoles.has(String(user.role||'')); const isTeacher=String(user.role||'')==='Teacher';
@@ -922,7 +922,7 @@ export const ntssHandler = {
       if (request.method === 'POST' && path === '/audit/manage') {
         const body:any=await request.json();
         const action=String(body.action||'');
-        const schoolId=String(body.schoolId||user.active_school_id||user.school_id||'').trim();
+        const schoolId=String(body.schoolId||buildRequestContext(user).activeSchoolId).trim();
         if(!(await canAccessSchool(user,schoolId))) return respond({status: 'error',code:'FORBIDDEN'},403,corsOrigin);
         const role=String(user.role||'');
         if(action==='list') {
@@ -947,7 +947,7 @@ export const ntssHandler = {
       if (request.method === 'POST' && path === '/notifications/manage') {
         const body:any=await request.json();
         const action=String(body.action||'');
-        const schoolId=String(body.schoolId||user.active_school_id||user.school_id||'').trim();
+        const schoolId=String(body.schoolId||buildRequestContext(user).activeSchoolId).trim();
         if(!(await canAccessSchool(user,schoolId))) return respond({status: 'error',code:'FORBIDDEN'},403,corsOrigin);
         if(action==='capability') {
           const q=await pool.query("SELECT to_regclass('public.notifications') AS notifications, to_regclass('public.notification_reads') AS reads");
@@ -1024,7 +1024,7 @@ export const ntssHandler = {
         const body:any=await request.json();
         const action=String(body.action||'');
         const data:any=body.data||{};
-        const schoolId=String(body.schoolId||user.active_school_id||user.school_id||'').trim();
+        const schoolId=String(body.schoolId||buildRequestContext(user).activeSchoolId).trim();
         if(!(await canAccessSchool(user,schoolId))) return respond({status: 'error',code:'FORBIDDEN'},403,corsOrigin);
         const canManage=new Set(['SystemAdmin','Admin','SchoolAdmin','SchoolDirector']);
         const mapItem=(row:any)=>({...row.payload,id:row.id,category:row.category,typeKey:row.type_key,code:row.code,nameAr:row.name_ar,nameEn:row.name_en||'',description:row.description||'',parentId:row.parent_id||undefined,sortOrder:Number(row.sort_order||0),isActive:Boolean(row.is_active),isSystemProtected:Boolean(row.is_system_protected),effectiveFrom:row.effective_from?String(row.effective_from).slice(0,10):undefined,effectiveTo:row.effective_to?String(row.effective_to).slice(0,10):undefined,createdAt:new Date(row.created_at).toISOString(),updatedAt:new Date(row.updated_at).toISOString()});
@@ -1071,7 +1071,7 @@ export const ntssHandler = {
       if (request.method === 'POST' && path === '/attendance-month-closing') {
         const body:any=await request.json();
         const action=String(body.action||'');
-        const schoolId=String(body.schoolId||user.active_school_id||user.school_id||'').trim();
+        const schoolId=String(body.schoolId||buildRequestContext(user).activeSchoolId).trim();
         if(!(await canAccessSchool(user,schoolId))) return respond({status: 'error',code:'FORBIDDEN'},403,corsOrigin);
         const allowedRoles=new Set(['SystemAdmin','Admin','SchoolAdmin','SchoolDirector','TeacherAffairs','HR']);
         if(!allowedRoles.has(String(user.role||''))) return respond({status: 'error',code:'FORBIDDEN'},403,corsOrigin);
@@ -1160,7 +1160,7 @@ export const ntssHandler = {
         const body:any=await request.json();
         const action=String(body.action||'');
         const data:any=body.data||{};
-        const schoolId=String(body.schoolId||user.active_school_id||user.school_id||'').trim();
+        const schoolId=String(body.schoolId||buildRequestContext(user).activeSchoolId).trim();
         const allowedRoles=new Set(['SystemAdmin','Admin','SchoolAdmin','SchoolDirector','TeacherAffairs']);
         if(!allowedRoles.has(String(user.role||''))) return respond({status: 'error',code:'FORBIDDEN'},403,corsOrigin);
         if(!(await canAccessSchool(user,schoolId))) return respond({status: 'error',code:'FORBIDDEN'},403,corsOrigin);
