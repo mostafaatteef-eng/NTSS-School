@@ -115,7 +115,7 @@ export const QualityModule: React.FC<QualityModuleProps> = ({ currentUser }) => 
       // Fail closed: never present stale browser records as authoritative Production data.
       stds=[]; daily=[]; visits=[]; evals=[]; acts=[];
     }
-    const met = storageService.getQualityMetricOverview(schoolId);
+    const met = storageService.getQualityMetricOverview(schoolId,{ daily,visits,evals,actions:acts,standards:stds });
 
     setStandards(stds);
     setDailyReports(daily);
