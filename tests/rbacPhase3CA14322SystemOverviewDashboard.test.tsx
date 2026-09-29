@@ -341,6 +341,28 @@ describe('PHASE 3C-A14.3.2.2 — CROSS-SCHOOL METRICS CENTRAL DASHBOARD UI', () 
       expect(updatedText).toContain('تفاصيل البيانات حسب المدرسة');
     });
 
+    it('Registry failure never renders unknown school totals as numeric zero', async () => {
+      vi.spyOn(schoolAdminService, 'getManagedSchools').mockResolvedValue({
+        success: false,
+        message: 'تعذر تحميل سجل المدارس المعتمد.',
+        code: 'SERVICE_UNAVAILABLE',
+      });
+      vi.spyOn(systemAdminOverviewService, 'getSystemOverview').mockResolvedValue({
+        success: false,
+        message: 'تعذر تحميل مؤشرات البيانات التشغيلية.',
+        code: 'SERVICE_UNAVAILABLE',
+      });
+
+      await act(async () => {
+        root?.render(<SystemAdminDashboard currentUser={sysAdminUser} onNavigate={vi.fn()} />);
+      });
+
+      const metricCards = Array.from(container?.querySelectorAll('.grid.grid-cols-1.md\\:grid-cols-3 > div') || []);
+      expect(metricCards).toHaveLength(3);
+      metricCards.forEach(card => expect(card.textContent).toContain('—'));
+      expect(container?.textContent || '').toContain('تعذر تحميل سجل المدارس المعتمد.');
+    });
+
     it('Refresh button refreshes BOTH school registry and system overview concurrently', async () => {
       const getSchoolsSpy = vi.spyOn(schoolAdminService, 'getManagedSchools').mockResolvedValue({
         success: true,
