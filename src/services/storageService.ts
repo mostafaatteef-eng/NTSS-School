@@ -5126,6 +5126,9 @@ class StorageService {
           bulkSaveEmployees: '/employees/manage',
           saveLeave: '/leave-management',
           deleteLeave: '/leave-management',
+          saveSamatSkillAssessment: '/samat/manage',
+          saveSamatDisciplineRecord: '/samat/manage',
+          saveSamatExcellenceRecord: '/samat/manage',
         };
         const path = routes[action];
         if (path) {
@@ -5162,6 +5165,7 @@ class StorageService {
               }
               return { success: true, message: 'PostgreSQL sync' };
             }
+            if (action === 'saveSamatSkillAssessment' || action === 'saveSamatDisciplineRecord' || action === 'saveSamatExcellenceRecord') apiAction = action;
             if (action === 'saveStudent') apiAction = 'saveManagedStudent';
             if (action === 'deleteStudent') apiAction = 'deleteManagedStudent';
             if (action === 'bulkSaveStudents') apiAction = 'bulkSaveManagedStudents';
