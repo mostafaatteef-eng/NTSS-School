@@ -2357,30 +2357,39 @@ class StorageService {
     const settings = this.getSettings();
     const rules = settings.behaviorScoreRules || DEFAULT_BEHAVIOR_RULES;
     const violations = this.getBehaviorViolations().filter(v => v.studentId === studentId && v.status !== 'ملغاة');
+    const ledger = this.getBehaviorLedger(studentId);
 
     const totalDeductions = violations.reduce((sum, v) => sum + (v.pointsDeducted || 0), 0);
-    const currentScore = Math.max(rules.minScore, rules.initialScore - totalDeductions);
+    const ledgerCredits = ledger.reduce((sum, entry) => {
+      const isCredit = entry.type === 'POSITIVE' || entry.type === 'RESTORE' || entry.type === 'credit' || entry.sourceType === 'positive_behavior';
+      return isCredit ? sum + Math.abs(Number(entry.pointsAwarded ?? entry.points ?? 0)) : sum;
+    }, 0);
+    const ledgerDebits = ledger.reduce((sum, entry) => {
+      const isDebit = entry.type === 'VIOLATION' || entry.type === 'debit';
+      // Violation rows already persisted in BehaviorViolation are not double-counted.
+      if (!isDebit || entry.sourceType === 'violation') return sum;
+      return sum + Math.abs(Number(entry.points ?? 0));
+    }, 0);
 
-    let statusText = 'ممتاز';
+    const currentScore = Math.max(rules.minScore, Math.min(rules.maxScore, rules.initialScore - totalDeductions - ledgerDebits + ledgerCredits));
+
+    let statusText = 'قدوة بسماتي';
     let statusColor = 'text-emerald-700 bg-emerald-50 border-emerald-200';
-
-    if (currentScore < rules.dangerThreshold) {
-      statusText = 'يحتاج تدخل الإدارة';
+    if (currentScore < 60) {
+      statusText = 'أبني سماتي';
       statusColor = 'text-rose-700 bg-rose-50 border-rose-200';
-    } else if (currentScore < rules.warningThreshold) {
-      statusText = 'يحتاج متابعة سلوكية';
+    } else if (currentScore < 75) {
+      statusText = 'أنمّي سماتي';
       statusColor = 'text-amber-700 bg-amber-50 border-amber-200';
-    } else if (currentScore < rules.goodThreshold) {
-      statusText = 'جيد';
+    } else if (currentScore < 85) {
+      statusText = 'أُظهر سماتي';
       statusColor = 'text-blue-700 bg-blue-50 border-blue-200';
+    } else if (currentScore < 95) {
+      statusText = 'أتميز بسماتي';
+      statusColor = 'text-teal-700 bg-teal-50 border-teal-200';
     }
 
-    return {
-      currentScore,
-      violationsCount: violations.length,
-      statusText,
-      statusColor,
-    };
+    return { currentScore, violationsCount: violations.length, statusText, statusColor };
   }
 
   // ---------------- Class-by-Class Attendance (Period Attendance) ----------------
