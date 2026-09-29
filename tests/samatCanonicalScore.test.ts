@@ -5,5 +5,6 @@ it('includes positive/restored ledger without double counting violation ledger',
  expect(s).toContain("entry.type === 'RESTORE'");
  expect(s).toContain("entry.sourceType === 'violation'");
  expect(s).toContain("rules.initialScore - totalDeductions - ledgerDebits + ledgerCredits");
- for(const x of ['قيد التأسيس','مبتدئ','متمكن','قدوة حسنة','المحترف'])expect(s).toContain(x);
+ expect(s).toContain('const statusText = getSamatStudentLevel(currentScore)');
+ expect(s).toContain("import { getSamatStudentLevel } from './behavior/samatScoring'");
 });});
