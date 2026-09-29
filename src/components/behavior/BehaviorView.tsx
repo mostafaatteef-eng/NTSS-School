@@ -47,6 +47,7 @@ export const BehaviorView: React.FC = () => {
   const [restorePoints, setRestorePoints] = useState(5);
   const [restoreReason, setRestoreReason] = useState('');
   const [isRestoreModalOpen, setIsRestoreModalOpen] = useState(false);
+  const [profileStudentId, setProfileStudentId] = useState<string | null>(null);
 
   const [activeSubTab, setActiveSubTab] = useState<'violations' | 'positive' | 'types_manager' | 'at_risk'>('violations');
 
@@ -129,6 +130,20 @@ export const BehaviorView: React.FC = () => {
     });
     return Array.from(map.values()).sort((a, b) => b.incidents - a.incidents);
   }, [violations, behaviorTypes]);
+
+  const profileStudent = useMemo(() => students.find(s => s.id === profileStudentId) || null, [students, profileStudentId]);
+  const profileTimeline = useMemo(() => {
+    if (!profileStudentId) return [];
+    const negative = violations.filter(v => v.studentId === profileStudentId).map(v => ({
+      id: v.id, date: v.date, kind: 'VIOLATION', title: v.violationName, points: -Math.abs(v.pointsDeducted || 0),
+      detail: v.notes || v.actionTaken || '', balanceAfter: undefined as number | undefined,
+    }));
+    const ledger = storageService.getBehaviorLedger(profileStudentId).filter(e => e.type === 'POSITIVE' || e.type === 'RESTORE' || e.type === 'credit').map(e => ({
+      id: e.id, date: e.date, kind: e.type, title: e.type === 'RESTORE' ? 'استعادة نقاط بعد المتابعة' : 'تميز وتعزيز إيجابي',
+      points: Math.abs(Number(e.pointsAwarded ?? e.points ?? 0)), detail: e.reason || '', balanceAfter: e.balanceAfter,
+    }));
+    return [...negative, ...ledger].sort((a,b) => String(b.date).localeCompare(String(a.date)));
+  }, [profileStudentId, violations]);
 
   const studentsWithScores = useMemo(() => {
     const studentDeductionsMap = new Map<string, { total: number; count: number }>();
@@ -741,7 +756,7 @@ export const BehaviorView: React.FC = () => {
                 {studentsWithScores.map(st => (
                   <tr key={st.id} className="hover:bg-slate-50">
                     <td className="p-3 font-mono text-slate-500">{st.studentCode || st.id}</td>
-                    <td className="p-3 font-bold text-slate-900">{st.name}</td>
+                    <td className="p-3 font-bold text-slate-900"><button onClick={()=>setProfileStudentId(st.id)} className="hover:text-teal-700 underline-offset-2 hover:underline">{st.name}</button></td>
                     <td className="p-3 text-slate-600">{st.grade} — {st.classroom}</td>
                     <td className="p-3 text-center font-bold text-slate-700">{st.violationCount}</td>
                     <td className="p-3 text-center font-bold text-rose-600 font-mono">
@@ -765,6 +780,35 @@ export const BehaviorView: React.FC = () => {
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {profileStudent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs overflow-y-auto">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-3xl p-6 space-y-5 my-6">
+            <div className="flex items-start justify-between gap-4">
+              <div><h3 className="text-lg font-black text-slate-900">ملف سمات الطالب</h3><p className="text-xs text-slate-500 mt-1">{profileStudent.name} · {profileStudent.grade} — {profileStudent.classroom}</p></div>
+              <button onClick={()=>setProfileStudentId(null)} className="text-slate-400 hover:text-slate-700">✕</button>
+            </div>
+            {(() => { const score=storageService.calculateStudentBehaviorScore(profileStudent.id); return (
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                <div className="rounded-xl bg-slate-50 border border-slate-100 p-4"><div className="text-[11px] text-slate-500">الرصيد الحالي</div><div className="text-2xl font-black text-slate-900">{score.currentScore}%</div></div>
+                <div className="rounded-xl bg-teal-50 border border-teal-100 p-4"><div className="text-[11px] text-teal-700">مستوى سمات</div><div className="text-sm font-black text-teal-800 mt-1">{getSamatStudentLevel(score.currentScore)}</div></div>
+                <div className="rounded-xl bg-slate-50 border border-slate-100 p-4"><div className="text-[11px] text-slate-500">المواقف المسجلة</div><div className="text-2xl font-black text-slate-900">{profileTimeline.length}</div></div>
+              </div>
+            ); })()}
+            <div>
+              <h4 className="text-sm font-extrabold text-slate-900 mb-3">السجل الزمني لسمات</h4>
+              <div className="space-y-2 max-h-96 overflow-y-auto">
+                {profileTimeline.length === 0 ? <div className="text-xs text-slate-500 p-4 bg-slate-50 rounded-xl">لا توجد مواقف مسجلة لهذا الطالب حتى الآن.</div> : profileTimeline.map(item => (
+                  <div key={item.id} className="flex items-start justify-between gap-4 p-3 rounded-xl border border-slate-100 bg-slate-50/60">
+                    <div><div className="text-xs font-extrabold text-slate-900">{item.title}</div><div className="text-[11px] text-slate-500 mt-1">{item.date}{item.detail ? ` · ${item.detail}` : ''}</div>{item.balanceAfter !== undefined && <div className="text-[10px] text-slate-400 mt-1">الرصيد بعد العملية: {item.balanceAfter}</div>}</div>
+                    <span className={`text-sm font-black ${item.points >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{item.points >= 0 ? '+' : ''}{item.points}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       )}
