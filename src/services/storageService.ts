@@ -8477,6 +8477,23 @@ class StorageService {
     return Array.isArray(result.data)?result.data:[];
   }
 
+  public async getAuthoritativeQualityKpi(schoolId?: string): Promise<QualityKpiContract> {
+    const target=(schoolId||this.getActiveSchoolId()).trim();
+    if(!this.getPostgresApiUrl()) return { value:null, sampleSize:0, period:null, status:'N/A' };
+    const response=await this.postgresRequest('/api/quality/manage',{method:'POST',body:JSON.stringify({action:'metrics',schoolId:target})});
+    const result=await response.json().catch(()=>({}));
+    if(!response.ok||result.status!=='success') throw new Error(result.code||'QUALITY_METRICS_LOAD_FAILED');
+    const data=result.data||{};
+    const sampleSize=Math.max(0,Number(data.sampleSize)||0);
+    const value=data.value===null||data.value===undefined?null:Number(data.value);
+    return {
+      value:Number.isFinite(value as number)?value:null,
+      sampleSize,
+      period:data.period&&typeof data.period==='object'?{from:String(data.period.from||''),to:String(data.period.to||'')}:null,
+      status:sampleSize>0&&Number.isFinite(value as number)?'AVAILABLE':'N/A',
+    };
+  }
+
   public async saveAuthoritativeQualityRecord(recordType: 'TEACHER_VISIT'|'DAILY_REPORT'|'COMPREHENSIVE_EVALUATION'|'CORRECTIVE_ACTION'|'QUALITY_STANDARD', data:any, schoolId?:string): Promise<any> {
     const target=(schoolId||this.getActiveSchoolId()).trim();
     const response=await this.postgresRequest('/api/quality/manage',{method:'POST',body:JSON.stringify({action:'save',schoolId:target,data:{...data,recordType}})});
