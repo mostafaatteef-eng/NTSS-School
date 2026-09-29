@@ -45,6 +45,22 @@ jobs:
           VITE_POSTGRES_API_URL: ${{ vars.POSTGRES_API_URL || 'https://ntss-school.vercel.app' }}
           VITE_BASE_PATH: /NTSS-School/
         run: npm run build
+      - name: Verify production API health and CORS
+        shell: bash
+        run: |
+          set -euo pipefail
+          API_URL="${{ vars.POSTGRES_API_URL || 'https://ntss-school.vercel.app' }}"
+          curl --fail --silent --show-error "${API_URL}/api/health" >/dev/null
+          HEADERS="$(mktemp)"
+          curl --fail --silent --show-error -D "$HEADERS" -o /dev/null -X OPTIONS "${API_URL}/api/system-overview" \
+            -H 'Origin: https://mostafaatteef-eng.github.io' \
+            -H 'Access-Control-Request-Method: GET' \
+            -H 'Access-Control-Request-Headers: authorization,cache-control,pragma'
+          grep -qi '^access-control-allow-origin: https://mostafaatteef-eng.github.io' "$HEADERS"
+          grep -qi '^access-control-allow-headers:.*authorization' "$HEADERS"
+          grep -qi '^access-control-allow-headers:.*cache-control' "$HEADERS"
+          grep -qi '^access-control-allow-headers:.*pragma' "$HEADERS"
+
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
