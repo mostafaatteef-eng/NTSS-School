@@ -20,18 +20,21 @@ import { StatCard } from '../common/UiMetrics';
 
 export const CurriculumCoverageView: React.FC = () => {
   const [reports, setReports] = useState<ClassroomCoverageReport[]>([]);
-  const [selectedClassId, setSelectedClassId] = useState<string>('1/1');
-  const [selectedGradeId, setSelectedGradeId] = useState<string>('G1');
-
-  const availableClassrooms = ['1/1', '1/2', '2/1', '2/2', '3/1', '3/2'];
+  const [selectedClassId, setSelectedClassId] = useState<string>('');
+  const configuredClassrooms = storageService.getClassrooms();
+  const availableClassrooms = configuredClassrooms.map(c => ({
+    id: String((c as any).id || (c as any).name || (c as any).displayName || ''),
+    name: String((c as any).name || (c as any).displayName || (c as any).id || ''),
+    gradeId: String((c as any).gradeId || ''),
+  })).filter(c => c.id);
 
   const loadData = () => {
     // Generate coverage for each classroom
-    const results = availableClassrooms.map(c => {
-      const gId = c.startsWith('1') ? 'G1' : c.startsWith('2') ? 'G2' : 'G3';
-      return timetableService.validateClassroomCurriculumCoverage(c, gId);
-    });
+    const results = availableClassrooms.map(c =>
+      timetableService.validateClassroomCurriculumCoverage(c.id, c.gradeId || undefined)
+    );
     setReports(results);
+    if (!selectedClassId && availableClassrooms[0]) setSelectedClassId(availableClassrooms[0].id);
   };
 
   useEffect(() => {
@@ -89,14 +92,14 @@ export const CurriculumCoverageView: React.FC = () => {
       <div className="flex items-center gap-2 overflow-x-auto pb-1">
         <span className="text-xs font-bold text-slate-600 ml-2">اختر الفصل:</span>
         {availableClassrooms.map(c => {
-          const rep = reports.find(r => r.classroomId === c);
+          const rep = reports.find(r => r.classroomId === c.id);
           const isComplete = rep?.status === 'COMPLETE';
-          const isSelected = selectedClassId === c;
+          const isSelected = selectedClassId === c.id;
 
           return (
             <button
-              key={c}
-              onClick={() => setSelectedClassId(c)}
+              key={c.id}
+              onClick={() => setSelectedClassId(c.id)}
               className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 border ${
                 isSelected
                   ? 'bg-teal-50 text-teal-900 border-teal-200 ring-1 ring-inset ring-teal-200'
