@@ -90,8 +90,13 @@ const upgradeLegacyPassword = async (userId: string, password: string) => {
 
 
 function json(data: unknown, status = 200, origin = '', extraHeaders: Record<string,string> = {}) {
-  return new Response(JSON.stringify(data), { status, headers: {
+  const requestId = extraHeaders['x-request-id'] || crypto.randomUUID();
+  const payload = status >= 400 && data && typeof data === 'object' && !Array.isArray(data)
+    ? { ...(data as Record<string,unknown>), requestId }
+    : data;
+  return new Response(JSON.stringify(payload), { status, headers: {
     'content-type': 'application/json',
+    'x-request-id': requestId,
     ...(origin ? { 'access-control-allow-origin': origin } : {}),
     'access-control-allow-headers': 'content-type, authorization, cache-control, pragma',
     'access-control-allow-methods': 'GET,POST,OPTIONS',
