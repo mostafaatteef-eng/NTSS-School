@@ -106,7 +106,7 @@ export const CurriculumCoverageView: React.FC = () => {
                   : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
               }`}
             >
-              <span>فصل {c}</span>
+              <span>فصل {c.name}</span>
               {rep && (
                 <span
                   className={`text-[10px] px-1.5 py-0.5 rounded-full ${
