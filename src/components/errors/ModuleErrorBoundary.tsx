@@ -18,6 +18,9 @@ export class ModuleErrorBoundary extends React.Component<
   ModuleErrorBoundaryProps,
   ModuleErrorBoundaryState
 > {
+  declare props: Readonly<ModuleErrorBoundaryProps>;
+  declare setState: (state: Partial<ModuleErrorBoundaryState>) => void;
+
   state: ModuleErrorBoundaryState = { hasError: false, errorId: null };
 
   static getDerivedStateFromError(): ModuleErrorBoundaryState {
