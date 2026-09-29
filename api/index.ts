@@ -663,7 +663,8 @@ export const ntssHandler = {
         const body: any = await request.json();
         const action = String(body.action || '');
         const data: any = body.data || {};
-        const schoolId = String(body.schoolId || user.active_school_id || user.school_id || '').trim();
+        const requestContext = buildRequestContext(user);
+        const schoolId = String(body.schoolId || requestContext.activeSchoolId).trim();
         if (!(await canAccessSchool(user, schoolId))) return respond({status: 'error',code:'FORBIDDEN'},403,corsOrigin);
         const allowedRoles = new Set(['SystemAdmin','Admin','SchoolAdmin','SchoolDirector','Supervisor','TeacherAffairs']);
         if (!allowedRoles.has(String(user.role || ''))) return respond({status: 'error',code:'FORBIDDEN'},403,corsOrigin);
@@ -775,6 +776,7 @@ export const ntssHandler = {
           const pq=await pool.query('SELECT status,grade,subject,file_meta FROM curriculum_plans WHERE id=$1 AND school_id=$2',[planId,schoolId]);
           if(!pq.rowCount)return respond({status: 'error',code:'PLAN_NOT_FOUND'},404,corsOrigin);
           const isCancellation=String(data.status||'Planned')==='Cancelled';
+          if(!isCancellation&&!scheduleItemId)return respond({status: 'error',code:'SCHEDULE_LINK_REQUIRED',message:'يجب ربط توزيع المنهج بحصة فعلية من الجدول الدراسي.'},400,corsOrigin);
           if(!isCancellation&&pq.rows[0].status!=='Approved')return respond({status: 'error',code:'PLAN_NOT_APPROVED'},409,corsOrigin);
           const iq=await pool.query('SELECT week FROM curriculum_plan_items WHERE id=$1 AND plan_id=$2',[planItemId,planId]);if(!iq.rowCount)return respond({status: 'error',code:'PLAN_ITEM_NOT_FOUND'},404,corsOrigin);
           const curriculumWeek=Number(iq.rows[0].week||0);
