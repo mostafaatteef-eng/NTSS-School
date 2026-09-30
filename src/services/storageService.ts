@@ -3861,19 +3861,27 @@ class StorageService {
           method: 'POST',
           body: JSON.stringify({ action: 'getSettings', schoolId }),
         });
-        const [studentRows, employeeRows, studentAttendanceRows, employeeAttendanceRows, academicYearsResponse, settingsResponse] = await Promise.all([
+        const samatRequest = postgresApiRequest<any>('/samat/manage', currentUser.sessionToken || '', {
+          method: 'POST',
+          body: JSON.stringify({ action: 'getSamatRecords', schoolId }),
+        });
+        const [studentRows, employeeRows, studentAttendanceRows, employeeAttendanceRows, academicYearsResponse, settingsResponse, samatResponse] = await Promise.all([
           fetchAll('/students'),
           fetchAll('/employees'),
           fetchAll(`/student-attendance?from=${from}&to=${to}`),
           fetchAll(`/employee-attendance?from=${from}&to=${to}`),
           academicYearsRequest,
           settingsRequest,
+          samatRequest,
         ]);
         const academicYears = academicYearsResponse.ok && academicYearsResponse.body?.status === 'success' && Array.isArray(academicYearsResponse.body?.data)
           ? academicYearsResponse.body.data
           : [];
         const remoteSettings = settingsResponse.ok && settingsResponse.body?.status === 'success' && settingsResponse.body?.data
           ? settingsResponse.body.data
+          : null;
+        const samatData = samatResponse.ok && samatResponse.body?.status === 'success' && samatResponse.body?.data
+          ? samatResponse.body.data
           : null;
         const students = studentRows.map((row: any) => ({
           ...(row.payload && typeof row.payload === 'object' ? row.payload : {}),
@@ -3927,6 +3935,11 @@ class StorageService {
         localStorage.setItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify(employees));
         localStorage.setItem(STORAGE_KEYS.STUDENT_ATTENDANCE, JSON.stringify(studentAttendance));
         localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify(employeeAttendance));
+        if (samatData) {
+          if (Array.isArray(samatData.samatSkillAssessments)) localStorage.setItem(STORAGE_KEYS.SAMAT_SKILL_ASSESSMENTS, JSON.stringify(samatData.samatSkillAssessments));
+          if (Array.isArray(samatData.samatDisciplineRecords)) localStorage.setItem(STORAGE_KEYS.SAMAT_DISCIPLINE_RECORDS, JSON.stringify(samatData.samatDisciplineRecords));
+          if (Array.isArray(samatData.samatExcellenceRecords)) localStorage.setItem(STORAGE_KEYS.SAMAT_EXCELLENCE_RECORDS, JSON.stringify(samatData.samatExcellenceRecords));
+        }
         if (academicYears.length > 0) localStorage.setItem(STORAGE_KEYS.ACADEMIC_YEARS, JSON.stringify(academicYears));
         if (remoteSettings) {
           const localSettings = this.getSettings();
@@ -3936,7 +3949,7 @@ class StorageService {
           lastSyncTime: getCairoNowISO(),
           status: 'success',
           connectedToGoogleSheets: false,
-          syncedRecordsCount: students.length + employees.length + studentAttendance.length + employeeAttendance.length + academicYears.length,
+          syncedRecordsCount: students.length + employees.length + studentAttendance.length + employeeAttendance.length + academicYears.length + (samatData?.samatSkillAssessments?.length || 0) + (samatData?.samatDisciplineRecords?.length || 0) + (samatData?.samatExcellenceRecords?.length || 0),
         });
         this.notifyChange();
         return true;
