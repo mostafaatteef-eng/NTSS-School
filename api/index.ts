@@ -636,8 +636,14 @@ export const ntssHandler = {
         const data: any = body.data || {};
         const schoolId = String(body.schoolId || buildRequestContext(user).activeSchoolId).trim();
         if (!(await canAccessSchool(user, schoolId))) return respond({ status:'error', code:'FORBIDDEN' },403,corsOrigin);
-        const allowedRoles = new Set(['SystemAdmin','Admin','SchoolAdmin','SchoolDirector','StudentAffairs','SocialSpecialist','TrainingOfficer','QualityOfficer']);
-        if (!allowedRoles.has(String(user.role || ''))) return respond({ status:'error', code:'FORBIDDEN' },403,corsOrigin);
+        const readRoles = new Set(['SystemAdmin','Admin','SchoolAdmin','SchoolDirector','StudentAffairs','SocialSpecialist','BehaviorOfficer','Supervisor','Teacher','QualityOfficer']);
+        const writeRoles = new Set(['SystemAdmin','Admin','SchoolAdmin','SchoolDirector','StudentAffairs','SocialSpecialist','BehaviorOfficer','Supervisor','Teacher']);
+        const role = String(user.role || '');
+        if (action === 'getSamatRecords') {
+          if (!readRoles.has(role)) return respond({ status:'error', code:'FORBIDDEN' },403,corsOrigin);
+        } else if (!writeRoles.has(role)) {
+          return respond({ status:'error', code:'FORBIDDEN' },403,corsOrigin);
+        }
         const actionTypes: Record<string,string> = {
           saveSamatSkillAssessment: 'SKILL_ASSESSMENT',
           saveSamatDisciplineRecord: 'DISCIPLINE',
